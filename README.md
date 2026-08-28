@@ -6,6 +6,17 @@ This project runs *Yendorian Tales: The Tyrants of Thaine* (1997, Spectrum Pacif
 
 [js-dos]: https://js-dos.com
 
+## Running it locally
+
+You need `bun`. `yarn install` installs the pinned copy into `node_modules`.
+
+    yarn install
+    cd cabinet && bun install
+
+Put your copy of the game in `game/`, then run:
+
+    bun cabinet/serve.js    # http://localhost:8080
+
 ## Reverse engineering
 
 The list below records how far the decode of the game's own file formats has progressed. `docs/` holds the offsets, the record layouts and the evidence for every item marked as settled.

@@ -1,0 +1,197 @@
+/* Same palette as the panel, sampled from the game's own screens. */
+:root {
+  --stone-000:#0c0c0c; --stone-100:#141414; --stone-200:#1c1c1c;
+  --stone-400:#343434; --stone-600:#555555; --stone-700:#757575;
+  --ink:#aaaaaa; --ink-bright:#dfdfdf; --amber:#e76500; --amber-lit:#ff8624;
+  --red:#c33c33;
+}
+* { box-sizing: border-box; }
+/* The cabinet is an application shell, not a document: it fills the window and
+   never scrolls. Anything that needs to scroll does so inside its own pane. */
+/* One header across the top, then the game and the panel side by side beneath
+   it. The header belongs to the application, not to either pane, so it stays
+   put when the panel is collapsed. */
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+body {
+  background: var(--stone-100); color: var(--ink);
+  font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+/* The game takes every pixel that is left over. The panel is text, so it has a
+   natural comfortable width and is capped there rather than growing to fill;
+   fractional columns would hand the surplus to whichever side is wider. */
+/* The cap is in pixels, not rem: rem scales with browser zoom, so a rem cap
+   quietly hands the panel more and more of the window the further the user
+   zooms in, which is the opposite of giving the game priority. */
+#app { display: grid;
+       grid-template-columns: minmax(0, 1fr) clamp(280px, 38%, 560px);
+       min-height: 0; }
+#app.panel-hidden { grid-template-columns: 1fr 0; }
+#app.panel-hidden #panel { display: none; }
+@media (max-width: 900px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  #app.panel-hidden { grid-template-rows: 1fr; }
+}
+
+
+#stage { display: flex; flex-direction: column; min-width: 0; min-height: 0;
+         overflow: hidden;
+         border-right: 1px solid var(--stone-400); background: var(--stone-000); }
+#app.panel-hidden #stage { border-right: 0; }
+#bar { display: flex; align-items: center; gap: .8rem; padding: .55rem .9rem;
+       background: var(--stone-000); border-bottom: 1px solid var(--stone-400); }
+#bar strong { color: var(--ink-bright); font-weight: 600; letter-spacing: .1em;
+              text-transform: uppercase; font-size: 13px; white-space: nowrap; }
+#bar .spacer { flex: 1; }
+
+/* Controls that open a panel under themselves. The header has to stay one row,
+   and a setting touched once a session should not spend width all session --
+   so what a dropdown hides is the adjustment, never the answer: the volume
+   icon still shows muted, and the status line still reports what was saved.
+
+   Centered on the button. The panels are wider than their buttons, so anchoring
+   by an edge instead leaves them visibly off to one side. */
+.menu { position: relative; display: inline-flex; }
+/* `display` belongs to this rule and not to the per-menu ones below: an id
+   selector setting `display: flex` outranks `.menu-panel[hidden]`, and the
+   panels then stay open however hidden they are marked. */
+.menu-panel { position: absolute; top: calc(100% + .35rem); left: 50%;
+              transform: translateX(-50%); z-index: 10;
+              display: flex; flex-direction: column;
+              padding: .6rem .5rem .45rem; border-radius: 3px;
+              /* It floats over the panel, which is nearly the same shade, so
+                 the edge has to carry the separation rather than the fill. */
+              background: var(--stone-200); border: 1px solid var(--stone-600);
+              box-shadow: 0 6px 16px #000c; }
+.menu-panel[hidden] { display: none; }
+.menu > button[aria-expanded="true"] { color: var(--amber-lit);
+                                       border-color: var(--amber); }
+
+#volume-control.muted .wave { display: none; }
+#volume-menu { align-items: center; gap: .4rem; }
+/* Vertical, so loud is up. `writing-mode` is how a range is turned on its side
+   in current browsers; the -webkit appearance is the older spelling, kept for
+   engines that have not caught up. Both need an explicit height. */
+#volume { writing-mode: vertical-rl; direction: rtl;
+          -webkit-appearance: slider-vertical;
+          width: 1.1rem; height: 6rem; accent-color: var(--amber);
+          background: none; cursor: pointer; }
+#volume-value { color: var(--stone-700); font-size: 12px;
+                font-variant-numeric: tabular-nums; min-width: 3ch;
+                text-align: center; }
+
+button.icon { display: inline-flex; align-items: center; justify-content: center;
+              padding: .25rem .35rem; line-height: 0; }
+button.icon svg { display: block; }
+button.icon[aria-pressed="false"] .fill { opacity: 0; }
+/* One row, always. A wrapped button reads as broken, and a status message
+   long enough to wrap pushes the whole header taller. */
+#status { color: var(--stone-700); font-size: 12px; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; max-width: 150ch; }
+button { background: var(--stone-200); color: var(--ink); border: 1px solid var(--stone-400);
+         white-space: nowrap;
+         border-radius: 2px; font: inherit; font-size: 12px; padding: .25rem .6rem; cursor: pointer; }
+button:hover { color: var(--amber-lit); border-color: var(--amber); }
+button:disabled { opacity: .45; cursor: default; }
+button[aria-pressed="true"] { color: var(--amber-lit); border-color: var(--amber);
+                              background: var(--stone-100); }
+button[aria-pressed="false"] { color: var(--stone-700); }
+
+/* The game renders at 320x200 with non-square pixels; nearest-neighbor keeps
+   it crisp instead of blurring the original art. object-fit lets the canvas
+   grow into whatever space the column has, width *and* height, while
+   keeping its 4:3 shape, instead of being pinned to the column width. */
+#screen {
+  /* flex sets the height from the space left in the column; an explicit
+     height:100% here would resolve against the whole column and overflow it,
+     which is what made the page scroll when the panel was hidden. */
+  flex: 1 1 0; min-height: 0; width: 100%;
+  background: #000; image-rendering: pixelated; object-fit: contain; outline: none;
+  /* The guest draws its own pointer; showing the host one as well gives two
+     cursors chasing each other. */
+  cursor: none;
+}
+#screen:focus-visible { box-shadow: inset 0 0 0 2px var(--amber); }
+
+.hint { margin: 0; padding: .6rem .9rem; color: var(--stone-700); font-size: 12px; }
+kbd { border: 1px solid var(--stone-400); border-bottom-width: 2px; border-radius: 3px;
+      padding: 0 .3em; color: var(--ink); }
+/* Every saving action, and the listing of what they kept, in one column.
+   The listing sits under the buttons that produce it rather than beside the
+   game, where it was a footnote nobody read. */
+#saves-menu { align-items: stretch; gap: .3rem; min-width: 15rem; }
+#saves-menu button { text-align: left; }
+#saves { margin: .3rem 0 0; padding: .4rem 0 0; border-top: 1px solid var(--stone-400);
+         color: var(--stone-600); font-size: 11px; font-family: inherit;
+         white-space: pre-wrap; overflow-y: auto; max-height: 8rem; }
+#panel { border: 0; width: 100%; height: 100%; background: var(--stone-100); }
+
+
+/* Bring your own copy.
+   Hidden unless the page has worked out that the server holds no game, so a
+   local run never sees it. */
+#bring-your-own { display: none; }
+
+body.bring-your-own:not(.running) #bring-your-own {
+  display: block;
+  margin: 1.5rem auto;
+  max-width: 32rem;
+  padding: 1.5rem;
+  border: 2px dashed var(--line, #555);
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+}
+
+body.bring-your-own:not(.running) #bring-your-own:hover,
+body.bring-your-own:not(.running) #bring-your-own:focus-visible,
+body.bring-your-own:not(.running) #bring-your-own.over {
+  border-color: var(--amber, #e76500);
+  outline: none;
+}
+
+/* Shown with the drop zone and gone once the game is running, like it. */
+#byo-options { display: none; }
+body.bring-your-own:not(.running) #byo-options {
+  display: block;
+  margin: -.7rem auto 0;
+  max-width: 32rem;
+  text-align: center;
+  font-size: .9em;
+}
+#byo-options label { cursor: pointer; color: var(--stone-700); }
+#byo-options input { vertical-align: -1px; margin-right: .3rem; }
+#byo-options .note { display: block; margin-top: .25rem; opacity: .6;
+                     font-size: .92em; line-height: 1.4; }
+
+#bring-your-own strong { display: block; margin-bottom: .4rem; }
+#bring-your-own p { margin: 0; opacity: .75; font-size: .9em; }
+
+/* How far the clue-book decode has got. cabinet.js sets --decode while it
+   runs and removes it when it is done, so the bar exists only while there is
+   something to say: the zone is a button the rest of the time. */
+#bring-your-own[style*="--decode"] { position: relative; overflow: hidden; }
+#bring-your-own[style*="--decode"]::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: 0; height: 2px;
+  width: var(--decode, 0%);
+  background: var(--amber, #e76500);
+  transition: width .2s linear;
+}
+
+/* Once a copy is accepted the zone stops asking and starts offering: the
+   dashes become a solid border around a power button, so the next thing to do
+   is where the last thing was rather than a small icon up in the header. */
+#byo-power { display: none; margin: 0 auto .6rem; color: var(--amber, #e76500); }
+#bring-your-own.chosen #byo-power { display: block; }
+body.bring-your-own:not(.running) #bring-your-own.chosen {
+  border-style: solid;
+  border-color: var(--amber, #e76500);
+}
+body.bring-your-own:not(.running) #bring-your-own.failed {
+  border-color: var(--red);
+}
+
+/* The screen has nothing to show until a copy is chosen and running. */
+body.bring-your-own:not(.running) #screen { display: none; }
