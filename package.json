@@ -1,0 +1,20 @@
+{
+  "name": "yendor3-ige",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Data extraction, Restoration panel and js-dos cabinet for Yendorian Tales III: The Tyrants of Thaine",
+  "scripts": {
+    "serve": "bun cabinet/serve.js",
+    "session": "cd cabinet && bun session.js",
+    "test": "cd cabinet && bun test",
+    "check:panel": "bun tools/panel_check.js",
+    "check:cabinet": "bun tools/cabinet_check.js"
+  },
+  "dependencies": {
+    "bun": "1.4.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

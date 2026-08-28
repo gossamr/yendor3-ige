@@ -1,0 +1,21 @@
+__pycache__
+*.swp
+.DS_Store
+node_modules
+.venv
+
+# Your copy of the game, and anything decoded out of it. Neither belongs in
+# this repository.
+game/*
+!game/.keep
+data/
+
+# Scratch: emulator captures, screenshots, session logs.
+tmp/*
+!tmp/.keep
+
+# Build output. `make all` regenerates data/ and web/ from game/ + tools/;
+# `make pages` writes the static site into build/.
+build/
+web/restoration.html
+web/panel.html
