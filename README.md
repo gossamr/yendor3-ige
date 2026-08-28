@@ -29,7 +29,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [ ] Map grid and object layer
 - [ ] Map registry and names
 - [ ] Legend markers
-- [ ] Text and prose
+- [x] Text and prose
 - [ ] Leveling and skills
 - [ ] Character roster
 - [ ] Artwork

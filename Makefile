@@ -38,8 +38,21 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: test-py test-js cabinet-deps serve serve-stock session clean patched \
-        patched-debug characters
+.PHONY: data test-py test-js cabinet-deps serve serve-stock session clean \
+        patched patched-debug characters
+
+## Decode WORLD.DAT into data/*.json.
+##
+## Every file the panel is built from is produced here, by a committed script,
+## from game/ plus the captures in tmp/. Each step is idempotent: re-running
+## this rewrites the same bytes. Nothing is hand-made, because a hand-made file
+## is one nobody can rebuild.
+##
+## The order is a real dependency chain, not a preference:
+##   pack_maps    draws every map page from the files    -> map_pages.json
+##   extract      decodes WORLD.DAT                      -> data/*.json
+data:
+	PYTHONPATH=tools $(PY) tools/extract.py
 
 ## Everything that can run without a browser
 test-py:
