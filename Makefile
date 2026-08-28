@@ -38,8 +38,12 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: test-js cabinet-deps serve serve-stock session clean patched \
+.PHONY: test-py test-js cabinet-deps serve serve-stock session clean patched \
         patched-debug characters
+
+## Everything that can run without a browser
+test-py:
+	$(PY) -m pytest tests/ -q
 
 test-js:
 	cd cabinet && $(BUN) test
