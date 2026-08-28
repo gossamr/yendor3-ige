@@ -8,14 +8,18 @@ This project runs *Yendorian Tales: The Tyrants of Thaine* (1997, Spectrum Pacif
 
 ## Running it locally
 
-You need `bun`. `yarn install` installs the pinned copy into `node_modules`.
+You need `python3`, and `bun` for the development server. `yarn install` installs the pinned copy of bun into `node_modules`.
 
     yarn install
     cd cabinet && bun install
+    uv venv && uv pip install capstone pytest
 
 Put your copy of the game in `game/`, then run:
 
-    bun cabinet/serve.js    # http://localhost:8080
+    make serve         # http://localhost:8080, against a patched copy
+    make serve-stock   # the game exactly as it shipped, including the introduction
+
+`make serve` builds the patched copy of the game first, if it is not already current. When the patched copy is current, the patcher confirms its hash and does nothing further.
 
 ## Reverse engineering
 
