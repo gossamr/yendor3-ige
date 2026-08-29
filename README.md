@@ -33,7 +33,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [ ] Leveling and skills
 - [ ] Character roster
 - [ ] Artwork
-- [ ] Tile artwork
+- [x] Tile artwork (which tile a map id draws, [docs/map.md](docs/map.md))
 - [ ] The world grid
 - [ ] Item record
 - [ ] Enemy record
