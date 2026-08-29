@@ -87,7 +87,7 @@
 
   const STORE = "restoration.ui";
   const DEFAULTS = {
-    active: "f1", monsterPick: null, spellClass: null, curveOpen: false,
+    active: "f2", monsterPick: null, spellClass: null, curveOpen: false,
     rawPages: false, mapPick: null, legendOpen: false, itemCategory: null,
     docPick: null,
   };
@@ -129,6 +129,203 @@
     }
     frag.append(text.slice(i));
     return frag;
+  }
+
+  /* --- F2 monsters ------------------------------------------------------ */
+
+  // The five the game's own Combat block prints. The two ranged rows it prints
+  // beneath them go with the rest of the ranged attack instead, where the
+  // reader can see what the creature actually throws.
+  const STATS = ["health", "accuracy", "dexterity", "absorption", "damage"];
+
+  // Creatures with the same code at offset 28 share a kind. The field takes
+  // eleven values across the creatures the game lists, and the game names two
+  // of them itself: INSECT and UNDEAD, from the enumeration its spells target.
+  // What the other nine group by is not decoded, and a bare number is not
+  // something a reader can do anything with, so those creatures say nothing
+  // here. Any one of the nine goes in this slot the day it is named.
+  const FAMILIES = { 9: "insect", 13: "undead" };
+
+  const REWARDS = ["experience", "gold", "food", "nuore"];
+
+  function statList(m, fields) {
+    const dl = el("dl", { className: "stats" });
+    for (const f of fields) {
+      const v = m[f];
+      // Ranged rows are blank on the game's own screen for melee creatures.
+      if (v === null || v === undefined) continue;
+      dl.append(el("dt", { textContent: titleCase(f.replace(/_/g, " ")) }),
+                el("dd", { className: "num", textContent: (v || 0).toLocaleString() }));
+    }
+    return dl;
+  }
+
+  /**
+   * The twelve effects, laid out the way the game lays them out: every effect
+   * on its own row whether or not the creature has it, so the shape of a
+   * creature's defenses reads at a glance and rows line up between creatures.
+   */
+  function effectTable(m) {
+    const immune = new Set(m.immune);
+    const table = el("table", { className: "effects" });
+    const body = el("tbody");
+    for (const effect of D.labels.effects) {
+      let value = "", cls = "none";
+      if (immune.has(effect)) { value = "Immune"; cls = "immune"; }
+      else if (effect === "MAGIC DAMAGE" && m.resist_magic) { value = "Resistant"; cls = "resist"; }
+      else if (effect === "PHYSICAL DAMAGE" && m.resist_physical) {
+        value = "Resistant"; cls = "resist";
+      }
+      body.append(el("tr", { className: cls }, [
+        el("th", { scope: "row", textContent: titleCase(effect) }),
+        el("td", { textContent: value || "—" }),
+      ]));
+    }
+    table.append(body);
+    return table;
+  }
+
+  function monsterDetail(m) {
+    const card = el("div", { className: "card" });
+
+    // The creature's own picture, at the size the game stores it, beside its
+    // name. It is the first thing that says which creature this is, so it goes
+    // above everything the creature does.
+    const title = el("div", {}, [
+      el("h3", { textContent: titleCase(m.name) }),
+      el("p", { className: "note",
+                textContent: [`Level ${m.level}`, FAMILIES[m.family]]
+                  .filter(Boolean).join(" \u00b7 ") }),
+    ]);
+    const art = (D.monster_art || {})[m.name];
+    card.append(el("div", { className: "monster-head" }, art ? [
+      el("img", {
+        className: "monster-art", src: art.src, alt: "",
+        width: art.width, height: art.height, loading: "lazy",
+      }), title,
+    ] : [title]));
+
+    // Combat and rewards pair up across the top whenever there is room for two
+    // columns, with the twelve effect rows below them at full width, since they are
+    // the tallest block, so putting them beside a short list wastes the space.
+    const top = el("div", { className: "detail-top" });
+    top.append(el("div", {}, [el("h5", { textContent: "Combat" }), statList(m, STATS)]));
+    top.append(el("div", {}, [el("h5", { textContent: "Rewards" }), statList(m, REWARDS)]));
+    card.append(top);
+    card.append(el("h5", { textContent: "Immunities and resistances",
+                           style: "margin-top:1.1rem" }));
+    card.append(effectTable(m));
+    // What a resistance is worth, which the game's own page does not say. Each
+    // one answers a damage type and halves damage of that type; a melee swing
+    // carries no type and is never halved. Two types share the physical row,
+    // and one of them is carried by nothing in the game.
+    const worth = [];
+    if (m.resist_shot) worth.push("Halves a shot.");
+    if (m.resist_magic) worth.push("Halves a damage spell.");
+    if (worth.length) worth.push("A melee swing is unaffected.");
+    if (m.resist_unmatched) {
+      worth.push("The physical row also stands for a damage type nothing in "
+        + "the game carries, so that part of it never applies.");
+    }
+    if (worth.length) {
+      card.append(el("p", { className: "note", style: "margin:.5rem 0 0",
+                            textContent: worth.join(" ") }));
+    }
+
+    if (m.ranged) {
+      card.append(el("h5", { textContent: "Ranged attack", style: "margin-top:1.1rem" }));
+      const shot = el("div", { className: "ranged" });
+      const art = (D.projectile_art || {})[m.ranged.picture];
+      if (art) {
+        shot.append(el("img", {
+          className: "shot-art", src: art.src, alt: "",
+          width: art.width, height: art.height, loading: "lazy",
+        }));
+      }
+      // The chance is how often the creature shoots rather than closing to
+      // melee, so it belongs beside the two numbers that say what the shot
+      // does when it lands.
+      const rows = [["Fires on", `${m.ranged.chance}% of turns`],
+                    ["Accuracy", m.ranged_accuracy],
+                    ["Damage", m.ranged_damage]];
+      const dl = el("dl", { className: "stats" });
+      for (const [label, value] of rows) {
+        if (value === null || value === undefined) continue;
+        dl.append(el("dt", { textContent: label }),
+                  el("dd", { className: "num", textContent: String(value) }));
+      }
+      shot.append(dl);
+      card.append(shot);
+    }
+
+    if (m.attacks && m.attacks.length) {
+      card.append(el("h5", { textContent: "Special attacks", style: "margin-top:1.1rem" }));
+      const chips = el("div", { className: "chips" });
+      for (const atk of m.attacks) {
+        chips.append(el("span", {
+          className: "chip attack",
+          title: "Decoded from the record",
+          textContent: titleCase(atk),
+        }));
+      }
+      card.append(chips);
+      // What the steal takes is in the record, not on the game's own screen.
+      if (m.steal) {
+        card.append(el("p", { className: "note", style: "margin:.5rem 0 0",
+          textContent: `Steals ${m.steal.toLocaleString()} gold.` }));
+      }
+    }
+
+    // The rest of the record (the flag words, the attack ids, the sound
+    // numbers, where a hit graphic lands) is in data/enemies.json and
+    // docs/combat.md. Everything a creature does with it is already on this
+    // card, and the numbers themselves are not something a player can act on.
+    return card;
+  }
+
+  // The 72nd record is the game's own placeholder, named NOT USED: every field
+  // zero, no screen of its own to check against, and a sprite field of 0 that
+  // points at the tree the creature artwork happens to start after. The decode
+  // keeps it, because it is what the record says; the clue book does not list
+  // it and neither does this.
+  const CREATURES = D.enemies.filter((m) => m.listed);
+
+  // Level first, because that is the order the table itself is built in: every
+  // other statistic is grown from it, so walking the list by level walks it
+  // from the wasp outside the first town to the thing at the end of the game.
+  const byLevel = (a, b) => a.level - b.level || (a.name < b.name ? -1 : 1);
+
+  function renderMonsters(root) {
+    root.textContent = "";
+    const hits = CREATURES.filter((m) => matches(m.name)).sort(byLevel);
+    if (!hits.length) return root.append(el("p", { className: "empty", textContent: "No creature matches." }));
+    if (!hits.some((m) => m.name === ui.monsterPick)) ui.monsterPick = hits[0].name;
+
+    const pick = el("select", { className: "picker" });
+    pick.setAttribute("aria-label", "Creature");
+    for (const m of hits) {
+      pick.append(el("option", {
+        value: m.name, selected: m.name === ui.monsterPick,
+        textContent: titleCase(m.name),
+      }));
+    }
+
+    // Choosing redraws the card and nothing else, so the select keeps focus
+    // and the arrow keys walk the list without the page moving underneath.
+    const detail = el("div");
+    const show = () => {
+      detail.textContent = "";
+      detail.append(monsterDetail(hits.find((m) => m.name === ui.monsterPick)));
+    };
+    pick.onchange = () => { ui.monsterPick = pick.value; show(); };
+    show();
+
+    root.append(el("div", { className: "picker-row" }, [
+      pick,
+      el("span", { className: "note",
+                   textContent: `${hits.length} creature${hits.length === 1 ? "" : "s"}` }),
+    ]));
+    root.append(detail);
   }
 
   /* --- trainer ---------------------------------------------------------- */
@@ -2697,6 +2894,7 @@
 
   const TABS = [
     { key: "f1", label: "Maps", render: renderMaps },
+    { key: "f2", label: "Monsters", render: renderMonsters },
     { key: "f3", label: "Spells", render: renderSpells },
     { key: "f5", label: "Items", render: renderItems },
     // Last, and only when the cabinet booted the hooked emulator for it.

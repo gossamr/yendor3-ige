@@ -36,7 +36,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Tile artwork (which tile a map id draws, [docs/map.md](docs/map.md))
 - [x] The world grid (one plane of 800 by 168 cells, and which cells the party may stand on, [docs/map.md](docs/map.md))
 - [x] Item record (every row of a clue book page, the properties and effects tables, and the book's own filing, [docs/items.md](docs/items.md))
-- [ ] Enemy record
+- [x] Enemy record (every offset except one is named, [docs/monsters.md](docs/monsters.md))
 - [x] Spell record (every row of a clue book page, and which classes may cast, [docs/spells.md](docs/spells.md))
 - [ ] NPCs, conversation, shops
 - [ ] Combat
