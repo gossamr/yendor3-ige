@@ -38,7 +38,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Item record (every row of a clue book page, the properties and effects tables, and the book's own filing, [docs/items.md](docs/items.md))
 - [x] Enemy record (every offset except one is named, [docs/monsters.md](docs/monsters.md))
 - [x] Spell record (every row of a clue book page, and which classes may cast, [docs/spells.md](docs/spells.md))
-- [ ] NPCs, conversation, shops
+- [ ] NPCs, conversation, shops (the records, the services and the prices are decoded, what gates a service and what a shop stocks are not, [docs/shops.md](docs/shops.md))
 - [x] Combat (the resolver, damage, resistance and rewards, [docs/combat.md](docs/combat.md))
 - [x] Save file (the seven sections, the seek that addresses them, the header's position and clock, and the seen grid, [docs/saves.md](docs/saves.md))
 - [x] Map transitions (the cell event table, and the destination of each door, [docs/map.md](docs/map.md))
