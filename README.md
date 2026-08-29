@@ -41,7 +41,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [ ] NPCs, conversation, shops
 - [ ] Combat
 - [ ] Save file
-- [ ] Map transitions
+- [x] Map transitions (the cell event table, and the destination of each door, [docs/map.md](docs/map.md))
 
 ## License
 

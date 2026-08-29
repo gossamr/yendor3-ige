@@ -23,6 +23,7 @@ import struct
 from pathlib import Path
 
 import labels as L
+import markers
 import sections as S
 
 # --- text ------------------------------------------------------------------
@@ -87,6 +88,20 @@ LEGEND_RECORD = 26
 LEGEND_RULER = "1234567890123456789012345"
 
 
+# The clue book's maps are drawn pictures, not tile grids: the 37 x 64 table
+# at 0x8CDDE holds tile-placement coordinates into a graphics bank, so there is
+# nothing to decode into cells. The pages are captured from the running game
+# instead (tools/capture_maps.js) and indexed by the title read off each frame.
+# Each page as its tile grid plus the handful of 8x8 tiles it is drawn with:
+# about 2 kB a page, against 6 kB for a PNG of the same thing, and the panel
+# draws it at whatever size it has rather than scaling a bitmap.
+_MAP_PAGES = ROOT / "data" / "map_pages.json" if (ROOT := Path(__file__).resolve().parent.parent) else None
+MAP_PAGES = json.loads(_MAP_PAGES.read_text()) if _MAP_PAGES and _MAP_PAGES.exists() else []
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pack_maps import WALKED_LINKS as _WALKED_LINKS  # noqa: E402
+import links as K  # noqa: E402
+
 def extract_legend(d: S.Directory) -> list[str]:
     """The map legend labels, which stop well short of the section's end.
 
@@ -120,6 +135,18 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         "walkthrough_index": walkthrough_sections(pages),
         "maps": extract_maps(d),
         "legend": extract_legend(d),
+        "map_pages": MAP_PAGES,
+        "map_marks": markers.by_page(d.world, MAP_PAGES),
+        "map_unplaced": markers.unplaced(d.world, MAP_PAGES),
+        # Where each door goes, keyed "<map>|<legend line>" so the panel can
+        # look a legend line up directly. Decoded: section 28 places the
+        # doors and DS:0xBA95 says where each one lands (`tools/links.py`).
+        # The walked links are merged over the top for what the decode does
+        # not reach: Saxon's ship is a script cell rather than a door, so no
+        # door record carries its destination.
+        "map_links": {**K.by_label(d, MAP_PAGES,
+                                   markers.by_page(d.world, MAP_PAGES)),
+                      **{f"{a}|{b}": v for (a, b), v in _WALKED_LINKS.items()}},
         "labels": {
             "effects": L.EFFECTS,
             "monster_stats": L.MONSTER_STATS,
