@@ -1517,6 +1517,339 @@
     return dialog;
   }
 
+  /* --- F3 spells -------------------------------------------------------- */
+
+  const MAGIC_CLASSES = ["MONK", "ALCHEMIST", "PALADIN", "MAGE", "DRUID", "MARKSMAN"];
+
+  /** What a spell does, in one word: the thing you scan the list for. */
+  // Harm and heal are both a magnitude; the color says which, so the chip only
+  // needs the number. PERFECT HEALTH stores 9999 to mean "all health points".
+  function spellKind(s) {
+    if (s.damage) {
+      return {
+        label: String(s.damage), cls: "harm", title: `${s.damage} damage`,
+        magnitude: s.damage, noun: "damage",
+      };
+    }
+    const text = (s.description || "").toLowerCase();
+    // Lean on the decoded restorative flag rather than on the prose naming
+    // "health": Great Heal and Restore Health both say "restore N points",
+    // and matching on the word alone filed them as utility spells.
+    if (s.restorative && /restore|heal/.test(text)) {
+      const all = s.amount >= 9999;
+      return {
+        label: all ? "Full" : (s.amount ? String(s.amount) : "Heal"),
+        cls: "heal",
+        title: all ? "restores all health" : `restores ${s.amount} health`,
+        // "All health" has no figure to divide, so it has no rate either.
+        magnitude: all ? null : s.amount,
+        noun: "healing",
+      };
+    }
+    if (/remove|cure|relieve/.test(text)) return { label: "Cure", cls: "heal" };
+    return { label: "Utility", cls: "util" };
+  }
+
+  // What a point of each resource buys you. MP regenerates and nuore does not,
+  // so the two rates answer different questions and are both worth showing.
+  const rate = (n) => (n >= 1 ? n.toFixed(1) : n.toFixed(2));
+
+  function efficiency(s, kind) {
+    if (!kind.magnitude) return [];
+    return [["MP", s.mp], ["nuore", s.nuore]]
+      .filter(([, cost]) => cost > 0)
+      .map(([unit, cost]) => ({
+        text: `${rate(kind.magnitude / cost)}/${unit}`,
+        title: `${kind.magnitude} ${kind.noun} for ${cost} ${unit}`,
+      }));
+  }
+
+  // How far the spell reaches, as distinct from when it may be cast. This is
+  // where the ranged sense lives. A reach of "in hand to hand" is deliberately
+  // absent: it never says anything the Melee condition has not already said.
+  const REACH = {
+    "at a distance": "Ranged",
+    "in a 3x3 area": "3x3 area",
+    "in a straight line": "In a line",
+  };
+
+  // The game's three casting conditions, shortened. "OUT OF HAND TO HAND" is a
+  // restriction on when you may cast, that you must be out of combat, and not a
+  // targeting mode. The two rows are nested, not independent: every spell
+  // reaching "at a distance", "in a 3x3 area" or "in a straight line" is cast
+  // out of melee, and every spell reaching "in hand to hand" is cast in it. So
+  // this row is the coarse condition and REACH is the pattern within it.
+  const WHEN = {
+    "in hand to hand": "Melee",
+    "out of hand to hand": "OOC",
+    anytime: "Anytime",
+  };
+
+  // What survives of the target once side and scope have said their part: the
+  // restrictions that genuinely narrow it.
+  function targetQualifier(s) {
+    if (!s.target) return null;
+    const bits = [];
+    if (s.target.includes("visible")) bits.push("Visible");
+    // A spell restricted to one kind of creature is named by that kind: the
+    // restriction is the whole point, so the word carries it on its own.
+    if (s.target.includes("undead")) bits.push("Undead");
+    if (s.target.includes("insect")) bits.push("Insect");
+    return bits.join(", ") || null;
+  }
+
+  /** Single target or area, and what it lands on. */
+  function spellReach(s) {
+    if (!s.scope) return null;
+    // Shape only. Coloring this by side duplicated the harm/heal color: every
+    // damaging spell targets monsters and every healing one targets the party,
+    // across all 98 without exception, so the side was never new information.
+    return {
+      shape: s.scope === "all" ? "all" : "single",
+      title: [s.scope, s.target].filter(Boolean).join(" "),
+    };
+  }
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  /** A small inline SVG on a 12x12 grid, sized in ems so it tracks the text. */
+  function icon(cls, build) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 12 12");
+    svg.setAttribute("class", `icon ${cls}`);
+    svg.setAttribute("aria-hidden", "true");
+    build({
+      dot: (cx, cy, r) => {
+        const c = document.createElementNS(SVG_NS, "circle");
+        c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", r);
+        c.setAttribute("fill", "currentColor");
+        svg.append(c);
+      },
+      area: (x, y, w, h, opacity) => {
+        const r = document.createElementNS(SVG_NS, "rect");
+        r.setAttribute("x", x); r.setAttribute("y", y);
+        r.setAttribute("width", w); r.setAttribute("height", h);
+        r.setAttribute("fill", "currentColor");
+        r.setAttribute("opacity", opacity);
+        svg.append(r);
+      },
+      line: (d, width = 1.1) => {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", width);
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        svg.append(path);
+      },
+    });
+    return svg;
+  }
+
+  /** A scroll seen edge-on: a sheet between two rolled ends. */
+  function scrollIcon() {
+    return icon("scroll", ({ area, line }) => {
+      // The sheet is filled rather than outlined: drawn as two side edges it
+      // reads as an H-bar at this size.
+      area(2.6, 3, 6.8, 6, .38);
+      line("M2 3h8M2 9h8", 2.2);   // the rolls, top and bottom
+    });
+  }
+
+  // How many the spell lands on. The dots are literal: one target, or many.
+  const SCOPE_ICONS = {
+    single: ({ dot }) => dot(6, 6, 2.4),
+    all: ({ dot }) => { dot(3.4, 4.2, 1.7); dot(8.6, 4.2, 1.7); dot(6, 8.6, 1.7); },
+  };
+
+  const elementClass = (name) =>
+    name.toLowerCase().replace(" damage", "").replace(/\s+/g, "-");
+
+  const elementNote = (name) => {
+    const plain = name.toLowerCase().replace(" damage", "");
+    return `monsters immune to ${plain} take none`;
+  };
+
+  // What the damage is made of. Drawn as shapes, not colors: color in this
+  // panel already means harm-or-heal and friend-or-foe, and a third color
+  // scale on top of those would collide with both. These inherit the damage
+  // color, so the element adds a channel without spending one.
+  //
+  // The vocabulary is the game's own: these are the very bits a monster's
+  // immunity word is tested against, so "cold" here and "immune to cold" on the
+  // monster page are the same flag.
+  const ELEMENT_ICONS = {
+    FIRE: ({ line }) => line("M6 1.5c2.2 2.2.8 3.4 2 4.7 1.2 1.3 1.6 2.2 1.6 3"
+      + "a3.6 3.6 0 0 1-7.2 0c0-1.9 1.3-3.1 2.4-4.1 1.2-1 1.5-2.2 1.2-3.6z"),
+    COLD: ({ line }) => line("M6 1.2v9.6M2 3.6l8 4.8M10 3.6l-8 4.8"),
+    ELECTRIC: ({ line }) => line("M7.2 1.2 3.2 6.4h2.6l-1 4.4 4-5.4H6.2z"),
+    POWER: ({ dot, line }) => {
+      dot(6, 6, 1.5);
+      line("M6 1.2v1.8M6 9v1.8M1.2 6h1.8M9 6h1.8"
+        + "M2.6 2.6l1.3 1.3M8.1 8.1l1.3 1.3M9.4 2.6 8.1 3.9M3.9 8.1 2.6 9.4", .9);
+    },
+    POISON: ({ line }) => line("M6 1.3c2.5 3 3.8 4.5 3.8 6A3.8 3.8 0 0 1 2.2 7.3"
+      + "c0-1.5 1.3-3 3.8-6z"),
+    DISEASE: ({ dot, line }) => {
+      line("M6 1.6a4.4 4.4 0 1 0 .01 0z", 1);
+      dot(4.6, 5, 1); dot(7.4, 5.4, .9); dot(5.8, 7.8, .9);
+    },
+    "MAGIC DAMAGE": ({ line }) =>
+      line("M6 1.2 7.1 4.9 10.8 6 7.1 7.1 6 10.8 4.9 7.1 1.2 6 4.9 4.9z"),
+  };
+
+  // The shape the spell covers, drawn as the shape itself.
+  const REACH_ICONS = {
+    "in a 3x3 area": ({ dot }) => {
+      for (const y of [2.6, 6, 9.4]) for (const x of [2.6, 6, 9.4]) dot(x, y, 1.15);
+    },
+    "in a straight line": ({ dot }) => {
+      for (const x of [2.4, 6, 9.6]) dot(x, 6, 1.3);
+    },
+    "at a distance": ({ dot, line }) => {
+      dot(1.8, 6, 1.3);
+      line("M4.2 6h5.4M7.6 3.9 9.9 6l-2.3 2.1");
+    },
+  };
+
+  function castRow(s) {
+    const wrap = el("div", { className: "cast" });
+    for (const c of s.classes) {
+      const on = !ui.spellClass || c.class === ui.spellClass;
+      const tag = el("span", {
+        className: "cast-class" + (on ? "" : " dim"),
+        title: c.source === "SCROLL"
+          ? `${titleCase(c.class)} level ${c.level}, learned from a scroll`
+          : c.source === "TRAINING"
+            ? `${titleCase(c.class)} level ${c.level}, learned by training`
+            : `${titleCase(c.class)} knows this from the start`,
+        textContent: `${titleCase(c.class)} ${c.level}`,
+      });
+      // A scroll-taught spell is not granted on leveling; the level is only
+      // the gate. Mark it with the item you need rather than the word.
+      if (c.source === "SCROLL") tag.append(scrollIcon());
+      wrap.append(tag);
+    }
+    return wrap;
+  }
+
+
+  function renderSpells(root) {
+    root.textContent = "";
+
+    // Filter by caster: the question the clue book's class column exists to
+    // answer is "what can this character cast, and at what level".
+    //
+    // Each chip carries its own count, under whatever is in the search box. So
+    // the row says where the hits are before you press anything, so search for
+    // "fire" and the classes that have none read (0).
+    const found = D.spells.filter((s) => s.listed
+      && (matches(s.name) || matches(s.description)));
+    const countFor = (c) => (c
+      ? found.filter((s) => s.classes.some((x) => x.class === c)).length
+      : found.length);
+
+    const filter = el("div", { className: "chipbar" });
+    const addClass = (label, value) => {
+      const b = el("button", { type: "button", className: "toggle" });
+      b.append(document.createTextNode(label));
+      b.append(el("span", { className: "count", textContent: ` (${countFor(value)})` }));
+      b.setAttribute("aria-pressed", String(ui.spellClass === value));
+      b.onclick = () => { ui.spellClass = value; renderSpells(root); };
+      filter.append(b);
+    };
+    addClass("All classes", null);
+    for (const c of MAGIC_CLASSES) addClass(titleCase(c), c);
+
+    // What the costs are worth, folded into this tab rather than given one of
+    // its own: it is the same six classes seen a second way, and it is scoped
+    // by the chips below rather than by a second row of controls. It sits
+    // above them because it is a view of the whole tab, not a filter within
+    // it, and closed, which it is by default, it is one chip.
+    const costs = el("details", { className: "curve-box" });
+    costs.open = ui.curveOpen;
+    costs.addEventListener("toggle", () => { ui.curveOpen = costs.open; });
+    costs.append(el("summary", { textContent: "Efficiency" }));
+    // The analysis gets its own ground so it reads as a panel the control
+    // opened, rather than as more of the spell tab, while the control itself
+    // stays the size of its label.
+    const costBody = el("div", { className: "curve-body" });
+    appendCurve(costBody, ui.spellClass);
+    costs.append(costBody);
+    root.append(costs);
+    root.append(filter);
+
+    let hits = found;
+    if (ui.spellClass) {
+      hits = hits.filter((s) => s.classes.some((c) => c.class === ui.spellClass));
+      // Sorted by the level that class needs, which is the order you learn them.
+      hits.sort((a, b) => level(a) - level(b) || a.name.localeCompare(b.name));
+    }
+    function level(s) {
+      const c = s.classes.find((x) => x.class === ui.spellClass);
+      return c ? c.level : 99;
+    }
+
+    if (!hits.length) {
+      return root.append(el("p", { className: "empty", textContent: "No spell matches." }));
+    }
+
+    for (const s of hits) {
+      const card = el("div", { className: "spell" });
+      const head = el("div", { className: "spell-head" });
+      const name = el("h4");
+      name.append(highlight(titleCase(s.name)));
+      if (ui.spellClass) {
+        head.append(el("span", { className: "lvl", textContent: `L${level(s)}` }));
+      }
+      head.append(name);
+      const kind = spellKind(s);
+      const element = (s.element || [])[0];
+      const chip = el("span", {
+        className: `chip ${kind.cls}${element ? " " + elementClass(element) : ""}`,
+        title: element ? `${kind.title}, ${elementNote(element)}` : (kind.title || ""),
+        textContent: kind.label,
+      });
+      const glyph = element && ELEMENT_ICONS[element];
+      if (glyph) chip.append(icon("element-glyph", glyph));
+      head.append(chip);
+      const reach = spellReach(s);
+      if (reach) {
+        const chip = el("span", { className: "chip scope", title: reach.title });
+        chip.append(icon("scope", SCOPE_ICONS[reach.shape]));
+        head.append(chip);
+      }
+      card.append(head);
+
+      const meta = el("div", { className: "spell-meta" });
+      const qualifier = targetQualifier(s);
+      if (qualifier) meta.append(el("span", { textContent: qualifier }));
+      // Reach and when are drawn from the same enumeration, so for most spells
+      // they say the same thing; REACH only maps the ones that add something.
+      const shape = REACH_ICONS[s.reach];
+      if (shape) {
+        const span = el("span", { className: "reach", title: REACH[s.reach] });
+        span.append(icon("shape", shape));
+        span.append(document.createTextNode(REACH[s.reach]));
+        meta.append(span);
+      }
+      if (s.when) meta.append(el("span", { textContent: WHEN[s.when] || s.when }));
+      meta.append(el("span", { className: "num", textContent: `${s.mp} MP` }));
+      if (s.nuore) meta.append(el("span", { className: "num", textContent: `${s.nuore} nuore` }));
+      for (const e of efficiency(s, kind)) {
+        meta.append(el("span", { className: "eff", title: e.title, textContent: e.text }));
+      }
+      card.append(meta);
+
+      if (s.classes.length) card.append(castRow(s));
+      const desc = el("p", { className: "spell-desc" });
+      desc.append(highlight(sentenceCase(s.description)));
+      card.append(desc);
+      root.append(card);
+    }
+  }
+
   /* --- F1 maps, F4 classes, F5 items ------------------------------------ */
 
   /** Draw a map page onto a canvas from its grid and tileset.
@@ -2012,6 +2345,144 @@
     return card;
   }
 
+  /* --- casting curve ---------------------------------------------------- */
+
+  // Two things the clue book cannot tell you by listing spells in order.
+  //
+  // First: as a class levels, which newly available damage spell gives the most
+  // damage per point of each resource. These are usually different spells. The
+  // two rates rank the 70 damage spells almost independently (Spearman 0.24),
+  // because nuore cost grows as roughly the two-thirds power of MP, so the
+  // biggest spells are dear in MP and cheap in nuore.
+  //
+  // Second: the game never names a tier, but its level ladder has a shape --
+  // every level to 20, then even levels only to 28, then a dense band at the
+  // top. That, not the damage numbers, is where the tiers are.
+
+  const damageSpells = () => D.spells.filter((s) => s.listed && s.damage);
+
+  /** Every level at which this class's best rate actually improves. */
+  function upgrades(klass, cost) {
+    const mine = [];
+    for (const s of damageSpells()) {
+      for (const c of s.classes) if (c.class === klass) mine.push({ level: c.level, s });
+    }
+    mine.sort((a, b) => a.level - b.level);
+    // Only the steps: repeating an unchanged best for twenty levels is noise.
+    let best = 0;
+    const out = [];
+    for (const { level, s } of mine) {
+      const r = s.damage / s[cost];
+      if (r > best) { best = r; out.push({ level, s, rate: r }); }
+    }
+    return out;
+  }
+
+  const TIER_BANDS = [
+    { from: 1, to: 20, ladder: "every level" },
+    { from: 21, to: 29, ladder: "even levels only" },
+    { from: 30, to: 40, ladder: "every level again" },
+  ];
+
+  const minLevel = (s) => Math.min(...s.classes.map((c) => c.level));
+
+  /**
+   * Appends the casting curve, for one class or for all six.
+   *
+   * Scoped by the same chips that filter the list above it, so the tab has one
+   * class control rather than two that look alike and mean different things.
+   */
+  function appendCurve(root, only = null) {
+    const shown = only ? [only] : MAGIC_CLASSES;
+    root.append(el("p", { className: "note", textContent:
+      "Derived from the decoded costs, not from anything the clue book prints. "
+      + "The two rates disagree: the spell that gives the most damage per MP is "
+      + "rarely the one that gives the most per nuore." }));
+
+    for (const [cost, unit] of [["mp", "MP"], ["nuore", "nuore"]]) {
+      root.append(el("h4", { className: "curve-sub",
+                             textContent: `Best damage per ${unit}, as you level` }));
+      // The shape of each list is itself the finding, so say what it is rather
+      // than leaving the reader to notice that one of them stops early.
+      const last = shown
+        .map((k) => upgrades(k, cost).at(-1))
+        .filter(Boolean)
+        .map((st) => st.level);
+      const peak = Math.max(...last);
+      const who = only ? `A ${titleCase(only)}` : "Every class";
+      root.append(el("p", { className: "note", textContent: cost === "mp"
+        ? `${who} reaches its most MP-efficient damage spell by level `
+          + `${peak}, and never improves on it. Nothing learned in the next `
+          + `thirty levels delivers more damage per point of MP than the `
+          + `cheap spell it started with: the big spells buy reach and `
+          + `volume, not efficiency.`
+        : `Nuore efficiency does keep improving, all the way to level ${peak}. `
+          + `This is the opposite shape to MP, and it is why the two columns `
+          + `name different spells: nuore cost grows far more slowly than MP `
+          + `as spells get bigger.` }));
+      const grid = el("div", { className: "curve" });
+      for (const klass of shown) {
+        const steps = upgrades(klass, cost);
+        if (!steps.length) continue;
+        const col = el("div", { className: "curve-class" });
+        col.append(el("h4", { textContent: titleCase(klass) }));
+        for (const st of steps) {
+          const row = el("div", { className: "curve-step" });
+          row.append(el("span", { className: "lvl", textContent: `L${st.level}` }));
+          row.append(el("span", { className: "curve-name",
+                                  textContent: titleCase(st.s.name) }));
+          // Two decimals here, unlike the spell cards: consecutive steps can
+          // differ by hundredths, and rounding them to a tie would make an
+          // upgrade look like no change at all.
+          row.append(el("span", { className: "eff",
+            title: `${st.s.damage} damage for ${st.s[cost]} ${unit}`,
+            dataset: { rate: st.rate.toFixed(4) },
+            textContent: `${st.rate.toFixed(2)}/${unit}` }));
+          col.append(row);
+        }
+        grid.append(col);
+      }
+      root.append(grid);
+    }
+
+    root.append(el("h4", { className: "curve-sub", textContent: "Implicit tiers" }));
+    root.append(el("p", { className: "note", textContent:
+      "Damage rises smoothly with level, so the tiers are not in the numbers. "
+      + "They are in the ladder: which levels carry new spells at all." }));
+    const table = el("table", { className: "tiers" });
+    const head = el("tr");
+    for (const h of ["Levels", "Ladder", "Spells", "Damage", "Damage per MP"]) {
+      head.append(el("th", { textContent: h }));
+    }
+    const thead = el("thead");
+    thead.append(head);
+    table.append(thead);
+    const body = el("tbody");
+    for (const band of TIER_BANDS) {
+      const group = damageSpells()
+        .filter((s) => minLevel(s) >= band.from && minLevel(s) <= band.to);
+      if (!group.length) continue;
+      const rates = group.map((s) => s.damage / s.mp);
+      const dmg = group.map((s) => s.damage);
+      const levels = group.map(minLevel);
+      const tr = el("tr");
+      for (const cell of [
+        `${Math.min(...levels)}\u2013${Math.max(...levels)}`,
+        band.ladder,
+        String(group.length),
+        `${Math.min(...dmg)}\u2013${Math.max(...dmg)}`,
+        `${rate(Math.min(...rates))}\u2013${rate(Math.max(...rates))}`,
+      ]) tr.append(el("td", { textContent: cell }));
+      body.append(tr);
+    }
+    table.append(body);
+    root.append(table);
+    root.append(el("p", { className: "note", textContent:
+      "The spread in the last column is the point: early on, picking the "
+      + "efficient spell matters by a factor of seven. By the top band every "
+      + "option costs about what it deals, and the choice stops mattering." }));
+  }
+
   /* --- markdown --------------------------------------------------------- */
   //
   // Enough of the format for the guides in the repository root and no more:
@@ -2226,6 +2697,7 @@
 
   const TABS = [
     { key: "f1", label: "Maps", render: renderMaps },
+    { key: "f3", label: "Spells", render: renderSpells },
     { key: "f5", label: "Items", render: renderItems },
     // Last, and only when the cabinet booted the hooked emulator for it.
     ...(TRAINER ? [{ key: "tr", label: "Trainer", render: renderTrainer }] : []),

@@ -136,6 +136,259 @@ def _png_entry(w: int, h: int, png: bytes) -> dict:
             "src": "data:image/png;base64," + base64.b64encode(png).decode()}
 
 
+# --- spells ----------------------------------------------------------------
+
+SPELL_NAME_LEN = 21
+# Verified against the game's own F3 screen for all 98 spells the clue book
+# lists: MP and nuore match exactly at these offsets. Damage was confirmed
+# separately against the numbers each spell's own description quotes.
+SPELL_DAMAGE = 46
+# The spell's own level: what a scroll requires before a class can learn it.
+# Exact on all 23 spells the screens show with a SCROLL row, and equal to the
+# lowest class level for 95 of the 98 listed spells; the three exceptions are
+# training-only, where the table teaches it earlier or later than the spell's
+# nominal level.
+SPELL_LEVEL = 22
+# Offset 34 is an amount whose meaning follows the spell's effect. For the
+# healing family it is the health restored, verified against the game's own
+# prose: HEAL 10, IMPROVE HEALTH 50, PARTY HEAL 100, RESTORE HEALTH 200, GREAT
+# HEAL 500, PERFECT HEALTH 9999 ("all health points"). HARDY PARTY is the one
+# mismatch: the record says 600 where the prose says 650, the same kind of
+# content discrepancy as ERADICATE's damage. Damage spells also carry a nonzero
+# value here, so it is only read as healing for the healing family.
+# Offset 74 is the spell's element, and it uses the *same bit layout as the
+# enemy immunity word* at ENEMY offset 100, which is the whole point of it:
+# the game checks one against the other. Verified per bit against the prose
+# (74.3 FIRE, 74.2 COLD, 74.1 ELECTRIC, 74.0 POWER, 74.15 POISON, 74.14
+# DISEASE), and never set on a spell that does no damage. Zero means untyped,
+# which no immunity stops.
+SPELL_ELEMENT = 74
+
+SPELL_AMOUNT = 34
+# Offset 32 is 18 for every healing and every cure spell and for nothing that
+# does damage, so it marks the restorative family.
+SPELL_FAMILY = 32
+SPELL_FAMILY_RESTORATIVE = 18
+SPELL_HEAL_ALL = 9999          # PERFECT HEALTH: "all health points"
+
+SPELL_FIELDS = {"mp": 24, "nuore": 26, "damage": SPELL_DAMAGE,
+                "level": SPELL_LEVEL}
+
+# The AFFECTS and WHEN rows, read off the F3 printer's own branches rather
+# than off the screen. The AFFECTS row is built at image 0x0776E and the WHEN
+# row at image 0x07889, and between them they test four words of the record
+# and nothing else: 72 carries scope, what the spell acts on and how far it
+# reaches; 76 selects two of the nouns; 30 tells INSECT from UNDEAD; and 70
+# bit 10 is the out-of-melee restriction. Those are the offsets, not a fitted
+# mapping: each branch below is one `test` in the printer, in its order.
+#
+# Offset 76 is the spell's blow word, which the combat model already reads for
+# its bit 13 (`tools/combat_model.py`, measured against a live creature): one
+# word, two readings, because the printer asks what kind of blow it is in
+# order to say what the blow reaches.
+SPELL_AFFECTS_WORD = 72
+SPELL_BLOW = 76
+SPELL_KIND = 30
+SPELL_WHEN_WORD = 70
+
+# The printer leaves the AFFECTS row blank when any of the low eight bits of
+# 72 is set: the nine utility spells (MARK OR RETURN, the two MINER'S LIGHTs,
+# SAFE UNLOCK and the rest) print nothing there.
+SPELL_NO_AFFECTS = 0x00FF
+# `test [affects], 6` on 76 or `test [affects], 0x5E00` on 72, and either makes
+# the row read ALL rather than ONE.
+SPELL_SCOPE_ALL_76, SPELL_SCOPE_ALL_72 = 0x0006, 0x5E00
+SPELL_CHARACTER = 0xC000        # 72: the row says CHARACTER, not MONSTER
+SPELL_VISIBLE = 0x0200          # 72: ... VISIBLE MONSTERS
+SPELL_NARROW = 0x0100           # 76: with 30, narrows the noun
+SPELL_KIND_INSECT, SPELL_KIND_UNDEAD = 9, 13
+SPELL_PLURAL = 0x5C00           # 72: the noun takes an S
+# The reach phrases, in the order the printer tests them. Melee is two bits
+# because 0x1000 and 0x2000 both mean it, and the WHEN row reads the same pair.
+SPELL_MELEE = 0x3000
+SPELL_REACH = ((SPELL_MELEE, "in hand to hand"),
+               (0x0800, "in a straight line"),
+               (0x0400, "in a 3x3 area"),
+               (0x0100, "at a distance"))
+SPELL_OUT_OF_MELEE = 0x0400     # 70: WHEN says out of hand to hand
+# Who may learn a spell from a scroll: a six-bit mask, read in spell_classes.
+SPELL_SCROLL_MASK = 68
+
+SPELL_UNKNOWN = [c for c in range(22, 80, 2)
+                if c not in (*SPELL_FIELDS.values(), SPELL_AMOUNT,
+                             SPELL_ELEMENT, SPELL_FAMILY, SPELL_SCROLL_MASK,
+                             SPELL_AFFECTS_WORD, SPELL_BLOW,
+                             SPELL_KIND, SPELL_WHEN_WORD)]
+
+
+def spell_affects(rec: bytes) -> tuple[str | None, str | None, str | None, str]:
+    """The AFFECTS and WHEN rows: scope, what it acts on, reach, and when.
+
+    Follows image 0x0776E branch for branch. Two of them stop the row early
+    and are easy to miss: a blank AFFECTS row when any low bit of 72 is set,
+    and the VISIBLE branch, which prints its noun and jumps straight to the
+    WHEN row, so a VISIBLE spell never takes a plural or a reach phrase.
+    """
+    affects = u16(rec, SPELL_AFFECTS_WORD)
+    select = u16(rec, SPELL_BLOW)
+    kind = u16(rec, SPELL_KIND)
+    when = ("out of hand to hand" if u16(rec, SPELL_WHEN_WORD) & SPELL_OUT_OF_MELEE
+            else "in hand to hand" if affects & SPELL_MELEE else "anytime")
+    if affects & SPELL_NO_AFFECTS:
+        return None, None, None, when
+
+    wide = select & SPELL_SCOPE_ALL_76
+    scope = "all" if wide or affects & SPELL_SCOPE_ALL_72 else "one"
+    narrow = select & SPELL_NARROW
+    if affects & SPELL_CHARACTER:
+        noun, stop = "character", False
+    elif wide or affects & SPELL_VISIBLE:
+        noun = ("visible undeads" if narrow and kind == SPELL_KIND_UNDEAD
+                else "visible monsters")
+        stop = True
+    elif narrow and kind == SPELL_KIND_INSECT:
+        noun, stop = "insect", False
+    elif narrow and kind == SPELL_KIND_UNDEAD:
+        noun, stop = "undead", False
+    else:
+        noun, stop = "monster", False
+    if stop:
+        return scope, noun, None, when
+    if affects & SPELL_PLURAL:
+        noun += "s"
+    reach = next((phrase for bit, phrase in SPELL_REACH if affects & bit), None)
+    return scope, noun, reach, when
+
+# The clue book's own readings, kept as the cross-check on the decode above
+# rather than as the source: `tests/test_extract.py` asserts that the first
+# three decoded class rows reproduce every screen exactly. Still the source of
+# four fields (scope, target, reach and when) which no field of the record
+# and no flat table in either file determines, so they ship as observations,
+# kept separate from the decoded fields around them.
+# When each class is *taught* a spell, straight from the executable.
+#
+# `DS:0xb8b5 + 0x50 * class` is twenty four-byte slots, one per even level from
+# 2 to 40, holding up to two 1-based spell numbers each; the six rows are monk,
+# alchemist, paladin, mage, druid, marksman (see docs/leveling.md). That covers
+# every TRAINING row the F3 screens show (165 of them, all exact), so those
+# rows are decoded rather than read.
+#
+# It does not cover the other 59: a class that can learn a spell but is not in
+# this table gets it from a scroll, at the spell's own level (offset 22), or
+# free when that level is 1. Which classes those are is still only known from
+# the screens, so those rows stay marked as observations.
+def _training_levels() -> dict:
+    table = LV.spells_by_level(LV.load())
+    out: dict[tuple[str, int], int] = {}
+    for klass, rows in table.items():
+        for level, ids in rows.items():
+            for spell_id in ids:
+                out[(klass.upper(), spell_id - 1)] = level
+    return out
+
+
+TRAINING_LEVELS = _training_levels()
+
+# The two spells each class already knows at level 1, at DS:0xb89d: two
+# 1-based spell numbers per class, immediately before the training table.
+FREE_SPELLS_TABLE = 0xB89D
+# Most significant class first: monk 0x20 down to marksman 0x01.
+SCROLL_BITS = [0x20, 0x10, 0x08, 0x04, 0x02, 0x01]
+MAGIC_CLASSES = ["MONK", "ALCHEMIST", "PALADIN", "MAGE", "DRUID", "MARKSMAN"]
+# The clue book's page has room for three class rows and prints the first
+# three in this order, so 22 rows exist that it cannot show. The decode keeps
+# them; `tests/test_extract.py` checks the first three against the screens.
+SPELL_CLASS_ROWS = 3
+
+
+def _free_spells(exe: bytes) -> dict[str, set[int]]:
+    at = L.DGROUP + FREE_SPELLS_TABLE
+    return {name: {v for v in struct.unpack_from("<2H", exe, at + k * 4) if v}
+            for k, name in enumerate(MAGIC_CLASSES)}
+
+
+def spell_classes(exe: bytes, rec: bytes, index: int, level: int) -> list[dict]:
+    """Every class that can cast a spell, how, and at what level.
+
+    Follows the printer at image 0x7660, which asks three things per class in
+    order: is it one of the two the class starts with (DS:0xb89d), is it in the
+    class's training row (DS:0xb8b5), and failing both, is the class's bit set
+    in the spell's scroll mask. That order matters: a class in the mask that
+    also trains the spell shows as TRAINING.
+    """
+    free = _free_spells(exe)
+    number = index + 1
+    mask = u16(rec, SPELL_SCROLL_MASK)
+    out = []
+    for k, name in enumerate(MAGIC_CLASSES):
+        if number in free[name]:
+            out.append({"class": name, "level": 1, "source": None})
+        elif (taught := TRAINING_LEVELS.get((name, index))) is not None:
+            out.append({"class": name, "level": taught, "source": "TRAINING"})
+        elif mask & SCROLL_BITS[k]:
+            out.append({"class": name, "level": level, "source": "SCROLL"})
+    return out
+
+
+# The description index: (start_line, line_count) u16 pairs into the 39-column
+# description stream. Entry 0 is a sentinel, so spell i uses pair i+1.
+SPELL_TEXT_INDEX = 3
+
+
+def extract_spells(d: S.Directory) -> list[dict]:
+    recs = d[S.SPELLS].records(d.world, S.SPELL_RECORD)
+    # Which spells the clue book's F3 section pages through, from the same
+    # list registry the item categories come out of. It names 98 of the 107
+    # records (the eight ERROR placeholders and SHARD OF ICE are the nine it
+    # leaves out) and agrees with every screen the capture walk reached.
+    book = set(I.book_list(d.exe, I.SPELL_LIST))
+    st = d.spell_text_section()
+    stream = d.world[st.offset:st.end]
+    n_lines = st.size // S.SPELL_TEXT_COLS
+
+    def line(i: int) -> str:
+        return text(stream[i * S.SPELL_TEXT_COLS:(i + 1) * S.SPELL_TEXT_COLS])
+
+    idx_sec = d.rest(SPELL_TEXT_INDEX)
+    pairs = struct.unpack_from(f"<{idx_sec.size // 2}H", d.world, idx_sec.offset)
+
+    out = []
+    for i, rec in enumerate(recs):
+        start, count = pairs[(i + 1) * 2], pairs[(i + 1) * 2 + 1]
+        assert start + count <= n_lines, f"spell {i} text runs past the section"
+        s: dict = {
+            "index": i,
+            "name": text(rec[:SPELL_NAME_LEN]).strip(),
+            "description": reflow([line(start + k) for k in range(count)]),
+        }
+        s.update({k: u16(rec, off) for k, off in SPELL_FIELDS.items()})
+        # Eight records are placeholders named ERROR, and their bytes are
+        # leftovers, and decoding a scroll mask out of them invents spells.
+        s["classes"] = ([] if s["name"] == "ERROR"
+                        else spell_classes(d.exe, rec, i, s["level"]))
+        # The AFFECTS row names the scope, what a spell acts on and, for most
+        # spells, how far it reaches. The reach is kept apart from the noun,
+        # or every card repeats itself ("one monster in hand to hand" beside a
+        # "melee" chip).
+        s["scope"], s["target"], s["reach"], s["when"] = spell_affects(rec)
+        # The raw amount and the family flag, not an interpretation: offset 34
+        # is health restored for a heal, but plain magnitude elsewhere (FEET OF
+        # FEATHERS carries 5, its dexterity bonus). Naming it "healing" here
+        # would bake a guess into the data; the panel decides from the effect.
+        element = u16(rec, SPELL_ELEMENT)
+        s["element"] = [n for bit, n in sorted(IMMUNITY_BITS.items(), reverse=True)
+                        if element >> bit & 1]
+        s["restorative"] = rec[SPELL_FAMILY] == SPELL_FAMILY_RESTORATIVE
+        s["amount"] = u16(rec, SPELL_AMOUNT) or None
+        # The blow word, which says both what a resistant creature halves and
+        # what the AFFECTS row reaches.
+        s["blow"] = u16(rec, SPELL_BLOW)
+        s["listed"] = i + 1 in book
+        s["unknown"] = {f"u{off}": u16(rec, off) for off in SPELL_UNKNOWN}
+        out.append(s)
+    return out
+
+
 # --- walkthrough -----------------------------------------------------------
 
 def extract_walkthrough(d: S.Directory) -> list[dict]:
@@ -421,6 +674,7 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     payload = {
         "monster_art": monster_art(d, pics, enemies),
         "projectile_art": projectile_art(d, pics, enemies),
+        "spells": extract_spells(d),
         "walkthrough": pages,
         "walkthrough_index": walkthrough_sections(pages),
         "maps": extract_maps(d),
@@ -467,6 +721,7 @@ if __name__ == "__main__":
     import sys
 
     p = build(sys.argv[1] if len(sys.argv) > 1 else "game")
+    print(f"spells        {len(p['spells']):>4}")
     print(f"walkthrough   {len(p['walkthrough']):>4} pages, "
           f"{len(p['walkthrough_index'])} sections")
     print(f"maps          {len(p['maps']):>4}")
