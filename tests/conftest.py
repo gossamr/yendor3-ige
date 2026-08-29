@@ -10,6 +10,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import pytest  # noqa: E402
 
+import extract  # noqa: E402
+import items as I  # noqa: E402
 import sections as S  # noqa: E402
 
 GAME = ROOT / "game"
@@ -18,3 +20,18 @@ GAME = ROOT / "game"
 @pytest.fixture(scope="session")
 def directory():
     return S.load(GAME)
+
+
+@pytest.fixture(scope="session")
+def data(directory):
+    return {
+        "enemies": extract.extract_enemies(directory),
+        "spells": extract.extract_spells(directory),
+        "walkthrough": extract.extract_walkthrough(directory),
+        "maps": extract.extract_maps(directory),
+        "legend": extract.extract_legend(directory),
+        "items": extract.extract_items(directory),
+        "enhancers": I.Items(directory).enhancers(),
+        "transports": I.Items(directory).transports(),
+        "map_pages": extract.MAP_PAGES,
+    }

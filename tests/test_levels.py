@@ -1,0 +1,1365 @@
+"""Leveling tables, checked against evidence the decoder cannot fake.
+
+The strongest anchor is the spell-by-level table: it was found in the
+executable's data segment, while `data/spells.json`'s per-class levels were
+read off the game's own F4 screens by `tools/solve_spells.py`. The two were
+produced by completely different routes, so agreement is real corroboration.
+"""
+from pathlib import Path
+
+import pytest
+
+import levels as L
+from disasm import Exe
+
+
+def test_experience_ladder_shape():
+    exe = L.load()
+    table = L.experience_table(exe)
+    # 89 entries, levels 2..90, matching the clamp the level-up code applies.
+    assert sorted(table) == list(range(2, 91))
+    assert L.LEVEL_CAP == 90
+
+    # Monotonic where it is real, then a wall of sentinels.
+    real = {lvl: xp for lvl, xp in table.items() if xp < 99_999_999}
+    assert sorted(real) == list(range(2, 41))
+    values = [real[lvl] for lvl in sorted(real)]
+    assert values == sorted(values)
+    assert all(table[lvl] == 99_999_999 for lvl in range(41, 91))
+
+
+def test_experience_ladder_endpoints():
+    table = L.experience_table(L.load())
+    # Read as packed BCD these are round decimal numbers a designer would pick;
+    # read as integers they would not be, which is what fixes the encoding.
+    assert table[2] == 680
+    assert table[10] == 42_000
+    assert table[40] == 10_800_000
+
+
+def test_promotions_bracket_the_ladder():
+    tier2, tier3 = L.promotion_levels(L.load())
+    assert (tier2, tier3) == (10, 30)
+    assert 2 < tier2 < tier3 < L.reachable_levels(L.experience_table(L.load()))
+
+
+def test_bonus_points_curve():
+    # 13% of base charisma, rounded to nearest, capped at 15.
+    assert L.bonus_points(45) == 6      # the lowest creation roll
+    assert L.bonus_points(60) == 8      # the highest
+    assert L.bonus_points(112) == 15    # the first value that reaches the cap
+    assert L.bonus_points(999) == L.BONUS_CAP
+
+
+def test_magic_gain_follows_the_class_blends():
+    # Non-casters gain nothing however good their attributes are.
+    for code in (1, 2, 3):
+        assert L.magic_gain(code, 999, 999) == 0
+    # A promoted class levels exactly like its base tier.
+    assert L.magic_gain(7, 60, 40) == L.magic_gain(27, 60, 40)
+    # Mage is pure intelligence, monk pure wisdom, and they mirror each other.
+    assert L.magic_gain(7, 60, 0) == L.magic_gain(4, 0, 60)
+    # The 75/25 pair are mirrors too.
+    assert L.magic_gain(5, 40, 60) == L.magic_gain(8, 60, 40)
+
+
+def test_spell_table_agrees_with_what_the_game_printed(data):
+    # The F4 transcription is the game's content and is not distributed.
+    printed = Path(__file__).resolve().parent.parent / "observed" / "observed_spells.json"
+    if not printed.exists():
+        pytest.skip("no observed_spells.json; the screen transcriptions are not distributed")
+    exe = L.load()
+    table = L.spells_by_level(exe)
+    by_class = {
+        cls.upper(): {sid - 1: lvl for lvl, ids in per.items() for sid in ids}
+        for cls, per in table.items()
+    }
+
+    # Every TRAINING row the F4 screens showed is in the table at the same
+    # level. Read them from the capture rather than from data["spells"], which
+    # is now decoded from this very table and would check nothing.
+    import json as _json
+
+    observed = _json.loads(printed.read_text())
+    index = {s["name"]: s["index"] for s in data["spells"]}
+    rows = 0
+    for name, seen in observed.items():
+        for entry in seen["classes"]:
+            if entry["source"] != "TRAINING":
+                continue
+            rows += 1
+            assert by_class[entry["class"]][index[name]] == entry["level"], name
+    assert rows == 165
+
+    # F4 prints at most three classes per spell, so it hid rows on spells with
+    # more, 17 of them. The decode reads the table itself, so it has them all
+    # and nothing in it is missing from data["spells"] any more.
+    by_index = {s["index"]: s for s in data["spells"]}
+    hidden = [
+        (cls, sid)
+        for cls, spells in by_class.items()
+        for sid in spells
+        if not any(c["class"] == cls for c in by_index[sid]["classes"])
+    ]
+    assert hidden == []
+    printed = sum(len(v["classes"]) for v in observed.values())
+    decoded = sum(len(by_index[index[n]]["classes"]) for n in observed)
+    assert decoded - printed == 22
+
+
+def test_spells_only_arrive_on_even_levels():
+    table = L.spells_by_level(L.load())
+    assert set(table) == {"monk", "alchemist", "paladin", "mage", "druid", "marksman"}
+    for per_level in table.values():
+        assert all(lvl % 2 == 0 and 2 <= lvl <= 40 for lvl in per_level)
+        assert all(1 <= len(ids) <= 2 for ids in per_level.values())
+
+
+# --- creation-time derivation ----------------------------------------------
+
+def test_shipped_party_is_reproduced_exactly():
+    """The strongest check available: the four PRE-CREATED PARTY characters in
+    WORLD.DAT were generated by the creation code, so rebuilding all fourteen
+    of their derived fields from their attributes alone, across four different
+    classes, is a test the blend tables cannot pass by accident.
+    """
+    import skills
+
+    party = skills.shipped_party()
+    assert [w["name"] for w in party] == ["SQUIRE", "DIANA", "YENDOR", "JOSEPHINE"]
+    assert {w["class"] for w in party} == {"merchant", "monk", "mage", "druid"}
+    assert skills.check() == []
+
+
+def test_creation_writes_both_stat_columns_identically():
+    import skills
+
+    assert all(w["columns_identical"] for w in skills.shipped_party())
+
+
+def test_blends_are_whole_percentages_of_attributes():
+    import skills
+
+    for name, blend in skills.BLEND.items():
+        assert sum(weight for _, weight in blend) == 100, name
+
+
+def test_a_flat_zero_skill_can_never_grow():
+    """FLAT zeroes are the class restriction: the level-up's stat-add helper
+    returns early on a zero field, so those skills stay zero for all 40 levels.
+    """
+    import skills
+
+    zeroed = {(skill, cls) for skill, per in skills.FLAT.items()
+              for cls, value in per.items() if value == 0}
+    assert ("thievery", 4) in zeroed      # monk
+    assert ("linguistics", 1) in zeroed   # fighter
+    assert ("repair", 6) in zeroed        # paladin
+    # Non-casters get casting 0 the same way, via the dispatch rather than FLAT.
+    for code in (1, 2, 3):
+        assert skills.casting_and_magic(code, 99, 99) == (0, 0)
+
+
+def test_charisma_parity_is_fixed_and_worth_four_points():
+    """Charisma climbs by exactly 2 a level, so the creation roll fixes its
+    parity for the whole career: an even roll only ever samples even
+    charisma. A 60 therefore beats a 59 only at the trainings where it lands
+    exactly on a step of the 13%-rounded payout.
+    """
+    career = lambda roll: [L.bonus_points(roll + 2 * (n - 1)) for n in range(1, 40)]
+
+    sixty, fifty_nine = career(60), career(59)
+    assert sum(sixty) - sum(fifty_nine) == 4
+    assert (sum(sixty), sum(fifty_nine)) == (482, 478)
+
+    # Exactly four trainings differ, and by one point each.
+    differ = [n + 1 for n, (a, b) in enumerate(zip(sixty, fifty_nine), 1) if a != b]
+    assert differ == [5, 9, 24, 28]
+    assert all(sixty[n - 2] - fifty_nine[n - 2] == 1 for n in differ)
+
+    # Those are exactly the even steps of the payout between 60 and the cap.
+    steps = [c for c in range(41, 130) if L.bonus_points(c) != L.bonus_points(c - 1)]
+    assert steps == [43, 50, 58, 66, 74, 81, 89, 97, 104, 112]
+    assert [c for c in steps if c >= 60 and c % 2 == 0] == [66, 74, 104, 112]
+
+    # Every roll in the creation window is worth more than the one below it,
+    # and an odd-to-even step is always worth more than an even-to-odd one.
+    totals = {r: sum(career(r)) for r in range(45, 61)}
+    gains = {r: totals[r] - totals[r - 1] for r in range(46, 61)}
+    assert all(g > 0 for g in gains.values())
+    assert all(gains[r] >= 4 for r in gains if r % 2 == 0)
+    assert all(gains[r] == 3 for r in gains if r % 2 == 1)
+
+
+# --- shop prices -----------------------------------------------------------
+
+def test_service_prices_share_one_formula():
+    # base x NPC factor x current level, from the quote routine at 0x091eb.
+    assert L.service_cost(L.SERVICE_BASE["train"], 1, 1) == 100
+    assert L.service_cost(L.SERVICE_BASE["train"], 39, 1) == 3900
+    assert L.training_cost(39, 1) == L.service_cost(L.SERVICE_BASE["train"], 39, 1)
+    assert L.bonus_point_cost(39, 1) == L.service_cost(L.SERVICE_BASE["bonus_points"], 39, 1)
+    # Every training from 1 to 40 at a factor-1 trainer.
+    assert sum(L.training_cost(lvl, 1) for lvl in range(1, 40)) == 78_000
+
+
+def test_condition_weights_and_the_incapacitating_three():
+    assert len(L.CONDITIONS) == 9
+    # Nine conditions occupy bits 15 down to 7; cure clears exactly those.
+    bits = [bit for _, bit, _, _f in L.CONDITIONS]
+    assert bits == [1 << n for n in range(15, 6, -1)]
+    assert sum(bits) == 0xFF80
+
+    assert L.cure_base(0xFF80) == 275
+    assert L.cure_base(0) == 0
+    # A full restore of a dead, fully afflicted character.
+    assert L.restore_base(0xFF80, hurt=True, dead=True) == 395
+
+    # The mask that takes a character out of play (no training, no turn in
+    # the attack round, no chance of being targeted) is the three
+    # incapacitating conditions plus the dead bit, which is what corroborates
+    # the bit ordering.
+    named = {name: bit for name, bit, _w, _f in L.CONDITIONS}
+    assert (named["stoning"] | named["frozen"] | named["paralyze"]
+            | L.DEAD_BIT) == L.INCAPACITATED
+
+    # The bit order comes from the resist chain, which pairs each bit with the
+    # protection word that defends against it: nine bits, nine distinct fields,
+    # covering the whole PROTECTIONS array.
+    fields = sorted(f for _n, _b, _w, f in L.CONDITIONS)
+    assert fields == [L.PROTECTIONS + 2 * i for i in range(9)]
+
+
+def test_bartering_sets_a_spread_not_a_discount():
+    # The ladder from image 0x0a6aa, and the two scalings at 0x0a6f8.
+    assert L.barter_spread(54) == 55 and L.barter_spread(55) == 45
+    assert L.barter_spread(64) == 45 and L.barter_spread(65) == 35
+    assert L.barter_spread(100) == 25 and L.barter_spread(101) == 15
+    assert L.barter_spread(999) == 2
+
+    # Buying and selling move together and symmetrically about the value.
+    for skill in (0, 60, 65, 150):
+        spread = L.barter_spread(skill)
+        assert L.buy_price(1000, skill) + L.sell_price(1000, skill) == 2000
+        assert L.buy_price(1000, skill) == 1000 + 10 * spread
+
+    # A merchant starts exactly one rung above the field, worth 5 skill points.
+    assert L.barter_spread(65) != L.barter_spread(60)
+    assert L.barter_spread(60 + 5) == L.barter_spread(65)
+    # The best rung more than doubles what a sale fetches over the worst.
+    assert L.sell_price(1000, 150) > 2 * L.sell_price(1000, 40)
+
+
+def test_locked_skills_make_attributes_worthless():
+    import skills
+
+    # Wisdom drives 10% of mapping for a fighter and nothing else, because
+    # fighters are locked out of linguistics and have no magic.
+    assert skills.usable_blend_weight(1, "wisdom") == 0.1
+    assert skills.usable_blend_weight(3, "wisdom") == 0.1   # rogue, likewise
+
+    # Charisma drives no usable skill for the three whose bartering is fixed
+    # or locked: it still sets bonus points, but no blend reads it.
+    skill_dead = [c for c in range(1, 10)
+                  if skills.usable_blend_weight(c, "charisma") == 0]
+    assert skill_dead == [4, 7, 9]                          # monk, mage, marksman
+
+    # Dexterity is the broadest attribute, and locks narrow it.
+    assert skills.usable_blend_weight(1, "dexterity") == 4.6
+    assert skills.usable_blend_weight(4, "dexterity") == 3.6  # monk: no thievery
+    assert skills.usable_blend_weight(6, "dexterity") == 3.8  # paladin: no repair
+
+
+# --- combat --------------------------------------------------------------
+
+def test_the_universal_skill_check():
+    # skill + 5 x (level - difficulty), floored at 5, against rand(100).
+    assert L.skill_check_chance(50, 10, 10) == 50
+    assert L.skill_check_chance(50, 15, 10) == 75      # five levels = 25 points
+    assert L.skill_check_chance(10, 1, 30) == 5        # the floor
+    assert L.skill_check_odds(100, 1, 1) == 1.0        # 100 is a certainty
+    # rand(100) draws 0..127 and folds 101..127 back onto 1..27, so the floor
+    # of 5 succeeds 11 times in 128 rather than 6 in 101.
+    assert L.skill_check_odds(0, 1, 99) == 11 / 128
+
+
+def test_the_random_helper_is_not_uniform():
+    """`rand(n)` at image 0x174ac masks to n's bit width and folds once.
+
+    The raw draw is 0..2**k-1 for the smallest power of two above n, and a
+    draw that still overshoots has n subtracted from it, so 1..2**k-1-n are
+    reached twice and everything else once. It is flat only when n is one
+    less than a power of two.
+    """
+    # rand(3) and rand(15) are exact powers of two minus one, so they are flat.
+    assert L.roll_odds(3, 0) == 1 / 4
+    assert L.roll_odds(3, 1) == 2 / 4
+    assert L.roll_odds(15, 7) == 8 / 16
+    # rand(55) draws 0..63 and folds 56..63 onto 1..8.
+    assert L.roll_odds(55, 0) == 1 / 64
+    assert L.roll_odds(55, 1) == 3 / 64
+    assert L.roll_odds(55, 8) == 17 / 64
+    assert L.roll_odds(55, 9) == 18 / 64
+    assert L.roll_odds(55, 55) == 1.0
+    assert L.roll_odds(55, 200) == 1.0     # clamped, never over one
+    assert L.roll_odds(55, -1) == 0.0
+    # Every outcome is accounted for exactly once.
+    for n in (3, 15, 55, 100):
+        steps = [L.roll_odds(n, t) - L.roll_odds(n, t - 1) for t in range(n + 1)]
+        assert sum(steps) == 1.0
+        assert all(s > 0 for s in steps)
+
+
+def test_strength_and_dexterity_bonuses_start_at_zero():
+    # A fifth of the excess over 72, and creation never rolls above 60.
+    assert L.attribute_bonus(60) == 0
+    assert L.attribute_bonus(72) == 0
+    assert all(L.attribute_bonus(v) == 0 for v in range(45, 73))
+    assert L.attribute_bonus(75) == 1
+    assert L.attribute_bonus(100) == 6
+    # The first value that buys a single point of damage.
+    assert next(v for v in range(61, 200) if L.attribute_bonus(v)) == 75
+
+
+def test_weapon_type_selects_exactly_one_skill():
+    assert set(L.WEAPON_SKILL.values()) == {"slashing", "bashing", "polearm"}
+    # The flags are distinct bits, so a weapon matches at most one skill --
+    # and one matching none adds no accuracy at all.
+    assert sum(L.WEAPON_SKILL) == 0x7000
+    assert len(L.WEAPON_SKILL) == 3
+
+
+def test_combat_fields_are_named():
+    named = L.STAT_NAMES
+    assert named[6:11] == ["ranged_accuracy", "ranged_damage",
+                           "accuracy", "damage", "absorption"]
+    assert named[11] == "health" and named[12] == "magic_points"
+
+
+def test_skills_are_derived_only_when_attributes_are_rolled():
+    """The blend recipes are a character-generation device, not a live link.
+
+    The derivation at 0x13af3 has exactly three call sites, and each is
+    immediately preceded by a call to the attribute roll at 0x14e20, so
+    skills are recomputed only when the attributes themselves are re-rolled.
+    Nothing outside the creation screen ever calls either one.
+    """
+    import struct
+
+    HEADER, ROLL, DERIVE = 0x4000, 0x14E20, 0x13AF3
+    exe = L.load()
+
+    def near_callers(target):
+        out = []
+        for i in range(HEADER, HEADER + 0x1DDA0 - 3):
+            if exe[i] == 0xE8:
+                rel = struct.unpack_from("<h", exe, i + 1)[0]
+                if (i - HEADER) + 3 + rel == target:
+                    out.append(i - HEADER)
+        return out
+
+    def far_callers(target):
+        out = []
+        for i in range(HEADER, HEADER + 0x1DDA0 - 4):
+            if exe[i] == 0x9A:
+                off = exe[i + 1] | (exe[i + 2] << 8)
+                seg = exe[i + 3] | (exe[i + 4] << 8)
+                if seg * 16 + off == target:
+                    out.append(i - HEADER)
+        return out
+
+    rolls, derives = near_callers(ROLL), near_callers(DERIVE)
+    assert len(derives) == 3
+    assert far_callers(ROLL) == [] and far_callers(DERIVE) == []
+    # `call roll` is 3 bytes, so a derive at r+3 means the pair is adjacent.
+    assert derives == [r + 3 for r in rolls]
+
+
+def test_the_attack_resolver():
+    """margin = accuracy - absorption, and it is both the hit chance and the
+    fraction of damage delivered. From image 0x1586f.
+    """
+    # A negative margin never lands.
+    assert L.attack_hit_odds(40, 50) == 0.0
+    assert L.attack_damage(100, 40, 50) == 0
+    # The roll reaches 55, so a margin of 55 can no longer miss.
+    assert L.attack_hit_odds(105, 50) == 1.0
+    assert L.attack_hit_odds(104, 50) < 1.0
+    # It is rand(55), which folds: a margin of 1 lands three times in 64,
+    # not twice in 56.
+    assert L.attack_hit_odds(51, 50) == 3 / 64
+    assert L.attack_hit_odds(63, 50) == 22 / 64
+    # The margin is the damage percentage, floored at 1 on a landed hit.
+    assert L.attack_damage(100, 80, 50) == 30
+    assert L.attack_damage(100, 150, 50) == 100
+    assert L.attack_damage(100, 250, 50) == 200      # over 100%, no cap
+    assert L.attack_damage(1, 51, 50) == 1           # rounds to 0, floored to 1
+    # Twenty points of margin roughly triples output at the low end.
+    assert L.attack_expected(100, 70, 50) / L.attack_expected(100, 60, 50) > 3.0
+
+
+def test_creatures_pick_their_victim_at_random():
+    """The target picker at image 0x125b3, read out of the executable.
+
+    It rolls one number over the four party slots and rerolls while the slot
+    is empty or its occupant is INCAPACITATED. Nothing in it weights the
+    choice, which is what says the game has no front or back rank.
+    """
+    code = [(i.address, i.mnemonic, i.op_str) for i in Exe().disasm(0x125B3, 21)]
+    ops = {(m, o) for _a, m, o in code}
+    roll = 0x125B4  # the instruction both rerolls jump back to
+
+    # One roll over the four slots, indexing PARTY_TABLE by it.
+    assert ("mov", f"ax, {L.TARGET_ROLL}") in ops
+    assert ("add", f"ax, {L.PARTY_TABLE:#x}") in ops
+    # Reroll on an empty slot, and on an incapacitated occupant, and on
+    # nothing else: those are the only two backward branches in the routine.
+    assert ("test", f"word ptr [si + {L.OFF_CONDITIONS:#x}], {L.INCAPACITATED:#x}") in ops
+    back = [(m, o) for _a, m, o in code
+            if m.startswith("j") and o == hex(roll)]
+    assert back == [("je", hex(roll)), ("jne", hex(roll))]
+    # And no comparison against a slot number anywhere in it.
+    assert not [o for _a, m, o in code if m == "cmp"]
+
+
+def test_shoot_and_attack_are_one_routine_in_two_modes():
+    """`A` and `S` reach the same routine under opposite guards, read out of
+    the key jump table at image 0x777 rather than transcribed.
+    """
+    exe = Exe()
+    table = Exe.file_of(L.KEY_HANDLERS)
+
+    def handler(key):
+        at = table + (ord(key) - 0x20) * 2
+        return int.from_bytes(exe.data[at:at + 2], "little")
+
+    def body(key, count=6):
+        return [(i.mnemonic, i.op_str) for i in exe.disasm(handler(key), count)]
+
+    guard = ("test", f"word ptr [{L.STATE_WORD:#x}], {L.HAND_TO_HAND:#x}")
+    call = ("lcall", "0xc13, 0xe")  # far pointer to ATTACK_ROUTINE
+    assert Exe.image_of(0xC13, 0xE) == L.ATTACK_ROUTINE
+
+    attack, shoot = body("A"), body("S")
+    assert attack[0] == guard and shoot[0] == guard
+    # Opposite senses: one runs when a creature has closed, the other when not.
+    assert attack[1][0] == "je" and shoot[1][0] == "jne"
+    assert attack[1][1] == shoot[1][1]        # and both bail to the same place
+    # Only the shoot path marks the action a party volley.
+    assert call in attack and call in shoot
+    assert ("or", f"word ptr [{L.MODE_WORD:#x}], {L.VOLLEY:#x}") in shoot
+    assert not [o for m, o in attack if m == "or"]
+
+
+def test_absorption_is_armour_class_and_compounds():
+    """Absorption is subtracted from accuracy before the roll, so it cuts the
+    hit chance and the damage together, roughly quadratic rather than linear.
+    """
+    taken = lambda absorb: L.attack_expected(20, 80, absorb)
+    # Twenty points of armor cuts incoming damage about threefold, not by 20.
+    assert 3.0 < taken(40) / taken(60) < 4.0
+    # And it keeps compounding as the margin closes.
+    assert taken(60) / taken(70) > taken(40) / taken(50)
+    # Matching the attacker's accuracy all but stops them.
+    assert taken(80) < taken(20) / 100
+
+
+def data_by_name(data, name):
+    return next(i for i in data["items"] if i["name"] == name)
+
+
+def test_items_supply_damage_and_defence_and_little_accuracy(data):
+    """The equipment assembly adds a weapon's word 0 to damage and a piece of
+    armor's to absorption. Only nine items add anything to a character at all,
+    and the largest combat skill among them is the 30 the three weapons of
+    Light carry, against weapon damage that reaches 250.
+    """
+    weapons = [i for i in data["items"] if i["category"] == "WEAPONS"]
+    armor = [i for i in data["items"] if i["category"] == "ARMOR / RINGS"]
+
+    damage = [i["fields"]["damage"] for i in weapons if i["fields"].get("damage")]
+    assert min(damage) == 1 and max(damage) == 250
+
+    absorb = sorted((i["absorption"] for i in armor if i["absorption"]), reverse=True)
+    # Eight armor slots (three at +0x146, five at +0x152 in the record).
+    assert sum(absorb[:8]) > 150
+
+    # ADDS is an effects-table row, and the game prints it only on the armor
+    # and weapon pages: an enhancer's +3 is stated on its own rules page.
+    adds = [i for i in data["items"] if i["fields"].get("adds")]
+    assert len(adds) == 9
+    skills = {"SLASHING", "BASHING", "POLEARM", "PROJECTILE", "CASTING"}
+    to_skill = [int(row.split()[0]) for i in adds for row in i["fields"]["adds"]
+                if row.split(maxsplit=1)[1] in skills]
+    assert len(to_skill) == 8
+    # The three weapons of Light carry the largest, and each carries three rows
+    # where the clue book's page shows only the first.
+    assert max(to_skill) == 30
+    assert data_by_name(data, "SWORD OF LIGHT")["fields"]["adds"] == [
+        "10 STRENGTH", "10 DEXTERITY", "30 SLASHING"]
+
+    # The attribute route is worse still: strength 100 is +6 damage against a
+    # weapon supplying up to 250.
+    assert L.attribute_bonus(100) == 6
+
+
+def test_accuracy_returns_accelerate_up_to_the_no_miss_margin():
+    """Below margin 55 a point of accuracy buys hit chance and damage at once,
+    so each is worth more than the last. At 55 the hit chance saturates and
+    every further point is worth a flat 1% of the damage stat.
+
+    The one exception is the ninth point. rand(55) reaches 1..8 twice as often
+    as anything else, so those eight margins each clear two outcomes and the
+    ninth clears one: the returns dip once at margin 8 and then resume.
+    """
+    gain = lambda margin: (L.attack_expected(100, 50 + margin + 1, 50)
+                           - L.attack_expected(100, 50 + margin, 50))
+
+    assert gain(8) < gain(7)                      # the fold, and only here
+    for band in (range(0, 8), range(8, 54)):
+        rising = [gain(m) for m in band]
+        assert rising == sorted(rising)
+    assert gain(54) > 1.8                         # the point that reaches 55
+    assert all(abs(gain(m) - 1.0) < 1e-9 for m in range(55, 120))
+    # That last point before saturation is worth about twice one after it.
+    assert gain(54) / gain(60) > 1.8
+
+
+def test_the_hard_caps():
+    assert L.STAT_CAP == 999 and L.POOL_CAP == 9999
+    assert L.BONUS_CAP == 15 and L.bonus_points(112) == 15
+    assert L.bonus_points(111) < 15                      # 112 is the first
+    assert L.bonus_points(999) == L.bonus_points(112)    # nothing above helps
+    # A skill check of 100 is certain, and 55 margin can no longer miss.
+    assert L.skill_check_odds(100, 1, 1) == L.skill_check_odds(500, 1, 1) == 1.0
+    assert L.attack_hit_odds(105, 50) == L.attack_hit_odds(900, 50) == 1.0
+    # But damage past the 55 margin keeps climbing: a soft cap, not a hard one.
+    assert L.attack_damage(100, 900, 50) > L.attack_damage(100, 105, 50)
+
+
+def test_bonus_points_are_committed_to_the_stored_column():
+    """The bonus screen is bracketed by two block copies: `revert` (stored ->
+    working) on entry and `commit` (working -> stored) on exit. That is what
+    makes spent points permanent, and what lets the level-up's +2 reach the
+    column the game plays with. Assert the pair is still wired that way.
+    """
+    import struct
+
+    HEADER, COMMIT, REVERT, SCREEN = 0x4000, 0xA631, 0xA659, 0x09D1C
+    exe = L.load()
+
+    def near_callers(target):
+        out = []
+        for i in range(HEADER, HEADER + 0x1DDA0 - 3):
+            if exe[i] == 0xE8:
+                rel = struct.unpack_from("<h", exe, i + 1)[0]
+                if (i - HEADER) + 3 + rel == target:
+                    out.append(i - HEADER)
+        return out
+
+    reverts, commits = near_callers(REVERT), near_callers(COMMIT)
+    # The level-up's bonus screen reverts before it and commits after it.
+    assert any(SCREEN < a < SCREEN + 0x20 for a in reverts)
+    assert any(SCREEN < a < SCREEN + 0x60 for a in commits)
+    screen_revert = min(a for a in reverts if a > SCREEN)
+    screen_commit = min(a for a in commits if a > screen_revert)
+    assert screen_revert < SCREEN + 0x20 < screen_commit
+
+    # Both copies move 16 words then skip 4 bytes and move 14 more, which
+    # covers indices 0-10 and 13-26 (attributes, combat fields and skills),
+    # but not health or magic.
+    for entry in (COMMIT, REVERT):
+        window = exe[HEADER + entry:HEADER + entry + 0x24]
+        assert window.count(b"\xf3\xa5") == 2
+        assert b"\xb9\x10\x00" in window and b"\xb9\x0e\x00" in window
+
+
+def test_one_charisma_point_pays_for_itself_early():
+    """Charisma is copied into the stored column by the commit, so a point
+    spent on it raises every later training's payout, and on an odd roll it
+    also moves you onto the more valuable even parity line.
+    """
+    def career(roll, spend_at=None):
+        total, extra = 0, 0
+        for lvl in range(1, 40):
+            total += L.bonus_points(roll + extra + 2 * (lvl - 1))
+            if lvl == spend_at:
+                extra = 1
+        return total
+
+    # Net of the point it costs, spent at the very first training.
+    assert career(45, 1) - career(45) - 1 == 5
+    assert career(59, 1) - career(59) - 1 == 3
+    assert career(60, 1) - career(60) - 1 == 2
+    # Odd rolls gain more than even ones, because they change parity.
+    odd = [career(r, 1) - career(r) for r in range(45, 60, 2)]
+    even = [career(r, 1) - career(r) for r in range(46, 61, 2)]
+    assert min(odd) > max(even)
+    # And the same point late in a career barely repays.
+    assert career(45, 30) - career(45) - 1 < 2
+
+
+def test_the_free_growth_over_a_career():
+    """Every training adds 2 to the six attributes and to each non-zero skill.
+    Thirty-nine of them make +78, which is what puts endgame stats in the
+    120-140 band the bartering and linguistics rungs are pitched at.
+    """
+    trainings = 39
+    assert 2 * trainings == 78
+    assert 45 + 78 == 123 and 60 + 78 == 138
+
+    # Those endgame values land among rungs that would be dead above a cap of
+    # 100, corroboration that the cap really is 999.
+    assert L.STAT_CAP == 999
+    barter_rungs = [c + 1 for c, _ in L.BARTER_SPREAD[:-1]]
+    assert [r for r in barter_rungs if r > 100] == [101, 125, 150]
+
+    # Free growth dwarfs the bonus-point budget.
+    free = 78 * (6 + 12)
+    assert free == 1404
+    career = sum(L.bonus_points(52 + 2 * (n - 1)) for n in range(1, 40))
+    assert 3.0 < free / career < 3.2
+
+
+def test_monster_absorption_outpaces_free_accuracy_growth(data):
+    """The strategic claim in the manual: a weapon skill gaining 2 a level
+    keeps pace with the creatures but never gets ahead, so accuracy is the one
+    number that has to be bought. Checked against the decoded creature table.
+    """
+    import statistics
+
+    creatures = sorted(
+        (e for e in data["enemies"]
+         if e.get("absorption") is not None and e.get("experience")),
+        key=lambda e: e["experience"])
+    n = len(creatures)
+    bands = [creatures[:n // 3], creatures[n // 3:2 * n // 3], creatures[2 * n // 3:]]
+    medians = [int(statistics.median(e["absorption"] for e in b)) for b in bands]
+
+    # Absorption climbs steeply across the difficulty bands.
+    assert medians[0] < medians[1] < medians[2]
+    assert medians == [21, 73, 123]
+
+    natural = lambda lvl: 58 + 2 * (lvl - 1)      # a typical weapon skill
+    # Comfortable early: the no-miss margin is reached around level 10.
+    assert L.attack_hit_odds(natural(10), medians[0]) == 1.0
+    # Then each new band opens a gap that free growth does not close.
+    assert L.attack_margin(natural(15), medians[1]) < 20
+    assert L.attack_margin(natural(30), medians[2]) < 0     # cannot hit at all
+    assert L.attack_margin(natural(40), medians[2]) < 20    # still short at the cap
+
+    # Closing the last cliff for one character costs a large slice of a career.
+    needed = medians[2] + 55 - natural(40)
+    career = sum(L.bonus_points(52 + 2 * (n - 1)) for n in range(1, 40))
+    assert 35 < needed < 50
+    assert needed / career < 0.15
+
+
+def test_initiative_is_not_winnable(data):
+    """Creature dexterity outruns a character's for the whole game, so the
+    manual tells the reader not to budget for turn order. Checked against the
+    creature table.
+    """
+    import statistics
+
+    creatures = sorted(
+        (e for e in data["enemies"]
+         if e.get("dexterity") is not None and e.get("experience")),
+        key=lambda e: e["experience"])
+    n = len(creatures)
+    bands = [creatures[:n // 3], creatures[n // 3:2 * n // 3], creatures[2 * n // 3:]]
+    medians = [int(statistics.median(e["dexterity"] for e in b)) for b in bands]
+    assert medians == [79, 137, 217]
+
+    natural = lambda lvl: 52 + 2 * (lvl - 1)      # a middling dexterity roll
+    # The weakest band is passed mid-game; the other two never are.
+    assert natural(15) >= medians[0]
+    assert natural(40) < medians[1] < medians[2]
+
+    # Closing the gap costs more than the accuracy cliff it competes with.
+    career = sum(L.bonus_points(52 + 2 * (k - 1)) for k in range(1, 40))
+    assert medians[2] - natural(30) > 100
+    assert (medians[2] - natural(30)) / career > 0.2
+
+
+def test_health_and_magic_need_no_points(data):
+    """Both compound: the attribute behind them rises 2 a level and each level
+    adds a percentage of the risen attribute, so the totals go up quadratically
+    and a single point is worth about 1% of the eventual pool. That is what
+    frees the budget for accuracy.
+    """
+    import statistics
+
+    attr = lambda lvl: 52 + 2 * (lvl - 1)          # a middling roll
+    health = L.pct(attr(1), 25)
+    magic = attr(1) >> 2
+    for lvl in range(1, 40):
+        health += L.pct(attr(lvl), L.PCT_HEALTH_FROM_STAMINA)
+        magic += L.magic_gain(7, attr(lvl), 0)     # mage
+    assert health == magic == 1066                 # both land on the same curve
+
+    # One point of stamina adds 0.3 health at each remaining training.
+    one_point = 0.3 * 38
+    assert one_point / health < 0.02               # about one per cent
+
+    # And the pool is large against what actually hits you.
+    creatures = sorted(
+        (e for e in data["enemies"]
+         if e.get("damage") is not None and e.get("experience")),
+        key=lambda e: e["experience"])
+    hardest = creatures[2 * len(creatures) // 3:]
+    median_damage = statistics.median(e["damage"] for e in hardest)
+    assert median_damage / health < 0.35           # before absorption cuts it
+
+
+def test_spending_a_point_early_dominates_holding_it():
+    """A weapon-skill point is permanent, so buying it early delivers the same
+    late benefit plus the interim. The manual says not to bank; this pins the
+    reasoning, including the part that makes banking tempting, the absolute
+    payoff is much larger late because the weapon it multiplies is larger.
+    """
+    early = L.attack_expected(3, 67, 21) - L.attack_expected(3, 66, 21)
+    late = L.attack_expected(250, 137, 123) - L.attack_expected(250, 136, 123)
+    assert late > 40 * early                    # the late payoff dwarfs the early
+
+    # But the rate, as a share of the damage stat, runs the other way.
+    rate = lambda acc, absorb: (L.attack_expected(100, acc + 1, absorb)
+                                - L.attack_expected(100, acc, absorb))
+    assert rate(66, 21) > 2.5 * rate(136, 123)
+
+    # Buying early is a superset: the point is still there at level 40.
+    assert L.attack_damage(250, 137, 123) > L.attack_damage(250, 136, 123)
+
+
+def test_casting_is_an_ordinary_skill_after_creation():
+    """Casting gets its starting value from the class dispatch rather than the
+    skill recipes, which makes it look computed-only. It is not: it sits in the
+    bonus-point screen's clickable range and inside the level-up's +2 loop.
+    """
+    index = L.STAT_NAMES.index("casting")
+    assert index == 19
+    working = L.CURRENT + 2 * index
+    stored = L.BASE + 2 * index
+    assert (working, stored) == (0x62, 0xA2)
+
+    # The screen's skill rows run 10..21 over working offsets 0x58..0x6e.
+    assert 0x58 <= working <= 0x6E
+    # The level-up's second loop covers stored 0x98..0xb0, thirteen words.
+    assert 0x98 <= stored <= 0x98 + 2 * 12
+
+
+def test_early_charisma_investment_enlarges_the_budget():
+    """Charisma buys more bonus points, so spending the first few levels'
+    points on it leaves more for everything else. The manual gives the stopping
+    level per roll; this pins those numbers.
+    """
+    def simulate(roll, switch):
+        bought = earned = spent = 0
+        for lvl in range(1, 40):
+            pay = L.bonus_points(roll + bought + 2 * (lvl - 1))
+            earned += pay
+            if lvl <= switch:
+                bought += pay
+                spent += pay
+        return earned - spent           # points left for everything else
+
+    for roll, best_switch, left in ((45, 5, 497), (52, 4, 510), (60, 3, 524)):
+        assert simulate(roll, best_switch) == left
+        # It really is the optimum, not merely an improvement.
+        assert all(simulate(roll, s) <= left for s in range(0, 13))
+        # And it beats spending nothing on charisma by a wide margin.
+        assert left > simulate(roll, 0) + 40
+
+    # A poor roll that invests ends up ahead of a top roll that does not.
+    assert simulate(45, 5) > simulate(60, 0)
+
+
+def test_armour_is_a_second_race_run_in_gold(data):
+    """Their accuracy is reduced by your absorption exactly as yours is by
+    theirs, so defense is the same quadratic seen from the other side. Health
+    only suffices while armor keeps pace.
+    """
+    import statistics
+
+    creatures = sorted((e for e in data["enemies"] if e.get("experience")),
+                       key=lambda e: e["experience"])
+    n = len(creatures)
+    middle = creatures[n // 3:2 * n // 3]
+    accuracy = int(statistics.median(e["accuracy"] for e in middle))
+    damage = int(statistics.median(e["damage"] for e in middle))
+    assert (accuracy, damage) == (143, 142)
+
+    behind = L.attack_expected(damage, accuracy, 80)
+    caught_up = L.attack_expected(damage, accuracy, 140)
+    assert behind > 80                       # dies in a handful of blows
+    assert caught_up < 1                     # effectively untouchable
+
+    # The armor that closes it is cheap next to a career of training.
+    armor = sorted((i["absorption"], i["value"]) for i in data["items"]
+                    if i["category"] == "ARMOR / RINGS" and i["absorption"])
+    best8 = armor[-8:]
+    assert sum(a for a, _ in best8) > 150
+    assert sum(v for _, v in best8) < sum(L.training_cost(lvl, 1)
+                                          for lvl in range(1, 40)) / 3
+
+
+def test_charisma_investment_peaks_and_then_declines():
+    """The stopping level is an optimum, not a floor: buying charisma all the
+    way to the 112 cap overshoots, because charisma climbs 2 a level on its own
+    and gets there eventually without help.
+    """
+    def free_points(roll, switch):
+        bought = free = 0
+        for lvl in range(1, 40):
+            cha = roll + bought + 2 * (lvl - 1)
+            pay = L.bonus_points(cha)
+            spend = pay if lvl <= switch else 0
+            bought += spend
+            free += pay - spend
+        return free
+
+    curves = {roll: [free_points(roll, s) for s in range(0, 10)]
+              for roll in (45, 52, 60)}
+    assert curves[45] == [419, 439, 459, 476, 489, 497, 494, 480, 465, 450]
+    assert curves[52] == [451, 470, 488, 502, 510, 508, 495, 480, 465, 450]
+    assert curves[60] == [482, 500, 515, 524, 523, 510, 495, 480, 465, 450]
+    for row in curves.values():
+        assert row.index(max(row)) < 6            # a peak, not a plateau
+        assert row[9] < row[5]                    # over-investing costs points
+
+    # Past level 7 the starting roll stops mattering: you have bought your way
+    # to the same place from wherever you began.
+    for s in (7, 8, 9):
+        assert len({curves[r][s] for r in (45, 52, 60)}) == 1
+
+    # Higher rolls should stop sooner, because they near the cap unaided.
+    peaks = {roll: max(range(9), key=lambda s: free_points(roll, s))
+             for roll in (45, 52, 60)}
+    assert peaks == {45: 5, 52: 4, 60: 3}
+
+
+def test_the_charisma_investment_is_repaid_before_it_is_needed():
+    """It runs a deficit for the first ten levels or so. That is free, because
+    the first accuracy cliff does not arrive until level 15.
+    """
+    def trajectory(roll, switch):
+        bought = free = 0
+        out = {}
+        for lvl in range(1, 40):
+            cha = roll + bought + 2 * (lvl - 1)
+            pay = L.bonus_points(cha)
+            spend = pay if lvl <= switch else 0
+            bought += spend
+            free += pay - spend
+            out[lvl + 1] = free
+        return out
+
+    none, invested = trajectory(45, 0), trajectory(45, 5)
+    breakeven = next(l for l in range(2, 41) if invested[l] >= none[l])
+    assert breakeven == 12
+    assert max(none[l] - invested[l] for l in range(2, 41)) < 35
+    assert breakeven < 15                          # before the first cliff
+
+
+def test_stop_at_charisma_100_is_the_rule():
+    """A single target beats a per-roll stopping level, and is what the manual
+    tells the reader to use because it can be read off the screen.
+    """
+    def to_target(roll, target):
+        bought = free = 0
+        for lvl in range(1, 40):
+            cha = roll + bought + 2 * (lvl - 1)
+            pay = L.bonus_points(cha)
+            spend = min(pay, max(0, target - cha))
+            bought += spend
+            free += pay - spend
+        return free
+
+    def best_by_level(roll):
+        def sim(switch):
+            bought = free = 0
+            for lvl in range(1, 40):
+                cha = roll + bought + 2 * (lvl - 1)
+                pay = L.bonus_points(cha)
+                spend = pay if lvl <= switch else 0
+                bought += spend
+                free += pay - spend
+            return free
+        return max(sim(s) for s in range(0, 9))
+
+    rolls = range(45, 61)
+    # Stopping at 100 is at least as good as any whole-level policy.
+    assert all(to_target(r, 100) >= best_by_level(r) for r in rolls)
+    # And the window around it is flat, while the cap is clearly worse.
+    for r in rolls:
+        assert to_target(r, 100) - to_target(r, 95) <= 2
+        assert to_target(r, 100) - to_target(r, 103) <= 2
+        assert to_target(r, 100) - to_target(r, 112) >= 4
+
+    # The endpoints the manual quotes.
+    assert (to_target(45, 100), to_target(60, 100)) == (497, 525)
+
+
+def test_the_two_charisma_tables_describe_one_policy():
+    """The manual gives the rule as a target (stop at 100) and the table as a
+    number of levels. They are the same policy on two clocks, and must agree.
+    """
+    def by_target(roll, target=100):
+        bought = free = 0
+        last_full = 0
+        for lvl in range(1, 40):
+            cha = roll + bought + 2 * (lvl - 1)
+            pay = L.bonus_points(cha)
+            spend = min(pay, max(0, target - cha))
+            if spend == pay and spend > 0:
+                last_full = lvl
+            bought += spend
+            free += pay - spend
+        return free, last_full
+
+    def by_level(roll, switch):
+        bought = free = 0
+        for lvl in range(1, 40):
+            cha = roll + bought + 2 * (lvl - 1)
+            pay = L.bonus_points(cha)
+            spend = pay if lvl <= switch else 0
+            bought += spend
+            free += pay - spend
+        return free
+
+    for roll, last_full, budget in ((45, 5, 497), (52, 4, 511), (60, 3, 525)):
+        free, full = by_target(roll)
+        assert (free, full) == (budget, last_full)
+        # The whole-level policy that stops at the same place lands within a
+        # point or two: the difference is only the partial top-up.
+        assert abs(by_level(roll, last_full) - free) <= 2
+
+
+def test_accuracy_is_cheap_to_solve_and_unbounded_after():
+    """Closing every accuracy cliff costs about ninety points of a ~500 budget.
+    What makes accuracy the right home for the rest is that it has no ceiling:
+    past margin 55 each point adds 1% of the weapon's damage for ever.
+    """
+    natural40 = 58 + 2 * 39
+    assert natural40 == 136
+
+    hard, toughest = 123, 170
+    assert hard + 55 - natural40 == 42            # margin 55 vs a typical hard creature
+    assert toughest - natural40 == 34             # to land a hit on the worst
+    assert toughest + 55 - natural40 == 89        # and to stop missing it
+    assert 89 < 0.2 * 497                         # under a fifth of the smallest budget
+
+    # Beyond that it keeps scaling, with no cap short of the 999 stat limit.
+    per_hit = [L.attack_damage(250, natural40 + n, hard) for n in (0, 42, 150, 400)]
+    assert per_hit == [33, 138, 408, 1033]
+    assert all(b > a for a, b in zip(per_hit, per_hit[1:]))
+
+
+def test_a_caster_buys_casting_not_intelligence(data):
+    """More intelligence buys more casts of a spell that barely connects; more
+    casting makes each cast count. Compared on the same four hundred points.
+    """
+    import statistics
+
+    damage = int(statistics.median(s["damage"] for s in data["spells"] if s.get("damage")))
+    cost = int(statistics.median(s["mp"] for s in data["spells"] if s.get("mp")))
+    assert (damage, cost) == (125, 70)
+
+    pool, casting, absorption = 1066, 140, 123
+    per_rest = lambda p, c: (p // cost) * L.attack_expected(damage, c, absorption)
+
+    baseline = per_rest(pool, casting)
+    into_int = per_rest(pool + int(400 * 0.3 * 19), casting)   # 0.3 magic a level
+    into_cast = per_rest(pool, casting + 400)
+
+    assert into_cast > 19 * into_int
+    assert into_int > baseline                    # it is not useless, just far worse
+
+    # And the first points of casting are the sharpest.
+    assert L.attack_expected(damage, casting + 38, absorption) > \
+        8 * L.attack_expected(damage, casting, absorption)
+
+
+def test_area_spells_win_from_two_targets(data):
+    """Area spells give up only about 8% of the per-point efficiency of
+    single-target ones, so they overtake as soon as there are two targets.
+    """
+    import statistics
+
+    # The spells the clue book lists: the ERROR placeholders decode a scope
+    # like anything else, and averaging their leftover bytes in moves the
+    # median without meaning anything.
+    spells = [s for s in data["spells"]
+              if s.get("listed") and s.get("damage") and s.get("mp")
+              and s.get("scope") in ("one", "all")]
+    rate = lambda scope: statistics.median(
+        s["damage"] / s["mp"] for s in spells if s["scope"] == scope)
+
+    single, area = rate("one"), rate("all")
+    assert 1.5 < single < 1.6 and 1.4 < area < 1.5
+    assert area / single > 0.9                 # a small penalty per head
+    assert 2 * area > single                   # so two targets already beats it
+    assert area > single / 2                   # crossover is at two, not three
+
+
+def test_the_charisma_rule_is_the_global_optimum():
+    """Checked against an exact search over every possible split of every
+    level's allowance, not just the all-or-nothing policies.
+    """
+    from functools import lru_cache
+
+    def optimum(roll):
+        @lru_cache(maxsize=None)
+        def best(lvl, cha):
+            if lvl > 39:
+                return 0
+            income = L.bonus_points(roll + cha + 2 * (lvl - 1))
+            return max((income - s) + best(lvl + 1, cha + s)
+                       for s in range(income + 1))
+        return best(1, 0)
+
+    def stop_at_100(roll):
+        cha = free = 0
+        cha = roll
+        for lvl in range(1, 40):
+            income = L.bonus_points(cha)
+            buy = min(income, max(0, 100 - cha))
+            cha += buy + 2
+            free += income - buy
+        return free
+
+    for roll in range(45, 61):
+        assert stop_at_100(roll) == optimum(roll)
+
+
+def test_a_caster_wants_some_intelligence_after_all(data):
+    """Counting kills rather than damage puts an interior optimum on the
+    casting/intelligence split, because a cast that overkills its target wastes
+    the excess. Roughly three parts casting to one part intelligence.
+    """
+    import math
+
+    spells = [(s["damage"], s["mp"]) for s in data["spells"]
+              if s.get("damage") and s.get("mp") and s.get("listed")
+              and s["name"] != "ERROR"]
+    MAGIC_PER_POINT = 5.0        # a point of intelligence, spent mid-career
+
+    def kills_per_rest(into_casting, into_int, health, absorption):
+        casting = 140 + into_casting
+        pool = 1066 + MAGIC_PER_POINT * into_int
+        best = 0.0
+        for damage, cost in spells:
+            per_hit = L.attack_damage(damage, casting, absorption)
+            odds = L.attack_hit_odds(casting, absorption)
+            if per_hit <= 0 or odds <= 0:
+                continue
+            casts = math.ceil(health / per_hit) / odds
+            best = max(best, pool / (cost * casts))
+        return best
+
+    budget = 470
+    for health, absorption in ((182, 73), (460, 123), (3400, 170)):
+        scan = [(kills_per_rest(x, budget - x, health, absorption), x)
+                for x in range(0, budget + 1, 5)]
+        best, split = max(scan)
+        # An interior optimum, not a corner.
+        assert 0 < split < budget
+        assert 2.5 < split / (budget - split) < 4.0        # about three to one
+        assert best > kills_per_rest(budget, 0, health, absorption)
+        assert best > kills_per_rest(0, budget, health, absorption)
+
+
+def test_casters_buy_intelligence_first_then_casting(data):
+    """Intelligence compounds (0.3 magic at every remaining training) and
+    casting does not, so the order dominates the ratio. Measured in creatures
+    killed between rests, which is what counts overkill correctly.
+    """
+    import math
+
+    spells = [(s["damage"], s["mp"]) for s in data["spells"]
+              if s.get("damage") and s.get("mp") and s.get("listed")
+              and s["name"] != "ERROR"]
+
+    def kills(casting, pool, health, absorption):
+        best = 0.0
+        for damage, cost in spells:
+            per_hit = L.attack_damage(damage, casting, absorption)
+            odds = L.attack_hit_odds(casting, absorption)
+            if per_hit <= 0 or odds <= 0:
+                continue
+            best = max(best, pool / (cost * (math.ceil(health / per_hit) / odds)))
+        return best
+
+    def career(roll, switch):
+        """Charisma to 100 first, then intelligence until `switch`, then casting."""
+        charisma, casting, intel, pool, spare = roll, 0, 0, roll >> 2, 0
+        for lvl in range(1, 40):
+            income = L.bonus_points(charisma)
+            buy = min(income, max(0, 100 - charisma))
+            charisma += buy + 2
+            free = income - buy
+            spare += free
+            if lvl <= switch:
+                intel += free
+            else:
+                casting += free
+            pool += L.pct(roll + 2 * (lvl - 1) + intel, 30)
+        return 140 + casting, pool, spare
+
+    for roll, budget in ((45, 497), (52, 511), (60, 525)):
+        assert career(roll, 0)[2] == budget          # the spare budget we quote
+        scores = [(kills(*career(roll, n)[:2], 460, 123), n) for n in range(0, 26)]
+        best, switch = max(scores)
+        assert switch == 16                          # best if only level 40 counts
+        # Ordering beats blending, and blending beats either extreme.
+        all_casting = kills(*career(roll, 0)[:2], 460, 123)
+        assert best / all_casting > 1.5
+
+
+def test_health_and_magic_pools_are_accumulated_not_recomputed():
+    """The compounding argument depends on this: a point of stamina or
+    intelligence changes only the additions made at later trainings, because
+    nothing ever recomputes the pool from the current attribute.
+
+    Max health and max magic are written directly exactly once each, at
+    character creation. Everything after goes through the stat-add helper,
+    which does `add ax, [bx]` and stores the sum back.
+    """
+    HEADER = 0x4000
+    exe = L.load()
+    rm = {0x84, 0x85, 0x87}                    # [si+d16], [di+d16], [bx+d16]
+
+    def sites(offset, opcodes):
+        out = []
+        for i in range(HEADER, HEADER + 0x1DDA0 - 4):
+            if (exe[i] in opcodes and exe[i + 1] in rm
+                    and exe[i + 2] == offset and exe[i + 3] == 0):
+                out.append(i - HEADER)
+        return out
+
+    WRITE = {0x89, 0x01, 0x29}                 # mov/add/sub into memory
+    # One write each, both inside character creation.
+    assert sites(0x92, WRITE) == [0x14EBD]     # max health
+    assert sites(0x94, WRITE) == [0x14F78]     # max magic
+
+    # Base stamina is read in exactly one place in the whole game: the
+    # level-up's health gain. Nothing else consults it.
+    assert sites(0x80, {0x8B}) == [0x09A65]
+    assert sites(0x80, WRITE) == [0x14EAB]     # and written only at creation
+
+    # Every group-3 instruction touching the pools is a read-only TEST.
+    for offset in (0x92, 0x94):
+        for i in sites(offset, {0xF7}):
+            reg = (exe[HEADER + i + 1] >> 3) & 7
+            assert reg == 0, hex(i)            # 0 = TEST; 2/3 would write
+
+    # The other shape retroactivity could take is stat x level. The level field
+    # is multiplied in exactly two places, both in a list renderer where the
+    # operand is a record stride of 34, not a stat.
+    level_muls = []
+    for i in range(HEADER, HEADER + 0x1DDA0 - 18):
+        if exe[i] == 0x8B and exe[i + 1] in {0x44, 0x45, 0x47} and exe[i + 2] == 0x16:
+            window = exe[i + 3:i + 18]
+            if any(window[j] == 0xF7 and ((window[j + 1] >> 3) & 7) in (4, 5)
+                   for j in range(len(window) - 1)):
+                level_muls.append(i - HEADER)
+    assert level_muls == [0x0577B, 0x09384]
+    for site in level_muls:
+        assert exe[HEADER + site + 10:HEADER + site + 13] == b"\xb8\x22\x00"  # mov ax,34
+
+
+def test_the_switch_is_earlier_than_the_endgame_optimum(data):
+    """Optimizing the level-40 snapshot says switch at 16; optimizing the whole
+    career says 11, because switching late leaves a caster missing most of its
+    casts through the level-13 band change.
+    """
+    import math
+
+    spells = [(s["damage"], s["mp"]) for s in data["spells"]
+              if s.get("damage") and s.get("mp") and s.get("listed")
+              and s["name"] != "ERROR"]
+    bands = [(12, 40, 21), (26, 182, 73), (40, 460, 123)]
+
+    def band(lvl):
+        for upto, health, absorption in bands:
+            if lvl <= upto:
+                return health, absorption
+        return bands[-1][1:]
+
+    def kills(casting, pool, health, absorption):
+        best = 0.0
+        for damage, cost in spells:
+            hit = L.attack_damage(damage, casting, absorption)
+            odds = L.attack_hit_odds(casting, absorption)
+            if hit <= 0 or odds <= 0:
+                continue
+            best = max(best, pool / (cost * (math.ceil(health / hit) / odds)))
+        return best
+
+    def career(switch, roll=52):
+        charisma, casting, intel, pool = roll, 0, 0, roll >> 2
+        total, hit_at = 0.0, {}
+        for lvl in range(1, 40):
+            income = L.bonus_points(charisma)
+            buy = min(income, max(0, 100 - charisma))
+            charisma += buy + 2
+            free = income - buy
+            if lvl <= switch:
+                intel += free
+            else:
+                casting += free
+            pool += L.pct(roll + 2 * (lvl - 1) + intel, 30)
+            health, absorption = band(lvl + 1)
+            skill = 62 + 2 * lvl + casting
+            total += kills(skill, pool, health, absorption)
+            hit_at[lvl + 1] = L.attack_hit_odds(skill, absorption)
+        return total, hit_at
+
+    totals = {n: career(n)[0] for n in range(0, 26)}
+    assert max(totals, key=totals.get) == 11
+
+    # The cost of switching late is a hole at the first band change.
+    assert career(16)[1][13] < 0.4          # about one cast in three connects
+    assert career(11)[1][13] < 0.6          # about half
+    assert career(8)[1][13] == 1.0          # switching at 8 avoids it entirely
+    # And the second band change at 27 troubles none of them.
+    for n in (8, 11, 16):
+        assert career(n)[1][27] == 1.0
+
+
+def test_a_fighter_should_not_buy_stamina():
+    """Stamina and armor both buy survival, and armor buys much more of it.
+    With good armor a pure glass cannon already has a ninefold safety margin;
+    with poor armor no amount of stamina rescues him.
+    """
+    MOB = dict(absorption=123, accuracy=198, damage=275, health=460)
+    WEAPON = 250
+
+    def career(switch, roll=52):
+        charisma, weapon, stamina_pts = roll, 0, 0
+        health = L.pct(roll, 25)
+        for lvl in range(1, 40):
+            income = L.bonus_points(charisma)
+            buy = min(income, max(0, 100 - charisma))
+            charisma += buy + 2
+            free = income - buy
+            if lvl <= switch:
+                stamina_pts += free
+            else:
+                weapon += free
+            health += L.pct(roll + 2 * (lvl - 1) + stamina_pts, 30)
+        return 58 + 2 * 39 + weapon, health
+
+    def safety(switch, armor):
+        accuracy, health = career(switch)
+        mine = L.attack_expected(WEAPON, accuracy, MOB["absorption"])
+        theirs = L.attack_expected(MOB["damage"], MOB["accuracy"], armor) * 3
+        return (health / theirs) / ((3 * MOB["health"]) / mine)
+
+    # With good armor every split is safe, so the optimum is buying nothing.
+    assert safety(0, 173) > 9
+    assert safety(15, 173) < 2 * safety(0, 173)     # less than double for a quarter of the damage
+
+    # With poor armor nothing is safe, and stamina does not fix it.
+    assert safety(0, 100) < 1.5
+    assert safety(12, 100) < 2.0
+    # Armor is worth more than any stamina purchase.
+    assert safety(0, 173) > 4.5 * safety(12, 100)
+
+
+def test_armour_is_not_restricted_by_class(data):
+    """Nothing in an item record keys off class. The only per-item flag that
+    varies across armor is the container mask, which the decoder already
+    exposes as "fits in", so a caster can wear anything a fighter can.
+    """
+    import items as I
+
+    items = I.load(Path(__file__).resolve().parent.parent / "game")
+    by_name = {i["name"]: i for i in data["items"]}
+    records = {items.names[i]: rec for i, rec in enumerate(items.records)
+               if items.names[i] in by_name}
+
+    # The one field that varies across armor is the container mask, and it maps
+    # exactly onto the decoded "fits in" text.
+    seen = {}
+    for name, rec in records.items():
+        fits = by_name[name]["fields"].get("fits in")
+        if fits:
+            seen.setdefault(rec[15], set()).add(fits)
+    assert seen[0x80] == {"BACKPACK"}
+    assert seen[0xC0] == {"BACKPACK BOX"}
+    assert seen[0xE0] == {"BACKPACK BOX BAG"}
+
+    # The mage-named armor differs from the ordinary one only in price and
+    # weight: every flag byte is identical.
+    plain = records["CHAIN MAIL ARMOR"]
+    mage = records["MAGE'S CHAIN MAIL ARMOR"]
+    assert plain[12:18] == mage[12:18]
+
+
+def test_carrying_capacity_is_not_what_limits_armour(data):
+    """Carry capacity is ten times strength, but the eight-slot limit and the
+    weightlessness of rings mean weight stops binding early. Money is the real
+    constraint.
+    """
+    armor = [(i["absorption"], i["weight"]) for i in data["items"]
+              if i["category"] == "ARMOR / RINGS" and i["absorption"]
+              and i["weight"] is not None]
+
+    def best(budget, slots=8):
+        table = {(0, 0): 0}
+        for absorption, weight in sorted(armor, reverse=True):
+            tenths = int(round(weight * 10))
+            nxt = dict(table)
+            for (count, carried), value in table.items():
+                if count + 1 > slots or carried + tenths > budget * 10:
+                    continue
+                key = (count + 1, carried + tenths)
+                nxt[key] = max(nxt.get(key, 0), value + absorption)
+            table = nxt
+        return max(table.values())
+
+    ceiling = best(10_000)
+    assert ceiling == 161        # unenchanted; +10 forms reach 202
+
+    # Rings carry the efficiency: the top three by absorption-per-weight are
+    # all under half a unit.
+    per_unit = sorted((a / w, w) for a, w in armor if w)
+    assert all(w < 0.5 for _, w in per_unit[-3:])
+
+    # With a light weapon the limit stops binding by about level 11 (strength
+    # 72); even at a level-1 strength you are within 10% of the ceiling.
+    assert best(52 - 0.5 - 10) > 0.9 * ceiling
+    assert best(72 - 0.5 - 10) == ceiling
+    # A heavy weapon costs you something early, and nothing by level 16.
+    assert ceiling - best(45 - 15 - 10) > 25
+    assert best(82 - 15 - 10) == ceiling
+
+
+def test_enhancements_run_to_plus_ten():
+    """Each +N adds exactly N to the item's primary combat number, and the top
+    tier of gear reaches +10."""
+    import re
+
+    import items as I
+
+    items = I.load(Path(__file__).resolve().parent.parent / "game")
+    plus = re.compile(r"^(.*) \+(\d+)$")
+    primary = {}
+    tiers = set()
+    for name, rec in zip(items.names, items.records):
+        if not name:
+            continue
+        props = items.properties(rec)
+        if props:
+            primary[name] = props[I.PROP_PRIMARY]
+        match = plus.match(name)
+        if match:
+            tiers.add(int(match.group(2)))
+
+    assert max(tiers) == 10
+    # +N adds exactly N.
+    for base in ("CHAIN MAIL ARMOR", "ROYAL PLATE ARMOR", "GOLD SHIELD"):
+        for n in range(1, 9):
+            assert primary[f"{base} +{n}"] == primary[base] + n
+    assert primary["ROYAL PLATE ARMOR +10"] == primary["ROYAL PLATE ARMOR"] + 10

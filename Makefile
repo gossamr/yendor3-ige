@@ -38,8 +38,8 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data panel panel-shell test-py test-js cabinet-deps serve trainer \
-        test-trainer serve-stock session clean patched patched-debug \
+.PHONY: all data maps panel panel-shell test-py test-js cabinet-deps serve \
+        trainer test-trainer serve-stock session clean patched patched-debug \
         characters
 
 all: data panel
@@ -58,6 +58,10 @@ data:
 	PYTHONPATH=tools $(PY) tools/pack_maps.py
 	PYTHONPATH=tools $(PY) tools/extract.py
 	PYTHONPATH=tools $(PY) tools/world_map.py
+
+## Crop the captured clue-book map pages into web/maps/
+maps:
+	PYTHONPATH=tools $(PY) tools/build_maps.py
 
 ## Build the Restoration page, both ways.
 ##
