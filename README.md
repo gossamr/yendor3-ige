@@ -39,7 +39,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Enemy record (every offset except one is named, [docs/monsters.md](docs/monsters.md))
 - [x] Spell record (every row of a clue book page, and which classes may cast, [docs/spells.md](docs/spells.md))
 - [ ] NPCs, conversation, shops
-- [ ] Combat
+- [x] Combat (the resolver, damage, resistance and rewards, [docs/combat.md](docs/combat.md))
 - [ ] Save file
 - [x] Map transitions (the cell event table, and the destination of each door, [docs/map.md](docs/map.md))
 
