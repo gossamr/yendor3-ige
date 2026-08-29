@@ -38,8 +38,9 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data panel panel-shell test-py test-js cabinet-deps serve \
-        serve-stock session clean patched patched-debug characters
+.PHONY: all data panel panel-shell test-py test-js cabinet-deps serve trainer \
+        test-trainer serve-stock session clean patched patched-debug \
+        characters
 
 all: data panel
 
@@ -91,6 +92,24 @@ cabinet-deps:
 ## Serve the cabinet for interactive use, against the patched build
 serve: patched
 	$(BUN) cabinet/serve.js --port=$(PORT)
+
+## Build the emulator the trainer needs: a second copy of js-dos's shim with a
+## hook that reads and writes the guest's memory, written beside the stock one.
+## Nothing serves it unless the page is opened with ?trainer, and the hosted
+## build does not ship it: it is for playing with your own copy, locally.
+##
+##   make trainer && make serve      then http://localhost:8080/?trainer
+trainer:
+	$(BUN) tools/build_trainer.js
+
+## Boot the cabinet with the trainer on, reach a party, and read it back out of
+## the running game's memory. Starts and stops its own server.
+test-trainer: trainer patched panel
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(PORT) & echo $$! > tmp/serve.pid; \
+	sleep 2; \
+	$(BUN) tools/trainer_check.js --url=http://localhost:$(PORT)/; \
+	status=$$?; kill `cat tmp/serve.pid` 2>/dev/null; rm -f tmp/serve.pid; \
+	exit $$status
 
 ## Serve the game exactly as it shipped, intro and attract loop and all
 serve-stock:

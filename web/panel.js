@@ -131,7 +131,1340 @@
     return frag;
   }
 
+  /* --- trainer ---------------------------------------------------------- */
+
+  // Off unless the page was asked for by name. The cabinet passes ?trainer
+  // down to this frame only when it booted the hooked emulator, so the tab is
+  // absent rather than broken when there is nothing behind it.
+  const TRAINER = new URLSearchParams(location.search).has("trainer");
+
+  // The channel the hooked emulator answers on. It is a BroadcastChannel
+  // rather than a port because the emulator runs in a worker js-dos owns and
+  // this code runs in an iframe, and neither holds a reference to the other, and
+  // both are the same origin.
+  const CHANNEL = "yendor-trainer";
+
+  // Where things are in the game's data segment. Everything else is reached
+  // from these.
+  const DS = {
+    pictures: 0x969E,     // "PICTURES.VGA", the anchor
+    world: 0x96D0,        // "WORLD.DAT", beside it
+    current: 0x537C,      // the character whose turn it is: never zero in play
+    handles: 0xD0C9,      // four words, one a party slot
+    roster: 0xCEDD,       // the ten 500-byte slots, header first
+    characters: 0xD0D1,   // slot 1, the first character record
+    character: 0x1F4,     // 500 bytes each
+    // The fight. One word names whichever engaged creature is selected and the
+    // three buffers follow it; the eighty spawn slots hold every creature out
+    // on the map. Both are the 156-byte creature struct.
+    selected: 0x54B6,
+    engaged: 0x54B8,
+    engagedSlots: 3,
+    spawn: 0x122C,
+    spawnSlots: 80,
+    creature: 0x9C,
+  };
+
+  // The creature struct: a 50-byte header holding what the creature is doing
+  // now, then the 106-byte record copied out of WORLD.DAT, so a record offset
+  // is read at +0x32. Health now is the header's own word: the record's is
+  // what the creature started with, and never moves. See docs/combat.md.
+  const MOB = {
+    id: 0,               // the object's number; zero means the slot is free
+    impaired: 0x0C,      // & 0x3010 keeps it out of the turn list (image 0x115b)
+    health: 0x10,        // at or below zero is dead (image 0x1298)
+    record: 0x32,        // where the creature's own 106 bytes begin
+    name: 0x32, nameField: 13,
+    full: 0x32 + 30, level: 0x32 + 32,
+  };
+
+  // The roster's header slot holds where and when the party is. Same
+  // displacements the save file uses, because it is the same 500 bytes --
+  // see docs/saves.md.
+  const HEADER = {
+    facing: 150, x: 152, y: 154, day: 156, clock: 162,
+    // The party's three currencies, four bytes of packed BCD each, in the
+    // roster's header slot. Confirmed against saves either side of picking up
+    // 30 gold, and nuore is the word the spell cost subtracts from at image
+    // 0x0D336. See docs/saves.md.
+    gold: 180, food: 184, nuore: 188,
+  };
+  const PURSE = ["gold", "food", "nuore"];
+  const FACING = [[0x8000, "North"], [0x4000, "South"],
+                  [0x2000, "West"], [0x1000, "East"]];
+  // The world is one grid: seven areas of 24 bands down, twenty levels of 40
+  // cells across, and a map is one (area, level) block of it.
+  const BANDS = 24, CELLS = 40;
+  const MOB_RECORD = 106;   // the enemy record, docs/monsters.md
+  // The nine conditions a creature can inflict, plus the bit set when health
+  // reaches zero. `docs/combat.md` has what each costs the character.
+  const CONDITIONS = [
+    [0x8000, "sick"], [0x4000, "poisoned"], [0x2000, "diseased"],
+    [0x1000, "paralyzed"], [0x0800, "frozen"], [0x0400, "stoned"],
+    [0x0200, "jinxed"], [0x0100, "hexed"], [0x0080, "cursed"], [0x0040, "dead"],
+  ];
+  const AFFLICTED = CONDITIONS.reduce((m, [bit]) => m | bit, 0);
+
+  // In the order the sheet prints them. The first fourteen are what the
+  // character is; the last twelve are what it can do.
+  const SHEET = [
+    "Strength", "Dexterity", "Stamina", "Intelligence", "Wisdom", "Charisma",
+    "Shot accuracy", "Shot damage", "Accuracy", "Damage", "Absorption",
+    "Health", "Magic", "Capacity",
+    "Survival", "Projectile", "Slashing", "Bashing", "Polearm", "Casting",
+    "Mapping", "Navigate", "Bartering", "Repair", "Thievery", "Linguistic",
+  ];
+  const SKILL_FROM = 14;   // where the skills start, and the table's second half
+
+  // The class word holds 1 to 9, and a promoted tier adds 10 or 20. The first
+  // three classes have no tiers; the other six are the triads the clue book's
+  // F4 page names, in the same order.
+  const PLAIN_CLASSES = ["fighter", "merchant", "rogue"];
+  function className(code) {
+    const tier = Math.floor(code / 10), base = code % 10;
+    if (base >= 1 && base <= PLAIN_CLASSES.length) return PLAIN_CLASSES[base - 1];
+    const triad = (D.labels.class_tiers || [])[base - 1 - PLAIN_CLASSES.length];
+    return triad ? (triad[tier] || triad[0]).toLowerCase() : `class ${code}`;
+  }
+
+  const CHAR = {
+    name: 0, nameLen: 14, klass: 0x0E, level: 0x16, experience: 0x18,
+    condition: 0x1C, health: 0x52, magic: 0x54,
+    // The twenty-six numbers the game's F1 sheet prints, held twice: what the
+    // character has now at 0x3C and the maximum at 0x7C. Health and magic are
+    // the pair that differ; an attribute or a skill reads the same in both
+    // until a level raises it. docs/saves.md has the order.
+    live: 0x3C, max: 0x7C, statStride: 2,
+    // The character panel's eight carried slots, an item id and a second word
+    // each. The equip dispatch fills the first empty one and refuses the item
+    // when all eight are taken (image 0x437E onward), and the missile-weapon
+    // slot at 0x13A is what ends the run.
+    carried: 0x11A, carriedSlots: 8, carriedStride: 4,
+  };
+  const CHAR_BYTES = CHAR.carried + CHAR.carriedSlots * CHAR.carriedStride;
+
+  // A value written here takes a moment to reach the game, and the tick that
+  // lands in between would otherwise put the old number back in the box that
+  // was just typed into. So a write quiets the refresh for a couple of ticks.
+  let quietUntil = 0;
+  const wrote = () => { quietUntil = Date.now() + 1500; };
+
+  // And a box that has been typed in but not yet sent is left alone until it
+  // is: several of these are filled in one at a time and sent together, and a
+  // tick landing between two of them would put the game's number back in the
+  // first. Focus is not enough: moving to the next field gives it up.
+  const editable = (input) => {
+    input.addEventListener("input", () => { input.dataset.typed = "1"; });
+    return input;
+  };
+  const sent = (input) => { if (input) delete input.dataset.typed; };
+  const refresh = (input, value) => {
+    if (!input || input === document.activeElement || input.dataset.typed) return;
+    if (Date.now() < quietUntil) return;
+    input.value = String(value);
+  };
+
+  const emulator = (() => {
+    if (!TRAINER || typeof BroadcastChannel === "undefined") return null;
+    const ch = new BroadcastChannel(CHANNEL);
+    const waiting = new Map();
+    let next = 1;
+    ch.onmessage = (e) => {
+      const m = e.data;
+      if (!m || m.to !== "page") return;
+      const w = waiting.get(m.id);
+      if (!w) return;
+      waiting.delete(m.id);
+      m.error ? w.reject(new Error(m.error)) : w.resolve(m);
+    };
+    const call = (op, extra = {}) => new Promise((resolve, reject) => {
+      const id = next++;
+      waiting.set(id, { resolve, reject });
+      ch.postMessage({ to: "emulator", id, op, ...extra });
+      // A search reads the whole heap, so the timeout has to allow for it.
+      setTimeout(() => {
+        if (waiting.delete(id)) reject(new Error(`${op} went unanswered`));
+      }, 30000);
+    });
+    return {
+      ping: () => call("ping"),
+      peek: (at, len) => call("peek", { at, len }).then((m) => m.bytes),
+      poke: (at, bytes) => call("poke", { at, bytes }),
+      find: (needle, limit) => call("find", { needle, limit }).then((m) => m.found),
+      // The same op with a byte needle, and optionally only at the addresses
+      // an earlier search returned.
+      search: (opts) => call("find", opts).then((m) => ({ found: m.found, total: m.total })),
+    };
+  })();
+
+  let dsBase = null;          // where the data segment sits in the wasm heap
+
+  const u16 = (b, at) => b[at] | (b[at + 1] << 8);
+  // Four bytes, most significant pair first, two decimal digits a byte, so the
+  // same packing the creature rewards use.
+  const bcd = (b, at) => [0, 1, 2, 3].reduce(
+    (v, i) => v * 100 + (b[at + i] >> 4) * 10 + (b[at + i] & 0xF), 0);
+  const bcdBytes = (v) => {
+    const s = String(Math.max(0, Math.min(99999999, v | 0))).padStart(8, "0");
+    return [0, 2, 4, 6].map((i) => (+s[i] << 4) | +s[i + 1]);
+  };
+  const bytes16 = (v) => [v & 0xff, (v >> 8) & 0xff];
+  const asText = (b) => String.fromCharCode(...b).split("\0")[0].trim();
+
+  // Item ids as the game holds them, enchanted forms included: those are
+  // separate items with their own ids, folded into the base's `variants`.
+  // What an unlit torch's page prints, which is what a lit one should start
+  // with. The two are separate items and only the unlit one carries the figure.
+  const LIT = 240;
+
+  let itemsById = null;
+  function itemIndex() {
+    if (!itemsById) {
+      itemsById = new Map();
+      for (const item of D.items || []) {
+        // What a slot's second word should hold. For most items it is nothing.
+        // For one that burns down it is how much is left, and a torch handed
+        // over with zero there is a torch that has already burned out. The
+        // figure is the one the item's own page prints, except for LIT
+        // TORCH, whose page says zero *because* the burning one carries its
+        // remaining time here rather than in its properties. It is given the
+        // unlit torch's.
+        const duration = Number(String((item.fields || {}).duration || "")
+          .match(/^\d+/)?.[0] || 0) || (item.name === "LIT TORCH" ? LIT : 0);
+        itemsById.set(item.id, { name: item.name, charge: duration });
+        for (const v of item.variants || []) {
+          itemsById.set(v.id, { name: `${item.name} +${v.plus}`, charge: duration });
+        }
+      }
+    }
+    return itemsById;
+  }
+  const itemName = (id) => itemIndex().get(id)?.name || `item ${id}`;
+  const itemCharge = (id) => itemIndex().get(id)?.charge || 0;
+
+  // A character's name is the test for "is this really the party": four
+  // uppercase letters or more, and nothing that is not a name character.
+  const looksLikeName = (s) => /^[A-Z][A-Z' .-]{2,}$/.test(s);
+
+  /** The party as one candidate data segment has it, or an empty list. */
+  async function partyAt(base) {
+    const handles = await emulator.peek(base + DS.handles, 8);
+    const out = [];
+    for (let slot = 0; slot < 4; slot += 1) {
+      const handle = u16(handles, slot * 2);
+      // A handle is a small one-based index into the character records.
+      if (!handle || handle > 32) continue;
+      const at = base + DS.characters + (handle - 1) * DS.character;
+      const rec = await emulator.peek(at, CHAR_BYTES);
+      const name = asText(rec.slice(CHAR.name, CHAR.name + CHAR.nameLen));
+      if (!looksLikeName(name)) continue;
+      const carried = [];
+      for (let k = 0; k < CHAR.carriedSlots; k += 1) {
+        const off = CHAR.carried + k * CHAR.carriedStride;
+        const id = u16(rec, off);
+        carried.push({ at: at + off, id, charge: u16(rec, off + 2),
+                       name: id ? itemName(id) : null });
+      }
+      out.push({
+        // The record itself comes along: the stats panel reads twenty-six
+        // words out of it twice over, and they are all inside what was
+        // already read to get here.
+        slot, at, name, carried, rec,
+        health: u16(rec, CHAR.health),
+        magic: u16(rec, CHAR.magic),
+        condition: u16(rec, CHAR.condition),
+        klass: u16(rec, CHAR.klass),
+        level: u16(rec, CHAR.level),
+        experience: bcd(rec, CHAR.experience),
+      });
+    }
+    return out;
+  }
+
+  /** Find the game's data segment. It moves every boot, so a stale one is
+   *  thrown away rather than read: the address that was the party last time is
+   *  something else after the cabinet is switched off and on. */
+  async function anchor() {
+    if (dsBase !== null) {
+      const party = await partyAt(dsBase);
+      if (party.length) return { base: dsBase, party };
+      dsBase = null;
+    }
+    // The executable's own image is in memory beside the live data segment and
+    // carries the same strings, so a string cannot tell them apart. What can
+    // is the party: the image on disk has no characters in it. Reading them is
+    // also the thing the caller wanted, so nothing is checked twice.
+    const hits = await emulator.find("PICTURES.VGA", 64);
+    const near = [];
+    for (const hit of hits) {
+      const base = hit - DS.pictures;
+      if (base < 0) continue;
+      if (asText(await emulator.peek(base + DS.world, 9)) !== "WORLD.DAT") continue;
+      near.push(base);
+      const party = await partyAt(base);
+      if (party.length) { dsBase = base; return { base, party }; }
+    }
+    const failed = new Error(
+      `${hits.length} anchor${hits.length === 1 ? "" : "s"}, `
+      + `${near.length} data segment${near.length === 1 ? "" : "s"}, no party. `
+      + (hits.length === 0
+        ? "The emulator answered, so the hook is in; the game has not loaded yet."
+        : near.length === 0
+          ? "Nothing that looked like the data segment \u2014 report this."
+          : "Assemble a party and enter the game, then read again."));
+    // Not loaded yet, and no party yet, are both just "wait". A data segment
+    // that cannot be found at all is a fault worth printing.
+    failed.waiting = hits.length === 0 || near.length > 0;
+    throw failed;
+  }
+
+  // The tab is live: it re-reads the game every tick rather than waiting to be
+  // asked, because the interesting moment is usually mid-fight and clicking a
+  // button is one of the things that changes what you wanted to look at.
+  const TRAINER_TICK = 700;
+  let trainerTimer = null;
+  let trainerReading = false;
+  let trainerRows = null;      // name -> the row's live nodes
+  let trainerNote = null;      // where a failure is reported
+
+  function renderTrainer(root) {
+    root.textContent = "";
+    trainerRows = null;
+    // One line across the top: what the tab is showing on the left, the button
+    // that says what the tab is on the right. What it is showing is either the
+    // party or the reason there is no party yet, and both start at the same
+    // place. Everything else lives in a container that is not shown at all
+    // until there is a game to show: a tab full of empty tables says less
+    // than one line saying what it is waiting for.
+    trainerHeading = el("h4", { className: "curve-sub", textContent: "Party" });
+    trainerNote = el("p", { className: "empty trainer-note" });
+    root.append(el("div", { className: "trainer-head" }, [
+      el("div", { className: "trainer-headline" }, [trainerHeading, trainerNote]),
+      ...about()]));
+
+    trainerBody = el("div", { className: "trainer-body" });
+    const body = trainerBody;
+    root.append(body);
+    setLive(false, "Waiting for the game\u2026");
+
+    const table = el("table", { className: "effects trainer-table" });
+    const head = el("thead");
+    head.append(el("tr", {}, ["", "Health", "Magic", "Condition", ""]
+      .map((t) => el("th", { scope: "col", textContent: t }))));
+    table.append(head);
+    table.append(el("tbody"));
+    body.append(table);
+
+    // The sheet for whichever character was asked for, under the table it is
+    // asked for from. Empty until then.
+    statsBox = el("div", { className: "trainer-stats" });
+    statsBox.hidden = true;
+    body.append(statsBox);
+
+    // The fight. Three buffers hold what is in hand-to-hand; everything else
+    // the party can shoot at is out in the spawn table, which is eighty slots
+    // and is only read when it is asked for. A slot or a buffer is occupied
+    // when its first word, the object's number, is set, which is the test
+    // every one of the game's own walkers over them makes.
+    body.append(el("h4", { className: "curve-sub", textContent: "In the fight" }));
+    mobNote = el("p", { className: "empty trainer-mobnote" });
+    body.append(mobNote);
+    const mobTable = el("table", { className: "effects trainer-mobs" });
+    mobTable.append(el("thead", {}, el("tr", {},
+      ["", "Health", "Full", "Level"].map((t) => el("th", { scope: "col", textContent: t })))));
+    mobTable.append(el("tbody"));
+    body.append(mobTable);
+    const onMap = el("input", { type: "checkbox", className: "trainer-onmap",
+                                id: "trainer-onmap" });
+    body.append(el("p", { className: "note" }, [
+      onMap, el("label", { htmlFor: "trainer-onmap",
+                           textContent: " Creatures out on the map as well" })]));
+    trainerMobs = { table: mobTable, onMap };
+
+    // Handing over an item needs somewhere to put it: the character panel's
+    // eight carried slots. An enchanted form is its own item with its own id,
+    // so the list offers those too.
+    // Where and when. Both are words in the roster's header slot, so both are
+    // one write.
+    const place = el("div", { className: "picker-row", style: "margin-top:1rem" });
+    const where = el("select", { className: "picker trainer-where" });
+    where.setAttribute("aria-label", "Where to go");
+    const pages = [...(D.map_pages || [])]
+      .filter((p) => p.arrive)
+      .sort((a, b) => a.title < b.title ? -1 : 1);
+    for (const page of pages) {
+      where.append(el("option", { value: `${page.area},${page.level}`,
+                                  textContent: titleCase(page.title) }));
+    }
+    const go = el("button", { type: "button", className: "toggle trainer-go", textContent: "Go" });
+    go.onclick = () => teleport(pages.find(
+      (p) => `${p.area},${p.level}` === where.value), go);
+    trainerWhere = el("span", { className: "note trainer-at" });
+    place.append(where, go, trainerWhere);
+    body.append(place);
+
+    // The party's purse: three four-byte BCD counters in the same header slot.
+    const purse = el("div", { className: "picker-row" });
+    trainerPurse = {};
+    for (const key of PURSE) {
+      const input = editable(el("input", { type: "number", min: "0", max: "99999999",
+                                  className: "trainer-num trainer-purse" }));
+      input.setAttribute("aria-label", key);
+      input.onkeydown = (e) => { if (e.key === "Enter") setPurse(key, input); };
+      trainerPurse[key] = input;
+      purse.append(el("span", { className: "note", textContent: titleCase(key) }), input);
+    }
+    const pay = el("button", { type: "button", className: "toggle trainer-pay",
+                               textContent: "Set" });
+    pay.onclick = () => { for (const key of PURSE) setPurse(key, trainerPurse[key]); };
+    purse.append(pay);
+    body.append(purse);
+
+    const when = el("div", { className: "picker-row" });
+    const clock = editable(el("input", { type: "time", className: "trainer-clock" }));
+    clock.setAttribute("aria-label", "Time of day");
+    clock.onchange = () => { setClock(clock.value); sent(clock); };
+    trainerClock = clock;
+    when.append(el("span", { className: "note", textContent: "Time" }), clock);
+    trainerDay = el("span", { className: "note" });
+    when.append(trainerDay);
+    body.append(when);
+
+    const give = el("div", { className: "picker-row", style: "margin-top:1rem" });
+    const who = el("select", { className: "picker trainer-who" });
+    who.setAttribute("aria-label", "Who gets it");
+    // Every item in the game and every enchanted form of one is 631 options,
+    // which is not a list anyone scrolls. The filter narrows it as you type and
+    // keeps whatever was selected if it still matches.
+    const all = [];
+    for (const item of [...(D.items || [])].sort((a, b) => a.name < b.name ? -1 : 1)) {
+      all.push({ id: item.id, label: titleCase(item.name) });
+      for (const v of item.variants || []) {
+        all.push({ id: v.id, label: `${titleCase(item.name)} +${v.plus}` });
+      }
+    }
+    const what = el("select", { className: "picker trainer-what" });
+    what.setAttribute("aria-label", "What to give");
+    const filter = el("input", { type: "search", className: "trainer-filter",
+                                 placeholder: `Filter ${all.length} items` });
+    filter.setAttribute("aria-label", "Filter items");
+    const fill = () => {
+      const q = filter.value.trim().toLowerCase();
+      const hits = q ? all.filter((i) => i.label.toLowerCase().includes(q)) : all;
+      const keep = what.value;
+      what.textContent = "";
+      for (const i of hits) {
+        what.append(el("option", { value: String(i.id), textContent: i.label }));
+      }
+      if (hits.some((i) => String(i.id) === keep)) what.value = keep;
+      what.disabled = !hits.length;
+      filter.classList.toggle("empty", !hits.length);
+    };
+    filter.oninput = fill;
+    fill();
+    const hand = el("button", { type: "button", className: "toggle trainer-give", textContent: "Give" });
+    hand.onclick = () => giveItem(who.value, Number(what.value), hand);
+    give.append(who, filter, what, hand);
+    body.append(give);
+    trainerRows = { table, who };
+
+    renderDebug(body);
+
+    startTrainerPoll(root);
+  }
+
+  /** What the tab is, behind a button: it is the same three paragraphs every
+   *  time, and the space above the party is worth more than they are. The
+   *  button rides the first heading rather than taking a line of its own. */
+  function about() {
+    const dialog = el("dialog", { className: "trainer-about" });
+    dialog.append(el("h3", { textContent: "The trainer" }));
+    for (const text of [
+      "Reads and writes the running game's memory. A write lands at once, but "
+      + "the game redraws its own panels on the party's next action, so take a "
+      + "step to see it.",
+      "A name opens that character's sheet: the twenty-six numbers the game's "
+      + "own F1 page prints, held twice, as what the character has now and as "
+      + "the maximum.",
+      "It works only in the cabinet, only when the page was asked for with the "
+      + "trainer flag in its URL, and only once a party is in play \u2014 the "
+      + "game's data segment moves every boot and is found by searching for "
+      + "it.",
+    ]) {
+      dialog.append(el("p", { className: "note", textContent: text }));
+    }
+    const close = el("button", { type: "button", className: "toggle", textContent: "Close" });
+    close.onclick = () => dialog.close();
+    dialog.append(close);
+    const open = el("button", { type: "button", className: "toggle trainer-about-open",
+                                textContent: "?" });
+    open.setAttribute("aria-label", "About the trainer");
+    open.title = "About the trainer";
+    open.onclick = () => dialog.showModal();
+    return [open, dialog];
+  }
+
+  /** Show the tab, or show one line saying what it is waiting for. */
+  function setLive(live, message) {
+    if (trainerBody) trainerBody.hidden = !live;
+    if (trainerHeading) trainerHeading.hidden = !live;
+    if (!live) { trainerNote.textContent = message; return; }
+    // A complaint has to outlast the tick that follows it, or it is on screen
+    // for less time than it takes to look down at it.
+    if (Date.now() > noteUntil) trainerNote.textContent = "";
+  }
+
+  let noteUntil = 0;
+  const say = (text) => {
+    trainerNote.textContent = text;
+    noteUntil = Date.now() + 5000;
+  };
+
+  function startTrainerPoll(root) {
+    clearInterval(trainerTimer);
+    if (!emulator) { setLive(false, "No emulator on the channel."); return; }
+    const tick = async () => {
+      if (!root.isConnected || root.hidden) { clearInterval(trainerTimer); return; }
+      if (trainerReading) return;
+      trainerReading = true;
+      try {
+        const { base, party } = await anchor();
+        await applyFrozen(base);
+        updateTrainer(party);
+        updateHeader(await readHeader(base));
+        updateCreatures(await readCreatures(base, trainerMobs.onMap.checked));
+        await tickWatch(base);
+        setLive(true);
+      } catch (e) {
+        // The ordinary case is that the game has not got there yet, and that
+        // is one line rather than a paragraph. Anything else is a fault and
+        // says what it is.
+        setLive(false, e.waiting ? "Waiting for the game\u2026" : e.message);
+      } finally {
+        trainerReading = false;
+      }
+    };
+    trainerTimer = setInterval(tick, TRAINER_TICK);
+    tick();
+  }
+
+  /** Put the party's numbers on screen without disturbing what is being typed. */
+  function updateTrainer(party) {
+    const { table, who } = trainerRows;
+    const body = table.querySelector("tbody");
+    const names = party.map((p) => p.name).join("|");
+    if (body.dataset.names !== names) {
+      body.textContent = "";
+      body.dataset.names = names;
+      who.textContent = "";
+      for (const person of party) {
+        who.append(el("option", { value: person.name,
+                                  textContent: titleCase(person.name) }));
+        const row = el("tr", { dataset: { name: person.name } });
+        // The name opens the sheet. A button of its own would be a fourth
+        // control on a row that is already wider than the panel it sits in.
+        const sheet = el("button", { type: "button", className: "trainer-sheet",
+                                     textContent: titleCase(person.name) });
+        sheet.onclick = () => {
+          statsFor = statsFor === person.name ? null : person.name;
+          updateStats();
+        };
+        row.append(el("th", { scope: "row" }, [sheet]));
+        for (const key of ["health", "magic"]) {
+          const input = editable(el("input", { type: "number", min: "0", max: "9999",
+                                      className: "trainer-num", dataset: { key } }));
+          // Enter writes it; anything else and the next tick puts the game's
+          // own value back, which is what makes the field safe to leave alone.
+          input.onkeydown = (e) => { if (e.key === "Enter") setField(person.name, key, input); };
+          row.append(el("td", {}, [input]));
+        }
+        row.append(el("td", { className: "trainer-state" }));
+        const buttons = el("td", { className: "trainer-buttons" });
+        const set = el("button", { type: "button", className: "toggle", textContent: "Set" });
+        set.onclick = () => {
+          for (const key of ["health", "magic"]) {
+            setField(person.name, key, row.querySelector(`input[data-key="${key}"]`));
+          }
+        };
+        // Hidden rather than absent when there is nothing wrong: a button that
+        // comes and goes would move everything under it every time a character
+        // is poisoned.
+        const cure = el("button", { type: "button", className: "toggle trainer-cure",
+                                    textContent: "Cure" });
+        cure.onclick = () => cureCharacter(person.name);
+        buttons.append(set, cure);
+        row.append(buttons);
+        body.append(row);
+      }
+    }
+    trainerParty = party;
+    for (const person of party) {
+      const row = body.querySelector(`tr[data-name="${CSS.escape(person.name)}"]`);
+      if (!row) continue;
+      for (const key of ["health", "magic"]) {
+        refresh(row.querySelector(`input[data-key="${key}"]`), person[key]);
+      }
+      // What is wrong with them, which is the thing a button here can fix. What
+      // they are carrying is on the game's own panel already.
+      const ills = CONDITIONS.filter(([bit]) => person.condition & bit)
+        .map(([, name]) => name);
+      const state = row.querySelector(".trainer-state");
+      state.textContent = ills.length ? ills.join(", ") : "\u2014";
+      state.classList.toggle("ill", ills.length > 0);
+      const cure = row.querySelector(".trainer-cure");
+      cure.hidden = !ills.length;
+      cure.textContent = person.condition & 0x0040 ? "Revive" : "Cure";
+      row.querySelector(".trainer-sheet").classList
+        .toggle("on", statsFor === person.name);
+    }
+    updateStats();
+  }
+
+  function updateHeader(at) {
+    trainerAt = at;
+    if (posBand) { refresh(posBand, at.band); refresh(posCell, at.cell); }
+    if (posFacing && posFacing !== document.activeElement) {
+      const bit = (FACING.find(([, name]) => name === at.facing) || [0])[0];
+      if (bit) posFacing.value = String(bit);
+    }
+    trainerWhere.textContent =
+      `${at.page ? titleCase(at.page.title) : `area ${at.area} level ${at.level}`}`
+      + ` \u00b7 band ${at.band} cell ${at.cell} \u00b7 facing ${at.facing}`;
+    refresh(trainerClock, hhmm(at.clock));
+    trainerDay.textContent = `day ${at.day}`;
+    for (const key of PURSE) {
+      if (trainerPurse[key]) refresh(trainerPurse[key], at.purse[key]);
+    }
+  }
+
+  let trainerParty = [];
+  let trainerHeading = null;
+  let trainerBody = null;
+  let trainerMobList = [];
+  let trainerAt = null;
+  let statsBox = null;
+  let statsFor = null;         // whose sheet is open, by name
+  let trainerMobs = null;
+  let mobNote = null;
+  let trainerWhere = null;
+  let trainerClock = null;
+  let trainerDay = null;
+  let trainerPurse = {};
+
+  const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}`
+    + `:${String(m % 60).padStart(2, "0")}`;
+
+  /** Where and when the party is, from the roster's header slot. */
+  async function readHeader(base) {
+    const b = await emulator.peek(base + DS.roster, HEADER.nuore + 4);
+    const x = u16(b, HEADER.x), y = u16(b, HEADER.y);
+    const facing = u16(b, HEADER.facing);
+    const area = Math.floor(y / BANDS), level = Math.floor(x / CELLS);
+    const page = (D.map_pages || []).find((p) => p.area === area && p.level === level);
+    return {
+      x, y, area, level, page,
+      band: y % BANDS, cell: x % CELLS,
+      facing: (FACING.find(([bit]) => facing & bit) || [0, "?"])[1],
+      day: u16(b, HEADER.day), clock: u16(b, HEADER.clock),
+      purse: Object.fromEntries(PURSE.map((k) => [k, bcd(b, HEADER[k])])),
+    };
+  }
+
+  async function teleport(page, button) {
+    if (!page || dsBase === null) return;
+    const [band, cell] = page.arrive;
+    button.textContent = "\u2026";
+    // x and y are one grid across the whole world, and the area and level fall
+    // out of them: `area = y / 24`, `level = x / 40`. Nothing else is written,
+    // because nothing else in the header is known to hold either.
+    const at = dsBase + DS.roster;
+    await emulator.poke(at + HEADER.x, bytes16(page.level * CELLS + cell));
+    await emulator.poke(at + HEADER.y, bytes16(page.area * BANDS + band));
+    button.textContent = "Go";
+  }
+
+  async function setPurse(key, input) {
+    if (dsBase === null) return;
+    await emulator.poke(dsBase + DS.roster + HEADER[key], bcdBytes(Number(input.value)));
+    wrote();
+    sent(input);
+    input.blur();
+  }
+
+  async function setClock(value) {
+    if (dsBase === null || !/^\d\d:\d\d$/.test(value)) return;
+    const [h, m] = value.split(":").map(Number);
+    await emulator.poke(dsBase + DS.roster + HEADER.clock, bytes16(h * 60 + m));
+  }
+
+
+  async function setField(name, key, input) {
+    const person = trainerParty.find((p) => p.name === name);
+    if (!person) return;
+    await emulator.poke(person.at + CHAR[key], bytes16(Number(input.value) | 0));
+    wrote();
+    sent(input);
+    input.blur();
+  }
+
+  /** Lift every condition, the dead bit included. */
+  async function cureCharacter(name) {
+    const person = trainerParty.find((p) => p.name === name);
+    if (!person) return;
+    await emulator.poke(person.at + CHAR.condition,
+                        bytes16(person.condition & ~AFFLICTED & 0xFFFF));
+  }
+
+  async function giveItem(name, id, button) {
+    const person = trainerParty.find((p) => p.name === name);
+    if (!person || !id) return;
+    const free = person.carried.find((c) => !c.id);
+    if (!free) { say(`${titleCase(name)} is carrying eight already.`); return; }
+    button.textContent = "\u2026";
+    try {
+      // The id, and beside it whatever the item needs there. A torch's second
+      // word is how much of it is left to burn (image 0x0EB8F decrements it
+      // and puts the light out at zero), so handing one over with a zero
+      // hands over a torch that has already burned down.
+      await emulator.poke(free.at, [...bytes16(id), ...bytes16(itemCharge(id))]);
+      trainerNote.textContent = "";
+    } catch (e) {
+      say(e.message);
+    }
+    button.textContent = "Give";
+  }
+
+
+  /* --- the sheet -------------------------------------------------------- */
+
+  /** The twenty-six numbers, both columns, for whoever asked. */
+  function updateStats() {
+    if (!statsBox) return;
+    const person = trainerParty.find((p) => p.name === statsFor);
+    statsBox.hidden = !person;
+    if (!person) { statsBox.dataset.name = ""; return; }
+    if (statsBox.dataset.name !== person.name) buildStats(person);
+    for (const input of statsBox.querySelectorAll("input.trainer-stat")) {
+      const at = CHAR[input.dataset.col] + Number(input.dataset.index) * CHAR.statStride;
+      refresh(input, u16(person.rec, at));
+    }
+    refresh(statsBox.querySelector(".trainer-level"), person.level);
+    refresh(statsBox.querySelector(".trainer-xp"), person.experience);
+  }
+
+  function buildStats(person) {
+    statsBox.textContent = "";
+    statsBox.dataset.name = person.name;
+    const head = el("div", { className: "picker-row" });
+    head.append(el("strong", { textContent: titleCase(person.name) }),
+                el("span", { className: "note",
+                             textContent: titleCase(className(person.klass)) }),
+                el("span", { className: "note", textContent: "Level" }));
+    const level = editable(el("input", { type: "number", min: "1", max: "99",
+                                className: "trainer-num trainer-level" }));
+    level.setAttribute("aria-label", "level");
+    level.onchange = () => {
+      write(person.at + CHAR.level, bytes16(Number(level.value) | 0));
+      sent(level);
+    };
+    const xp = editable(el("input", { type: "number", min: "0", max: "99999999",
+                             className: "trainer-num trainer-xp" }));
+    xp.setAttribute("aria-label", "experience");
+    xp.onchange = () => {
+      write(person.at + CHAR.experience, bcdBytes(Number(xp.value)));
+      sent(xp);
+    };
+    head.append(level, el("span", { className: "note", textContent: "Exp." }), xp);
+    statsBox.append(head);
+
+    // Two stats to a row: the fourteen the character is on the left, the
+    // twelve it can do on the right. Each is held twice, and both are
+    // writable: raising an attribute without its maximum leaves the next
+    // level-up to put it back.
+    const table = el("table", { className: "effects trainer-sheet-table" });
+    table.append(el("thead", {}, el("tr", {},
+      ["Attribute", "Now", "Max", "Skill", "Now", "Max"]
+        .map((t) => el("th", { scope: "col", textContent: t })))));
+    const body = el("tbody");
+    const cell = (index, col) => {
+      const input = editable(el("input", { type: "number", min: "0", max: "9999",
+                                  className: "trainer-num trainer-stat",
+                                  dataset: { index: String(index), col } }));
+      // "live" is what the code calls it; "now" is what the column says.
+      input.setAttribute("aria-label",
+                         `${SHEET[index]} ${col === "live" ? "now" : "max"}`);
+      input.onchange = () => {
+        write(person.at + CHAR[col] + index * CHAR.statStride,
+              bytes16(Number(input.value) | 0));
+        sent(input);
+      };
+      return el("td", {}, [input]);
+    };
+    for (let i = 0; i < SKILL_FROM; i += 1) {
+      const row = el("tr");
+      row.append(el("th", { scope: "row", textContent: SHEET[i] }),
+                 cell(i, "live"), cell(i, "max"));
+      const j = SKILL_FROM + i;
+      if (j < SHEET.length) {
+        row.append(el("th", { scope: "row", textContent: SHEET[j] }),
+                   cell(j, "live"), cell(j, "max"));
+      } else {
+        for (let k = 0; k < 3; k += 1) row.append(el("td", {}));
+      }
+      body.append(row);
+    }
+    table.append(body);
+    statsBox.append(table);
+    statsBox.append(el("p", { className: "note", textContent:
+      "Capacity is what the character can carry, in tenths of a unit." }));
+  }
+
+  /** Every write goes through here, so every write quiets the refresh. */
+  async function write(at, bytes) {
+    if (!emulator) return;
+    try {
+      await emulator.poke(at, bytes);
+      wrote();
+      trainerNote.textContent = "";
+    } catch (e) {
+      say(e.message);
+    }
+  }
+
+  /* --- the fight -------------------------------------------------------- */
+
+  /** What is engaged, and what else is out on the map if that was asked for. */
+  async function readCreatures(base, includeMap) {
+    // The selected-creature pointer and the three buffers behind it are
+    // contiguous, so they are one read.
+    const buf = await emulator.peek(base + DS.selected,
+                                    2 + DS.engagedSlots * DS.creature);
+    const selected = u16(buf, 0);
+    const out = [];
+    for (let i = 0; i < DS.engagedSlots; i += 1) {
+      const off = 2 + i * DS.creature;
+      if (!u16(buf, off + MOB.id)) continue;
+      const where = DS.engaged + i * DS.creature;
+      out.push(creature(buf, off, base + where, `Engaged ${i + 1}`, where === selected));
+    }
+    if (includeMap) {
+      const slots = await emulator.peek(base + DS.spawn, DS.spawnSlots * DS.creature);
+      for (let i = 0; i < DS.spawnSlots; i += 1) {
+        const off = i * DS.creature;
+        if (!u16(slots, off + MOB.id)) continue;
+        out.push(creature(slots, off, base + DS.spawn + off, `Slot ${i}`, false));
+      }
+    }
+    return out;
+  }
+
+  function creature(b, off, at, where, selected) {
+    const field = (k) => asText(b.slice(off + MOB.name + k * MOB.nameField,
+                                        off + MOB.name + (k + 1) * MOB.nameField));
+    return {
+      at, where, selected,
+      name: [field(0), field(1)].filter(Boolean).join(" "),
+      health: u16(b, off + MOB.health),
+      full: u16(b, off + MOB.full),
+      level: u16(b, off + MOB.level),
+      impaired: u16(b, off + MOB.impaired),
+      // The record itself, for the debug editor: it is inside what was read.
+      rec: b.slice(off + MOB.record, off + MOB.record + MOB_RECORD),
+    };
+  }
+
+  function updateCreatures(mobs) {
+    const { table } = trainerMobs;
+    const body = table.querySelector("tbody");
+    mobNote.textContent = mobs.length ? "" : "Nothing in the fight.";
+    const key = mobs.map((m) => `${m.where}:${m.name}`).join("|");
+    if (body.dataset.key !== key) {
+      body.textContent = "";
+      body.dataset.key = key;
+      for (const mob of mobs) {
+        const row = el("tr", { dataset: { where: mob.where } });
+        row.append(el("th", { scope: "row" }, [
+          el("span", { textContent: titleCase(mob.name) }),
+          el("span", { className: "note", textContent: ` ${mob.where}` })]));
+        const health = editable(el("input", { type: "number", min: "0", max: "32767",
+                                     className: "trainer-num trainer-hp" }));
+        health.setAttribute("aria-label", `${mob.name} health`);
+        // The end-of-turn pass marks anything at or below zero dead and pays
+        // out for it, so a zero here is a kill rather than a corpse left
+        // standing.
+        health.onchange = () => {
+          write(mob.at + MOB.health, bytes16(Number(health.value) | 0));
+          sent(health);
+        };
+        row.append(el("td", {}, [health]),
+                   el("td", { textContent: String(mob.full) }),
+                   el("td", { textContent: String(mob.level) }));
+        body.append(row);
+      }
+    }
+    for (const mob of mobs) {
+      const row = body.querySelector(`tr[data-where="${CSS.escape(mob.where)}"]`);
+      if (!row) continue;
+      refresh(row.querySelector(".trainer-hp"), mob.health);
+      row.classList.toggle("on", mob.selected);
+    }
+    trainerMobList = mobs;
+    if (debugBox && debugBox.open) updateMobEdit(mobs);
+  }
+
+  /* --- debug ------------------------------------------------------------ */
+  //
+  // Everything below is for taking the game apart rather than playing it: raw
+  // fields, raw addresses, and no guard against a value the game cannot reach
+  // on its own. It is one collapsed block at the foot of the tab so that the
+  // controls above it, the ones that play the game, are what the tab is.
+
+  // The creature record's combat fields, as record offsets; `docs/monsters.md`
+  // has the rest. Split because the four flag words are read and written in
+  // hex and the rest in decimal.
+  const MOB_FIELDS = [
+    [30, "Health full"], [32, "Level"], [34, "Accuracy"], [36, "Dexterity"],
+    [38, "Absorption"], [40, "Damage"], [50, "Shot accuracy"], [52, "Shot damage"],
+  ];
+  const MOB_FLAGS = [
+    [96, "Word 96"], [98, "Word 98"], [100, "Immunity"], [102, "Resistance"],
+  ];
+  // The turn-list builder leaves out a creature with any of these; setting them
+  // holds a fight still while it is read (image 0x115b).
+  const IMPAIRED = 0x3010;
+
+  let debugBox = null;
+  let posFacing = null, posBand = null, posCell = null;
+  let mobPick = null, mobFields = null;
+
+  function renderDebug(root) {
+    debugBox = el("details", { className: "trainer-debug" });
+    debugBox.append(el("summary", { textContent: "Debug" }));
+    debugBox.append(el("p", { className: "note", textContent:
+      "For taking the game apart rather than playing it. These write raw "
+      + "fields at raw addresses, with nothing checking that the result is a "
+      + "state the game can reach on its own." }));
+    renderPosition(debugBox);
+    renderMobEdit(debugBox);
+    renderWatch(debugBox);
+    root.append(debugBox);
+  }
+
+  /* Position: the same header words the map picker writes, one cell at a
+     time, for standing somewhere the picker's arrival cell is not. */
+  function renderPosition(root) {
+    root.append(el("h4", { className: "curve-sub", textContent: "Position" }));
+    const row = el("div", { className: "picker-row" });
+    posFacing = el("select", { className: "picker debug-facing" });
+    posFacing.setAttribute("aria-label", "Facing");
+    for (const [bit, name] of FACING) {
+      posFacing.append(el("option", { value: String(bit), textContent: name }));
+    }
+    posBand = editable(el("input", { type: "number", min: "0", max: String(BANDS - 1),
+                            className: "trainer-num debug-band" }));
+    posBand.setAttribute("aria-label", "Band");
+    posCell = editable(el("input", { type: "number", min: "0", max: String(CELLS - 1),
+                            className: "trainer-num debug-cell" }));
+    posCell.setAttribute("aria-label", "Cell");
+    const set = el("button", { type: "button", className: "toggle debug-place",
+                               textContent: "Set" });
+    set.onclick = () => setPosition();
+    row.append(posFacing,
+               el("span", { className: "note", textContent: "Band" }), posBand,
+               el("span", { className: "note", textContent: "Cell" }), posCell,
+               set);
+    root.append(row);
+    root.append(el("p", { className: "note", textContent:
+      "Within the map the party is already on. A cell that is not part of the "
+      + "drawn map is not somewhere the party can stand." }));
+  }
+
+  /** Band and cell within the current map, and which way the party looks. */
+  async function setPosition() {
+    if (dsBase === null || !trainerAt) return;
+    const at = dsBase + DS.roster;
+    const band = Math.min(BANDS - 1, Math.max(0, Number(posBand.value) | 0));
+    const cell = Math.min(CELLS - 1, Math.max(0, Number(posCell.value) | 0));
+    await write(at + HEADER.x, bytes16(trainerAt.level * CELLS + cell));
+    await write(at + HEADER.y, bytes16(trainerAt.area * BANDS + band));
+    await write(at + HEADER.facing, bytes16(Number(posFacing.value) | 0));
+    sent(posBand);
+    sent(posCell);
+  }
+
+  /* Creatures: the record itself, live. `tools/fight_probe.js` does the same
+     thing by patching WORLD.DAT before boot and paying for a boot per reading;
+     this changes a creature that is already standing there. A shot resolves
+     against the map slot and a swing against the engaged buffer, so an
+     experiment on a volley edits the slot; tick the map box above to reach
+     one. */
+  function renderMobEdit(root) {
+    root.append(el("h4", { className: "curve-sub", textContent: "Creatures" }));
+    const row = el("div", { className: "picker-row" });
+    mobPick = el("select", { className: "picker debug-mob" });
+    mobPick.setAttribute("aria-label", "Which creature");
+    mobPick.onchange = () => updateMobEdit(trainerMobList);
+    const pacify = el("button", { type: "button", className: "toggle debug-pacify",
+                                  textContent: "Pacify" });
+    pacify.onclick = () => withMob((mob) =>
+      write(mob.at + MOB.impaired, bytes16(mob.impaired | IMPAIRED)));
+    const kill = el("button", { type: "button", className: "toggle debug-kill",
+                                textContent: "Kill" });
+    kill.onclick = () => withMob((mob) => write(mob.at + MOB.health, bytes16(0)));
+    const clear = el("button", { type: "button", className: "toggle debug-clear",
+                                 textContent: "Clear the map" });
+    clear.onclick = () => clearMap(clear);
+    row.append(mobPick, pacify, kill, clear);
+    root.append(row);
+    mobFields = el("div", { className: "debug-fields" });
+    root.append(mobFields);
+  }
+
+  const withMob = (fn) => {
+    const mob = trainerMobList.find((m) => m.where === mobPick.value);
+    return mob ? fn(mob) : undefined;
+  };
+
+  /** Free every spawn slot. Word 0 is what the game's own walkers test, so a
+   *  zero there is a slot with nothing in it. */
+  async function clearMap(button) {
+    if (dsBase === null) return;
+    button.textContent = "\u2026";
+    for (let i = 0; i < DS.spawnSlots; i += 1) {
+      await write(dsBase + DS.spawn + i * DS.creature + MOB.id, bytes16(0));
+    }
+    button.textContent = "Clear the map";
+  }
+
+  function updateMobEdit(mobs) {
+    if (!mobPick) return;
+    const key = mobs.map((m) => m.where).join("|");
+    if (mobPick.dataset.key !== key) {
+      const keep = mobPick.value;
+      mobPick.dataset.key = key;
+      mobPick.textContent = "";
+      for (const mob of mobs) {
+        mobPick.append(el("option", { value: mob.where,
+          textContent: `${mob.where} \u00b7 ${titleCase(mob.name)}` }));
+      }
+      if (mobs.some((m) => m.where === keep)) mobPick.value = keep;
+      mobPick.disabled = !mobs.length;
+    }
+    const mob = mobs.find((m) => m.where === mobPick.value);
+    if (!mob) {
+      mobFields.textContent = "";
+      mobFields.append(el("p", { className: "note",
+                                 textContent: "Nothing to edit." }));
+      mobFields.dataset.where = "";
+      return;
+    }
+    if (mobFields.dataset.where !== mob.where) buildMobFields(mob);
+    for (const input of mobFields.querySelectorAll("input")) {
+      const off = Number(input.dataset.off);
+      const v = u16(mob.rec, off);
+      refresh(input, input.dataset.hex ? `0x${hex(v, 4)}` : v);
+    }
+  }
+
+  function buildMobFields(mob) {
+    mobFields.textContent = "";
+    mobFields.dataset.where = mob.where;
+    const grid = el("div", { className: "debug-grid" });
+    const field = (off, label, asHex) => {
+      const input = asHex
+        ? editable(el("input", { type: "text", className: "watch-at debug-field",
+                                 dataset: { off: String(off), hex: "1" } }))
+        : editable(el("input", { type: "number", min: "0", max: "65535",
+                                 className: "trainer-num debug-field",
+                                 dataset: { off: String(off) } }));
+      input.setAttribute("aria-label", label);
+      input.onchange = () => {
+        write(mob.at + MOB.record + off, bytes16(readNumber(input)));
+        sent(input);
+      };
+      grid.append(el("div", { className: "debug-pair" }, [
+        el("span", { className: "note", textContent: label }), input]));
+    };
+    for (const [off, label] of MOB_FIELDS) field(off, label, false);
+    for (const [off, label] of MOB_FLAGS) field(off, label, true);
+    mobFields.append(grid);
+  }
+
+  /** A field's value, decimal or `0x` hex. */
+  const readNumber = (input) => {
+    const text = String(input.value).trim();
+    const v = /^0x/i.test(text) ? parseInt(text.slice(2), 16) : Number(text);
+    return Number.isFinite(v) ? (v & 0xffff) : 0;
+  };
+
+  /* --- memory ----------------------------------------------------------- */
+
+  // Somewhere to start from. Every one is a data-segment offset, so they hold
+  // across a reboot even though the segment itself moves.
+  const WATCH_SPOTS = [
+    ["Party header", DS.roster, 200],
+    ["Character 1", DS.characters, 128],
+    ["Combat flags", 0x5370, 32],
+    ["Turn list", 0x5696, 112],
+    ["Engaged 1", DS.engaged, DS.creature],
+    ["Spawn slot 0", DS.spawn, DS.creature],
+    ["Attack table", 0x96DA, 96],
+    ["Attack readouts", 0x0F4A, 80],
+  ];
+  const WATCH_MAX = 1024;      // bytes, so the dump stays a page
+  const WATCH_LOG = 200;       // lines kept
+  const SCAN_KEEP = 20000;     // addresses a search hands back
+  const SCAN_SHOWN = 16;
   const hex = (v, w) => v.toString(16).padStart(w, "0");
+
+  let watch = null;            // { at, len, snapshot, last }
+  let watchBox = null;
+  let watchDump = null;
+  let watchLog = null;
+  let watchHits = null;
+  let scanFound = null;        // heap addresses the last search left
+  let frozenList = null;
+  let frozen = [];             // [{ at, bytes }], rewritten every tick
+
+  function renderWatch(root) {
+    watchBox = el("div", { className: "trainer-watch" });
+    watchBox.append(el("h4", { className: "curve-sub", textContent: "Memory" }));
+    watchBox.append(el("p", { className: "note", textContent:
+      "A window on the data segment, re-read every tick. Bytes that differ "
+      + "from the snapshot are lit, and every word that changes is logged. "
+      + "The search takes a value the game is showing and hands back where it "
+      + "could be; change the value in the game and narrow to find which." }));
+
+    const pick = el("div", { className: "picker-row" });
+    const spot = el("select", { className: "picker watch-spot" });
+    spot.setAttribute("aria-label", "Where to watch");
+    WATCH_SPOTS.forEach(([label], i) => {
+      spot.append(el("option", { value: String(i), textContent: label }));
+    });
+    const at = el("input", { type: "text", className: "watch-at" });
+    at.setAttribute("aria-label", "Address, hex, from the data segment");
+    const len = el("input", { type: "number", min: "2", max: String(WATCH_MAX),
+                              className: "trainer-num watch-len" });
+    len.setAttribute("aria-label", "Length");
+    const load = ([, spotAt, spotLen]) => {
+      at.value = `0x${hex(spotAt, 4)}`;
+      len.value = String(spotLen);
+    };
+    load(WATCH_SPOTS[0]);
+    spot.onchange = () => { load(WATCH_SPOTS[Number(spot.value)]); startWatch(at, len); };
+    const go = el("button", { type: "button", className: "toggle watch-go",
+                              textContent: "Watch" });
+    go.onclick = () => startWatch(at, len);
+    const stop = el("button", { type: "button", className: "toggle watch-stop",
+                                textContent: "Stop" });
+    stop.onclick = () => { watch = null; watchDump.textContent = ""; };
+    pick.append(spot, el("span", { className: "note", textContent: "DS +" }),
+                at, len, go, stop);
+    watchBox.append(pick);
+
+    watchDump = el("pre", { className: "watch-dump" });
+    watchLog = el("pre", { className: "watch-log" });
+    watchBox.append(watchDump, watchLog);
+
+    const hunt = el("div", { className: "picker-row" });
+    const value = el("input", { type: "number", className: "trainer-num watch-value" });
+    value.setAttribute("aria-label", "Value to search for");
+    const width = el("select", { className: "picker watch-width" });
+    width.setAttribute("aria-label", "How it is stored");
+    for (const [v, label] of [["word", "word"], ["byte", "byte"], ["bcd", "BCD"]]) {
+      width.append(el("option", { value: v, textContent: label }));
+    }
+    const search = el("button", { type: "button", className: "toggle watch-search",
+                                  textContent: "Search" });
+    search.onclick = () => runScan(value, width, false, search);
+    const narrow = el("button", { type: "button", className: "toggle watch-narrow",
+                                  textContent: "Narrow" });
+    narrow.onclick = () => runScan(value, width, true, narrow);
+    hunt.append(value, width, search, narrow);
+    watchBox.append(hunt);
+    watchHits = el("div", { className: "watch-hits" });
+    watchBox.append(watchHits);
+
+    // The write side. A search that cannot be acted on is a viewer: this is
+    // what makes the address it found worth having.
+    const put = el("div", { className: "picker-row" });
+    const putAt = el("input", { type: "text", className: "watch-at watch-put-at" });
+    putAt.setAttribute("aria-label", "Address to write, hex, from the data segment");
+    const putBytes = el("input", { type: "text", className: "watch-at watch-put-bytes" });
+    putBytes.setAttribute("aria-label", "Bytes to write, hex");
+    putBytes.placeholder = "39 30";
+    const writeIt = el("button", { type: "button", className: "toggle watch-write",
+                                   textContent: "Write" });
+    writeIt.onclick = () => pokeFrom(putAt, putBytes);
+    // Freezing is the same write, made again on every tick. It is how a value
+    // stays put through a routine that keeps setting it back.
+    const freeze = el("button", { type: "button", className: "toggle watch-freeze",
+                                  textContent: "Freeze" });
+    freeze.onclick = () => addFreeze(putAt, putBytes);
+    put.append(el("span", { className: "note", textContent: "DS +" }),
+               putAt, putBytes, writeIt, freeze);
+    watchBox.append(put);
+    frozenList = el("div", { className: "watch-frozen" });
+    watchBox.append(frozenList);
+    root.append(watchBox);
+  }
+
+  /** Bytes from `12 34` or `1234` or `0x1234`; anything that is not a hex
+   *  digit separates. */
+  function hexBytes(text) {
+    const clean = String(text).replace(/0x/gi, " ").replace(/[^0-9a-f]+/gi, "");
+    if (!clean || clean.length % 2) return null;
+    return clean.match(/../g).map((h) => parseInt(h, 16));
+  }
+
+  const watchAddress = (input) => {
+    const at = parseInt(String(input.value).replace(/^0x/i, ""), 16);
+    return Number.isInteger(at) && at >= 0 ? at : null;
+  };
+
+  async function pokeFrom(atInput, bytesInput) {
+    const at = watchAddress(atInput), bytes = hexBytes(bytesInput.value);
+    if (dsBase === null || at === null || !bytes) {
+      say("An address and an even number of hex digits.");
+      return;
+    }
+    await write(dsBase + at, bytes);
+  }
+
+  function addFreeze(atInput, bytesInput) {
+    const at = watchAddress(atInput), bytes = hexBytes(bytesInput.value);
+    if (at === null || !bytes) {
+      say("An address and an even number of hex digits.");
+      return;
+    }
+    if (!frozen.some((f) => f.at === at)) frozen.push({ at, bytes });
+    drawFrozen();
+  }
+
+  function drawFrozen() {
+    frozenList.textContent = "";
+    if (!frozen.length) return;
+    frozenList.append(el("p", { className: "note", textContent: "Frozen" }));
+    for (const f of frozen) {
+      const label = `+0x${hex(f.at, 4)} = ${f.bytes.map((b) => hex(b, 2)).join(" ")}`;
+      const drop = el("button", { type: "button", className: "toggle watch-thaw",
+                                  textContent: `${label}  \u00d7` });
+      drop.setAttribute("aria-label", `Stop freezing ${label}`);
+      drop.onclick = () => {
+        frozen = frozen.filter((x) => x !== f);
+        drawFrozen();
+      };
+      frozenList.append(drop);
+    }
+  }
+
+  /** Written before the tick reads, so what is shown is what was frozen. */
+  async function applyFrozen(base) {
+    for (const f of frozen) await emulator.poke(base + f.at, f.bytes);
+  }
+
+  function startWatch(at, len) {
+    const where = parseInt(String(at.value).replace(/^0x/i, ""), 16);
+    const size = Math.min(WATCH_MAX, Math.max(2, Number(len.value) | 0));
+    if (!Number.isInteger(where) || where < 0) {
+      say(`${at.value} is not an address.`);
+      return;
+    }
+    watch = { at: where, len: size, snapshot: null, last: null };
+    watchLog.textContent = "";
+  }
+
+  /** Read the window, light what has moved since the snapshot, log what moved
+   *  since the last read. */
+  async function tickWatch(base) {
+    if (!watch || !debugBox.open) return;
+    const now = await emulator.peek(base + watch.at, watch.len);
+    if (!watch.snapshot) watch.snapshot = now;
+    if (watch.last) {
+      const lines = [];
+      for (let i = 0; i + 1 < watch.len; i += 2) {
+        const was = u16(watch.last, i), is = u16(now, i);
+        if (was !== is) {
+          lines.push(`+0x${hex(watch.at + i, 4)}  0x${hex(was, 4)} -> 0x${hex(is, 4)}`
+                     + `   ${was} -> ${is}`);
+        }
+      }
+      if (lines.length) {
+        const kept = (watchLog.textContent ? watchLog.textContent.split("\n") : []);
+        watchLog.textContent = lines.concat(kept).slice(0, WATCH_LOG).join("\n");
+      }
+    }
+    watch.last = now;
+    drawDump(now);
+  }
+
+  function drawDump(now) {
+    const out = document.createDocumentFragment();
+    for (let i = 0; i < watch.len; i += 16) {
+      out.append(`${hex(watch.at + i, 4)}  `);
+      for (let k = 0; k < 16 && i + k < watch.len; k += 1) {
+        const text = `${hex(now[i + k], 2)} `;
+        if (now[i + k] === watch.snapshot[i + k]) out.append(text);
+        else out.append(el("span", { className: "watch-moved", textContent: text }));
+      }
+      out.append("\n");
+    }
+    watchDump.textContent = "";
+    watchDump.append(out);
+  }
+
+  /** The value as the game would hold it. */
+  function scanBytes(value, width) {
+    const v = Number(value.value) | 0;
+    if (width.value === "byte") return [v & 0xff];
+    if (width.value === "bcd") return bcdBytes(v);
+    return bytes16(v & 0xffff);
+  }
+
+  async function runScan(value, width, narrow, button) {
+    if (!emulator) return;
+    if (narrow && !scanFound) {
+      say("Search once before narrowing.");
+      return;
+    }
+    button.textContent = "\u2026";
+    try {
+      const res = await emulator.search({
+        bytes: scanBytes(value, width), limit: SCAN_KEEP,
+        candidates: narrow ? scanFound : undefined,
+      });
+      scanFound = res.found;
+      showHits(res);
+      trainerNote.textContent = "";
+    } catch (e) {
+      say(e.message);
+    }
+    button.textContent = narrow ? "Narrow" : "Search";
+  }
+
+  function showHits(res) {
+    watchHits.textContent = "";
+    const more = res.total > res.found.length ? `, ${res.found.length} kept` : "";
+    watchHits.append(el("p", { className: "note",
+      textContent: `${res.total} address${res.total === 1 ? "" : "es"}${more}` }));
+    for (const found of res.found.slice(0, SCAN_SHOWN)) {
+      const off = dsBase === null ? -1 : found - dsBase;
+      const inside = off >= 0 && off < 0x10000;
+      const label = inside ? `DS +0x${hex(off, 4)}` : `heap 0x${hex(found, 6)}`;
+      const b = el("button", { type: "button", className: "toggle", textContent: label });
+      // A hit inside the data segment is somewhere the window can go; one
+      // outside it is not, and says so by not being offered.
+      b.disabled = !inside;
+      b.onclick = () => {
+        const at = watchBox.querySelector(".watch-at");
+        const len = watchBox.querySelector(".watch-len");
+        at.value = `0x${hex(off & ~1, 4)}`;
+        len.value = "32";
+        startWatch(at, len);
+      };
+      watchHits.append(b);
+    }
+  }
 
   /** A globe, drawn rather than typed: the panel's font has no glyph that
    *  reads as one at 14 pixels. */
@@ -183,6 +1516,7 @@
     dialog.append(head, shell);
     return dialog;
   }
+
   /* --- F1 maps, F4 classes, F5 items ------------------------------------ */
 
   /** Draw a map page onto a canvas from its grid and tileset.
@@ -667,6 +2001,8 @@
 
   const TABS = [
     { key: "f1", label: "Maps", render: renderMaps },
+    // Last, and only when the cabinet booted the hooked emulator for it.
+    ...(TRAINER ? [{ key: "tr", label: "Trainer", render: renderTrainer }] : []),
   ];
 
   // Number keys select a tab, the way a browser selects one of its own.
