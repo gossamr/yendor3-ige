@@ -24,7 +24,10 @@ from pathlib import Path
 
 import labels as L
 import markers
+import pictures as P
+import pngutil
 import sections as S
+import tiles
 
 # --- text ------------------------------------------------------------------
 
@@ -38,6 +41,97 @@ def reflow(lines: list[str]) -> str:
     so a single space at each join reconstructs the sentence.
     """
     return " ".join(line.strip() for line in lines if line.strip())
+
+
+# --- monster art -----------------------------------------------------------
+
+# The picture a creature is drawn with. tools/pictures.py has the file's shape;
+# what is decided here is which of the ten pictures to show and how to store it.
+#
+# The first of the ten is the creature standing still. The other nine are the
+# rest of the walk cycle, the attack and the death, which a still picture has
+# no use for.
+MONSTER_FRAME = 0
+# Section 12's first palette. The map screen draws with it too. Drawing these
+# pictures with it reproduces the clue book's own monster screens pixel for
+# pixel on 64 of the 71 creatures the game lists; on the other seven the
+# capture caught the page mid-refresh, with the top of the creature on one
+# step of the walk cycle and the bottom on the next. tools/verify_monsters.py
+# measures this.
+MONSTER_PALETTE = 0
+
+
+def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, dict]:
+    """name -> a PNG of the creature, cropped to its own pixels.
+
+    Each picture carries a palette of just the colors it uses, which is what
+    keeps 71 of them inside a quarter of a megabyte. Index 0 is the
+    transparent one; the game's own transparent value, 0xFF, would need a
+    256-entry alpha table to say so.
+    """
+    runs = P.read_runs(d.exe, len(pics))
+    palette = tiles.palette(d, MONSTER_PALETTE)
+    out = {}
+    for e in enemies:
+        # The game omits the placeholder record from its own list and never
+        # draws it, so the picture its sprite field points at is not a
+        # creature: it is the scenery that run 2 starts with.
+        if not e["listed"]:
+            continue
+        run, raw = P.creature(
+            pics, runs, e["sprite"], e["masks"]["w96"], e["masks"]["w98"],
+            {s["from"]: s["to"] for s in e["recolour"]}, MONSTER_FRAME)
+        w, h, crop = _cropped(raw, run.width)
+        png = _indexed(w, h, crop, palette)
+        out[e["name"]] = _png_entry(w, h, png)
+    return out
+
+
+# The projectile run. Each picture holds the shot at the four angles it can
+# travel at, so it is shown whole rather than cut up: which of the four the
+# game picks is a property of the shot, not of the creature.
+PROJECTILE_RUN = 1
+
+
+def projectile_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, dict]:
+    """picture number -> a PNG of the shot, for every picture a creature fires.
+
+    Keyed by the picture rather than by the creature because seven pictures
+    serve all thirteen shooters: three of them fire the same arrows.
+    """
+    runs = P.read_runs(d.exe, len(pics))
+    run = runs[PROJECTILE_RUN]
+    palette = tiles.palette(d, MONSTER_PALETTE)
+    out = {}
+    for e in enemies:
+        shot = e["ranged"]
+        if not shot or str(shot["picture"]) in out:
+            continue
+        raw = P.recoloured(P.picture(pics, run, shot["picture"]),
+                           {s["from"]: s["to"] for s in shot["recolour"]})
+        w, h, crop = _cropped(raw, run.width)
+        out[str(shot["picture"])] = _png_entry(w, h, _indexed(w, h, crop, palette))
+    return out
+
+
+def _cropped(raw: bytes, width: int) -> tuple[int, int, bytes]:
+    x0, y0, x1, y1 = P.bounds(raw, width)
+    return x1 - x0, y1 - y0, b"".join(raw[y * width + x0:y * width + x1]
+                                      for y in range(y0, y1))
+
+
+def _indexed(w: int, h: int, crop: bytes, palette: list[bytes]) -> bytes:
+    """A PNG carrying only the colors this picture uses, transparent at 0."""
+    used = sorted(set(crop) - {P.TRANSPARENT})
+    slot = {v: i + 1 for i, v in enumerate(used)}
+    return pngutil.encode_indexed(
+        w, h, bytes(slot.get(v, 0) for v in crop),
+        [b"\x00\x00\x00"] + [palette[v] for v in used], transparent=0)
+
+
+def _png_entry(w: int, h: int, png: bytes) -> dict:
+    return {"width": w, "height": h,
+            "src": "data:image/png;base64," + base64.b64encode(png).decode()}
 
 
 # --- walkthrough -----------------------------------------------------------
@@ -128,9 +222,12 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     d = S.load(game_dir)
     missing = L.verify(d.exe)
     assert not missing, f"EXE is missing expected labels: {missing}"
+    pics = (Path(game_dir) / "PICTURES.VGA").read_bytes()
 
     pages = extract_walkthrough(d)
     payload = {
+        "monster_art": monster_art(d, pics, enemies),
+        "projectile_art": projectile_art(d, pics, enemies),
         "walkthrough": pages,
         "walkthrough_index": walkthrough_sections(pages),
         "maps": extract_maps(d),

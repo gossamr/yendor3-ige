@@ -32,7 +32,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Text and prose
 - [ ] Leveling and skills
 - [ ] Character roster
-- [ ] Artwork
+- [x] Artwork (the ten picture runs, the palette and the creature art, [docs/pictures.md](docs/pictures.md))
 - [x] Tile artwork (which tile a map id draws, [docs/map.md](docs/map.md))
 - [x] The world grid (one plane of 800 by 168 cells, and which cells the party may stand on, [docs/map.md](docs/map.md))
 - [ ] Item record
