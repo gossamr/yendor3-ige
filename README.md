@@ -34,7 +34,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [ ] Character roster
 - [ ] Artwork
 - [x] Tile artwork (which tile a map id draws, [docs/map.md](docs/map.md))
-- [ ] The world grid
+- [x] The world grid (one plane of 800 by 168 cells, and which cells the party may stand on, [docs/map.md](docs/map.md))
 - [ ] Item record
 - [ ] Enemy record
 - [ ] Spell record

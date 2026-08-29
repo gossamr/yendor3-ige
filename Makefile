@@ -52,7 +52,9 @@ TEST_ARGS ?= /NOM /NOS
 ##   pack_maps    draws every map page from the files    -> map_pages.json
 ##   extract      decodes WORLD.DAT                      -> data/*.json
 data:
+	PYTHONPATH=tools $(PY) tools/pack_maps.py
 	PYTHONPATH=tools $(PY) tools/extract.py
+	PYTHONPATH=tools $(PY) tools/world_map.py
 
 ## Everything that can run without a browser
 test-py:
