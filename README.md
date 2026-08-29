@@ -30,7 +30,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Map registry and names ([docs/map.md](docs/map.md))
 - [x] Legend markers ([docs/map.md](docs/map.md))
 - [x] Text and prose
-- [ ] Leveling and skills
+- [x] Leveling and skills ([docs/leveling.md](docs/leveling.md))
 - [ ] Character roster
 - [x] Artwork (the ten picture runs, the palette and the creature art, [docs/pictures.md](docs/pictures.md))
 - [x] Tile artwork (which tile a map id draws, [docs/map.md](docs/map.md))

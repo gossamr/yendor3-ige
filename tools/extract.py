@@ -23,6 +23,7 @@ import struct
 from pathlib import Path
 
 import labels as L
+import levels as LV
 import markers
 import pictures as P
 import pngutil
@@ -218,6 +219,90 @@ def extract_legend(d: S.Directory) -> list[str]:
     return labels
 
 
+# --- driver ----------------------------------------------------------------
+
+# The NPC and conversation-topic tables, decoded in docs/shops.md. Only the
+# training service is read here; the rest of what an NPC does is not in the
+# panel.
+NPC_BASE, NPC_REC, NPC_COUNT = 0x3D8EB9, 40, 141
+TOPIC_BASE, TOPIC_REC, TOPIC_COUNT = 0x3DA4C1, 60, 1073
+TRAIN_SELECT = 0x0800  # topic +18, the handler the dispatch at 0x02ac9 picks
+
+# A trainer's ceiling is `+0x16` of its record and the refusal above it is coded
+# at image 0x09d80. A *floor* is not in the record, and nothing found reads one,
+# but NPC 33 states one in its own dialogue ("once you are level 30, I can
+# handle all of your training needs") and it holds in play. The hand-off is the
+# corroboration: NPC 104 trains through exactly 30 and NPC 33 begins there, so
+# the two cover 1-30 and 30-40 between them with no gap and no overlap.
+TRAINER_FLOOR = {33: 30}
+
+
+def extract_trainers(world: bytes) -> list[dict]:
+    """Every NPC that sells levels, with the ceiling and the price it charges.
+
+    Found by the topic's dispatch field rather than its keyword, so a trainer
+    named something other than TRAIN would still be caught. `+0x16` of the NPC
+    record is the highest level it will train you to and `+0x18` its price
+    factor; offsets past those are zero on all five, so there is no floor and
+    every trainer starts at level 1.
+    """
+    def word(buf, off):
+        return struct.unpack_from("<H", buf, off)[0]
+
+    npcs = [world[NPC_BASE + i * NPC_REC: NPC_BASE + (i + 1) * NPC_REC]
+            for i in range(NPC_COUNT)]
+    owner = {}
+    for i, rec in enumerate(npcs):
+        first, count = word(rec, 8), word(rec, 4)
+        for t in range(first, first + count):
+            owner[t] = i
+
+    out = []
+    for t in range(1, TOPIC_COUNT + 1):
+        rec = world[TOPIC_BASE + (t - 1) * TOPIC_REC: TOPIC_BASE + t * TOPIC_REC]
+        if word(rec, 14) or word(rec, 18) != TRAIN_SELECT:
+            continue
+        i = owner.get(t)
+        if i is None:
+            continue
+        out.append({"npc": i,
+                    "from": TRAINER_FLOOR.get(i, 1),
+                    "through": word(npcs[i], 0x16),
+                    "factor": word(npcs[i], 0x18)})
+    return sorted(out, key=lambda r: (r["through"], r["from"]))
+
+
+def extract_leveling(d: S.Directory) -> dict:
+    """The leveling tables, which the clue book has no page for.
+
+    All of this is compiled into REGISTER.EXE rather than stored in WORLD.DAT,
+    so the game never shows it: the trainer quotes one price and the character
+    screen names one level. The panel can show the whole ladder.
+    """
+    table = LV.experience_table(d.exe)
+    real = {lvl: xp for lvl, xp in table.items() if xp < LV.SENTINEL_XP}
+    tier2, tier3 = LV.promotion_levels(d.exe)
+    return {
+        # Cumulative experience for each level that can actually be reached.
+        "experience": [{"level": lvl,
+                        "total": real[lvl],
+                        "step": real[lvl] - real.get(lvl - 1, 0)}
+                       for lvl in sorted(real)],
+        "cap": max(real),
+        # price = base x the trainer's own factor x the level you train away
+        # from, so the factor is the only part that varies between towns.
+        "train_base": LV.TRAIN_BASE_PRICE,
+        # min(15, round(base charisma x 13%)), which is worth showing as the
+        # staircase it is rather than as a formula.
+        "bonus_points": [{"charisma": c, "points": LV.bonus_points(c)}
+                         for c in range(45, 121)],
+        "bonus_cap": LV.BONUS_CAP,
+        "promotions": {"second": tier2, "third": tier3},
+        "trainers": extract_trainers(d.world),
+        "spells_by_level": LV.spells_by_level(d.exe),
+    }
+
+
 def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     d = S.load(game_dir)
     missing = L.verify(d.exe)
@@ -244,6 +329,7 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         "map_links": {**K.by_label(d, MAP_PAGES,
                                    markers.by_page(d.world, MAP_PAGES)),
                       **{f"{a}|{b}": v for (a, b), v in _WALKED_LINKS.items()}},
+        "leveling": extract_leveling(d),
         "labels": {
             "effects": L.EFFECTS,
             "monster_stats": L.MONSTER_STATS,
