@@ -87,6 +87,28 @@ LEGEND_RECORD = 26
 LEGEND_RULER = "1234567890123456789012345"
 
 
+def extract_legend(d: S.Directory) -> list[str]:
+    """The map legend labels, which stop well short of the section's end.
+
+    The Restoration directory entry runs to the start of the next one, but the
+    labels themselves fill only the first 138 records; after that comes the
+    spell-text index and then the descriptions. Striding 26 bytes over those
+    produces convincing-looking garbage ("To a Single Player.", "Of Cold
+    Damage. Be Caref"), so the run is cut at the first record that is not a
+    clean NUL-terminated label.
+    """
+    raw = d.rest(S.LEGEND).slice(d.world)
+    labels = []
+    for i in range(len(raw) // LEGEND_RECORD):
+        rec = raw[i * LEGEND_RECORD:(i + 1) * LEGEND_RECORD]
+        end = rec.find(b"\x00")
+        if end < 0 or any(c and not (32 <= c < 127) for c in rec[:end]) \
+                or any(rec[end:]):
+            break
+        labels.append(text(rec[:end]))
+    return labels
+
+
 def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     d = S.load(game_dir)
     missing = L.verify(d.exe)
@@ -97,6 +119,7 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         "walkthrough": pages,
         "walkthrough_index": walkthrough_sections(pages),
         "maps": extract_maps(d),
+        "legend": extract_legend(d),
         "labels": {
             "effects": L.EFFECTS,
             "monster_stats": L.MONSTER_STATS,
@@ -126,4 +149,5 @@ if __name__ == "__main__":
     print(f"walkthrough   {len(p['walkthrough']):>4} pages, "
           f"{len(p['walkthrough_index'])} sections")
     print(f"maps          {len(p['maps']):>4}")
+    print(f"legend        {len(p['legend']):>4}")
     print(f"\nwrote data/*.json")

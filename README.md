@@ -28,7 +28,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Section directory
 - [x] Map grid and object layer ([docs/map.md](docs/map.md))
 - [x] Map registry and names ([docs/map.md](docs/map.md))
-- [ ] Legend markers
+- [x] Legend markers ([docs/map.md](docs/map.md))
 - [x] Text and prose
 - [ ] Leveling and skills
 - [ ] Character roster
