@@ -1,0 +1,651 @@
+/* Palette sampled pixel-for-pixel from the running game: the stone greys of
+   its screen backgrounds, the burnt orange of its menu text, and the yellow /
+   red / green / blue it uses for numbers, stats, immunities and special
+   attacks. Only the three darkest greys are new, to carry a dark UI where the
+   game used a lit stone texture. */
+:root {
+  --stone-000: #0c0c0c;
+  --stone-100: #141414;
+  --stone-200: #1c1c1c;
+  --stone-300: #202020;
+  --stone-400: #343434;
+  --stone-500: #454545;
+  --stone-600: #555555;
+  --stone-700: #757575;
+  --ink:       #aaaaaa;
+  --ink-bright:#dfdfdf;
+  --amber:     #e76500;
+  --amber-lit: #ff8624;
+  --amber-dim: #863c00;
+  --gold:      #ffeb24;
+  --blood:     #a62424;
+  /* The sampled blood red is too dark to read as small text on this ground;
+     this is the same hue lifted for legibility. */
+  --blood-lit: #e8503c;
+  /* The game's blue #5959c7 and green #007900, lifted to a readable value. */
+  --azure:     #8a8ae8;
+  --verdant:   #3fbe3f;
+  --moss:      #2f9e2f;
+  --arcane:    #7b7bdd;
+  /* One hue per damage element. */
+  --fire:      #ff8a26;
+  --frost:     #56c8ec;
+  --spark:     #f6d032;
+  --venom:     #8ec63f;
+  --rot:       #a08a3c;
+  --force:     #b06ef2;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--stone-100);
+  color: var(--ink);
+  font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--amber-lit); }
+
+/* --- chrome ------------------------------------------------------------ */
+
+header {
+  display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap;
+  padding: .7rem 1rem;
+  background: var(--stone-000);
+  border-bottom: 1px solid var(--stone-400);
+  position: sticky; top: 0; z-index: 5;
+}
+header h1 {
+  margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .16em;
+  color: var(--ink-bright); text-transform: uppercase;
+}
+header .sub { color: var(--stone-700); font-size: 12px; letter-spacing: .1em; }
+header .spacer { flex: 1; }
+
+#search {
+  background: var(--stone-200); color: var(--ink-bright);
+  border: 1px solid var(--stone-400); border-radius: 2px;
+  padding: .35rem .6rem; font: inherit; min-width: 15rem;
+}
+#search:focus { outline: none; border-color: var(--amber-dim); }
+
+nav {
+  display: flex; align-items: center; gap: 2px; padding: 0 1rem;
+  background: var(--stone-000);
+  border-bottom: 1px solid var(--stone-400);
+  position: sticky; top: 49px; z-index: 4; overflow-x: auto;
+}
+.nav-spacer { flex: 1; min-width: .5rem; }
+
+/* Embedded in the cabinet: the application supplies the header, so this page
+   contributes only its tab row, with the search box moved onto it. */
+body.embedded > header { display: none; }
+/* The tab row wraps rather than scrolling sideways: a hidden tab is worse than
+   a second line, and the search must never be the thing pushed out of sight. */
+body.embedded nav { top: 0; padding: .35rem .7rem .45rem; flex-wrap: wrap;
+                    overflow-x: visible; row-gap: .3rem; }
+body.embedded .nav-spacer { flex-basis: 100%; height: 0; }
+body.embedded nav #search { width: 100%; min-width: 0; font-size: 12px; }
+body.embedded nav button { padding: .35rem .55rem; }
+body.embedded main { padding: .8rem .7rem; }
+nav button {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--stone-700); font: inherit; letter-spacing: .08em;
+  padding: .5rem .8rem; cursor: pointer; white-space: nowrap;
+}
+nav button:hover { color: var(--ink); }
+nav button[aria-selected="true"] { color: var(--amber-lit); border-bottom-color: var(--amber); }
+nav button .fk { color: var(--stone-600); margin-right: .4rem; }
+nav button[aria-selected="true"] .fk { color: var(--amber-dim); }
+
+main { padding: 1rem; max-width: 1200px; }
+section[hidden] { display: none; }
+
+h2 { font-size: 15px; letter-spacing: .06em; color: var(--ink-bright);
+     margin: 0 0 .8rem; font-weight: 600; }
+.note { color: var(--stone-700); font-size: 12px; margin: 0 0 .8rem; max-width: 62ch; }
+
+/* --- generic list / detail --------------------------------------------- */
+
+/* A picker above its card, rather than an index column beside it. The panel is
+   often docked beside the game at a width that leaves a two-column layout no
+   room for either column. */
+.picker-row { display: flex; align-items: baseline; flex-wrap: wrap;
+              gap: .3rem .8rem; margin-bottom: .8rem; }
+.picker-row .note { margin: 0; }
+.picker { background: var(--stone-300); color: var(--amber-lit);
+          border: 1px solid var(--stone-500); border-radius: 2px;
+          font: inherit; font-size: 12px; padding: .25rem 1.6rem .25rem .5rem;
+          max-width: 100%; cursor: pointer;
+          /* The arrow, drawn rather than left to the platform: a system-styled
+             control on a dark panel comes out light-on-light. */
+          appearance: none;
+          background-image:
+            linear-gradient(45deg, transparent 50%, currentColor 50%),
+            linear-gradient(135deg, currentColor 50%, transparent 50%);
+          background-position: right .75rem center, right .5rem center;
+          background-size: .25rem .25rem, .25rem .25rem;
+          background-repeat: no-repeat; }
+.picker:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+/* The open menu is drawn by the platform, so its own colors have to be set
+   or it inherits the page's text color onto the platform's background. */
+.picker option { background: var(--stone-200); color: var(--ink); }
+
+.list { max-height: min(70vh, 40rem); }
+
+.list { overflow-y: auto; border: 1px solid var(--stone-400);
+        background: var(--stone-200); border-radius: 2px; }
+.list button {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  color: var(--ink); font: inherit; font-size: 12px; line-height: 1.35;
+  padding: .22rem .5rem; cursor: pointer; border-left: 2px solid transparent;
+}
+.list button:hover { background: var(--stone-300); }
+.list button[aria-current="true"] {
+  background: var(--stone-300); color: var(--amber-lit); border-left-color: var(--amber);
+}
+
+.card { border: 1px solid var(--stone-400); background: var(--stone-200);
+        border-radius: 2px; padding: 1rem; }
+.card h3 { margin: 0 0 .8rem; font-size: 16px; letter-spacing: .04em;
+           color: var(--amber-lit); }
+
+/* The creature's picture beside its name. The game stores it at 140x155 or
+   190x110, and it is shown at that size: scaling eight-bit artwork up blurs
+   it and scaling it down loses pixels the artist placed one at a time. It
+   shrinks only when the panel is too narrow to hold it. */
+.monster-head { display: flex; gap: 1rem; align-items: flex-start;
+                margin-bottom: .8rem; }
+.monster-head h3 { margin-bottom: .3rem; }
+.monster-art { flex: 0 1 auto; max-width: 45%; height: auto;
+               image-rendering: pixelated; }
+
+/* The shot beside what it does. Its picture holds the four angles the shot can
+   travel at, so it is wider than it is tall and sits above the numbers when
+   the panel is narrow. */
+.ranged { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.4rem; }
+.shot-art { flex: 0 1 auto; max-width: 100%; height: auto;
+            image-rendering: pixelated; }
+
+.stats { display: grid; grid-template-columns: max-content max-content; gap: .1rem 1rem; margin: 0; }
+.stats dt { color: var(--stone-700); }
+.stats dd { margin: 0; color: var(--blood-lit); font-variant-numeric: tabular-nums; }
+.stats dd.num { color: var(--gold); }
+
+.chips { display: flex; flex-wrap: wrap; gap: .3rem; margin: .8rem 0 0; }
+.chip { border: 1px solid currentColor; border-radius: 2px; padding: .05rem .4rem;
+        font-size: 11px; letter-spacing: .08em; color: var(--moss); }
+.chip.raw { color: var(--stone-600); }
+.chip.attack { color: var(--arcane); }
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: .22rem .5rem; border-bottom: 1px solid var(--stone-300); }
+th:first-child, td:first-child { text-align: left; }
+thead th { color: var(--stone-700); font-weight: 500; letter-spacing: .08em;
+           position: sticky; top: 0; background: var(--stone-100); }
+tbody tr:hover { background: var(--stone-200); }
+td.num { color: var(--gold); font-variant-numeric: tabular-nums; }
+
+.prose { max-width: 68ch; color: var(--ink); }
+.page { border: 1px solid var(--stone-400); background: var(--stone-200);
+        border-radius: 2px; padding: 1rem; margin-bottom: 1rem; }
+.page .pageno { float: right; color: var(--stone-600); font-size: 12px; }
+.page h4 { margin: 0 0 .5rem; color: var(--amber-lit); font-size: 14px;
+           letter-spacing: .03em; }
+pre.raw { margin: 0; white-space: pre; overflow-x: auto; color: var(--ink);
+          font: inherit; }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .4rem 1rem; }
+.grid2 div { padding: .1rem 0; border-bottom: 1px solid var(--stone-300); }
+
+.toggle { background: var(--stone-300); color: var(--ink); border: 1px solid var(--stone-500);
+          border-radius: 2px; font: inherit; font-size: 12px; padding: .2rem .55rem; cursor: pointer; }
+.toggle[aria-pressed="true"] { color: var(--amber-lit); border-color: var(--amber-dim); }
+
+/* Two columns as soon as they fit, one when they do not. auto-fit rather than
+   a breakpoint, because the panel can be any width the user drags it to. */
+.detail-top { display: grid; gap: .6rem 2.5rem; align-items: start;
+              grid-template-columns: repeat(auto-fit, minmax(11rem, max-content)); }
+table.effects { max-width: 26rem; }
+h5 { margin: 0 0 .5rem; font-size: 12px; letter-spacing: .12em; font-weight: 500;
+     color: var(--stone-700); text-transform: uppercase; }
+
+table.effects { font-size: 13px; }
+table.effects th { text-align: left; font-weight: 400; color: var(--stone-700);
+                   padding: .18rem .8rem .18rem 0; border-bottom: 1px solid var(--stone-300); }
+table.effects td { text-align: left; padding: .18rem 0; color: var(--stone-600);
+                   border-bottom: 1px solid var(--stone-300); }
+table.effects tr.immune th, table.effects tr.resist th { color: var(--ink); }
+table.effects tr.immune td { color: var(--moss); }
+table.effects tr.resist td { color: var(--gold); }
+
+/* The cost analysis, disclosed under the spell list's class chips. It is a
+   different kind of thing from the chips above it, so it reads as a different
+   kind of control rather than a second row of pills. */
+/* The count is a fact about the chip, not part of its name, so it is dimmer and the
+   row still reads as a list of classes. */
+.chipbar .toggle .count { color: var(--stone-600); }
+.chipbar .toggle[aria-pressed="true"] .count { color: inherit; opacity: .7; }
+
+/* The control is one short word, so it is the size of one short word: an
+   inline chip with a disclosure marker, not a band across the column. Nothing
+   boxes the opened content either: it is the rest of the tab, not a card. */
+details.curve-box { margin: 0 0 1.2rem; }
+details.curve-box > summary { display: inline-block; cursor: pointer;
+                              padding: .25rem .6rem; border-radius: 2px;
+                              border: 1px solid var(--stone-400);
+                              background: var(--stone-200); color: var(--ink);
+                              font-size: 12px; letter-spacing: .02em; }
+details.curve-box > summary::marker { color: var(--stone-600); }
+details.curve-box > summary:hover { color: var(--amber-lit);
+                                    border-color: var(--amber); }
+details.curve-box[open] > summary { color: var(--amber-lit);
+                                    border-color: var(--amber);
+                                    margin-bottom: .7rem; }
+.curve-body { border: 1px solid var(--stone-400); border-radius: 2px;
+              background: var(--stone-200); padding: .9rem 1.1rem .3rem; }
+.curve-body > .note:first-child { margin-top: 0; }
+.curve-body > .curve-sub:first-of-type { margin-top: .6rem; }
+
+.prose h4 { margin: 1.2rem 0 .5rem; }
+.prose > h4:first-child { margin-top: 0; }
+/* The walkthrough reads start to finish, so its locations are spaced rather
+   than boxed: the boxes were page edges, and pages are not its structure. */
+.walkthrough .wt-section + .wt-section { margin-top: 1.8rem; }
+.walkthrough .wt-section h4 { margin: 0 0 .5rem; color: var(--amber-lit);
+                              font-size: 14px; letter-spacing: .03em; }
+.walkthrough .wt-section p { margin: 0 0 .7rem; }
+
+/* --- maps --------------------------------------------------------------- */
+
+.map { margin: 0 0 .6rem; }
+/* The maps are 320px of chunky VGA pixels; scale them up crisply rather than
+   letting the browser smooth them into mush. */
+/* Sized in game pixels and stretched by CSS, so one rule keeps it crisp at any
+   width: the page is drawn from its grid, not scaled from a bitmap. */
+/* The height cap lives on the frame, as a width limit derived from the page's
+   own aspect ratio, rather than as max-height on the canvas. A height-capped
+   canvas letterboxes its bitmap inside the element, and the numbered badges are
+   positioned as a percentage of the element, so they would drift off the map
+   exactly when it is tallest. */
+.map-frame { position: relative; display: block; margin: 0 auto; width: 100%;
+             max-width: calc(62vh * var(--map-aspect, 1.4167)); }
+.map-canvas { display: block; width: 100%; height: auto;
+              image-rendering: pixelated;
+              border: 1px solid var(--stone-400); background: var(--stone-000); }
+/* A marker's number, over the gold square it belongs to. */
+.map-mark { position: absolute; transform: translate(-50%, -50%);
+            min-width: 1.15em; padding: 0 .15em; border-radius: 999px;
+            background: var(--stone-000); color: var(--gold);
+            border: 1px solid var(--gold);
+            font-size: 11px; line-height: 1.35; text-align: center;
+            font-variant-numeric: tabular-nums; pointer-events: auto;
+            box-shadow: 0 0 0 1px #000a; }
+.map figcaption { display: flex; flex-wrap: wrap; align-items: baseline;
+                  justify-content: space-between;
+                  gap: .2rem .8rem; padding: .35rem 0 0; font-size: 12px; }
+.map figcaption strong { color: var(--ink-bright); font-weight: 600; }
+/* The globe holds the far end of the caption line the name starts. */
+.map-globe { background: none; border: 0; padding: 0; line-height: 0;
+             color: var(--stone-700); cursor: pointer; }
+.map-globe:hover { color: var(--amber-lit); }
+.map-globe:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* The world, as big as the panel it opens over. A dialog is display:none
+   until it is open, so the layout only applies then. */
+.world-map { width: min(96vw, 1800px); max-width: 96vw; max-height: 92vh;
+             background: var(--stone-200); color: var(--ink);
+             border: 1px solid var(--stone-500); border-radius: 3px;
+             padding: .8rem; overflow: hidden; }
+.world-map[open] { display: flex; flex-direction: column; gap: .6rem; }
+.world-map::backdrop { background: rgba(0, 0, 0, .75); }
+.world-map-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem .8rem; }
+.world-map-head strong { color: var(--ink-bright); }
+.world-map-head .note { margin: 0; flex: 1 1 12rem; }
+.world-map-shell { overflow: auto; min-height: 0;
+                   background: var(--stone-000); border: 1px solid var(--stone-400); }
+/* Fitted by default; at its own size it is 6,400 pixels wide and the shell
+   scrolls to it. Nearest-neighbour either way: the source is a bitmap. */
+.world-map-img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.world-map-shell.full .world-map-img { width: auto; max-width: none; }
+
+/* Numbered to match the badges on the map, in two columns while they fit. */
+ol.map-own { margin: .2rem 0 1rem; padding-left: 2.2rem; columns: 2;
+             column-gap: 2rem; color: var(--ink); font-size: 13px; }
+ol.map-own li { margin: 0 0 .15rem; break-inside: avoid; }
+ol.map-own li::marker { color: var(--gold); font-variant-numeric: tabular-nums; }
+.map-offpage { color: var(--stone-700); font-size: 11px; }
+
+/* Capped and scrollable: with 37 areas an uncapped list pushed the map off
+   the screen entirely, which is the one thing this tab must not do. */
+.maps-list { max-height: 13rem; overflow-y: auto; }
+
+/* Side by side once there is room. The map keeps the flexible column so it
+   grows with the panel, and the list takes a fixed one so it stays readable. */
+.map-layout { display: grid; gap: .6rem 1rem; align-items: start; }
+@media (min-width: 760px) {
+  .map-layout { grid-template-columns: minmax(0, 1fr) 15rem; }
+  .maps-list { max-height: 62vh; }
+}
+
+.legend-bar { margin: .8rem 0 .2rem; }
+
+/* --- items -------------------------------------------------------------- */
+
+/* The F5 pages color each field by what it is: value and weight in yellow,
+   damage and absorption in red, where it fits in blue, the skill it uses in
+   green. Those are the game's own inks, lifted where the original is too dark
+   to read as small text on this ground: #a62424 measures 2.5:1 and #5959c7
+   3.2:1, both below the 4.5:1 floor, so the hue is kept and the value raised. */
+.ink.value  { color: var(--gold); }          /* the game's #ffeb24, unchanged */
+.ink.harm   { color: var(--blood-lit); }     /* lifted from #a62424 */
+.ink.fits   { color: var(--azure); }         /* lifted from #5959c7 */
+.ink.skill  { color: var(--verdant); }       /* lifted from #007900 */
+.ink.plain  { color: var(--ink); }           /* the game's #aaaaaa, unchanged */
+
+.items { display: flex; flex-direction: column; }
+.item { border-bottom: 1px solid var(--stone-300); padding: .5rem 0; }
+.item:last-child { border-bottom: 0; }
+.item-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; }
+.item-head h4 { margin: 0; font-size: 14px; color: var(--ink-bright); font-weight: 600; }
+.item-head .ink { font-size: 12px; font-variant-numeric: tabular-nums; }
+.item-meta { display: flex; flex-wrap: wrap; gap: .1rem .9rem; margin: .2rem 0 0;
+             font-size: 12px; }
+.item-meta .field { white-space: nowrap; }
+/* The captions are gray on the game's own pages, the same as here. */
+.ink.caption { color: var(--stone-700); }
+.variants { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem;
+            margin: .25rem 0 0; font-size: 11px; }
+.variants-label { color: var(--stone-700); letter-spacing: .08em; }
+.variant { color: var(--amber-lit); font-variant-numeric: tabular-nums; }
+
+/* --- casting curve ------------------------------------------------------ */
+
+.curve-head { margin: 2rem 0 .2rem; font-size: 14px; color: var(--ink-bright); }
+.curve-sub  { margin: 1.4rem 0 .2rem; font-size: 13px; color: var(--ink); font-weight: 600; }
+/* Columns stop growing at a readable width instead of dividing the row. With
+   one class selected there is a single column, and `1fr` stretched it across
+   the whole page: a two-word spell name with its rate a thousand pixels
+   away. */
+.curve { display: grid; gap: 1rem 1.6rem; margin: 0 0 1.4rem;
+         justify-content: start;
+         grid-template-columns: repeat(auto-fit, minmax(230px, 20rem)); }
+.curve-class h4 { margin: 0 0 .3rem; font-size: 13px; color: var(--ink-bright);
+                  font-weight: 600; }
+.curve-step { display: grid; grid-template-columns: 2.6rem 1fr auto; gap: .5rem;
+              font-size: 12px; padding: .12rem 0; align-items: baseline; }
+.curve-step .curve-name { color: var(--ink); }
+.note { color: var(--stone-700); font-size: 12px; max-width: 74ch; margin: .2rem 0 1rem; }
+
+/* --- spells ------------------------------------------------------------ */
+
+.chipbar { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0 0 .8rem; }
+
+.spell { border-bottom: 1px solid var(--stone-300); padding: .6rem 0; }
+.spell:last-child { border-bottom: 0; }
+.spell-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem; }
+.spell-head h4 { margin: 0; font-size: 14px; color: var(--ink-bright); font-weight: 600; }
+.spell-head .lvl { color: var(--amber-lit); font-size: 12px; font-variant-numeric: tabular-nums;
+                   min-width: 2.2rem; }
+
+.chip.harm   { color: var(--blood-lit); }
+.chip.heal   { color: var(--moss); }
+.chip.util   { color: var(--stone-700); }
+/* The scope chip is colored by side: amber lands on the enemy, green on your
+   own party. The word says how many, the color says who. */
+.icon { width: 1em; height: 1em; vertical-align: -.15em; }
+.icon.scroll { width: 1.25em; height: 1.25em; margin-left: .28em;
+               vertical-align: -.3em; color: var(--gold); }
+.icon.shape  { color: var(--stone-700); margin-right: .32em; }
+.icon.scope  { width: 1.5em; height: 1.5em; vertical-align: -.35em; }
+.reach { display: inline-flex; align-items: center; }
+/* An icon-only chip speaks for itself; the frame around it is just noise. The
+   damage chip keeps its frame: it holds a figure as well as a glyph. */
+.chip.scope { border: 0; padding: 0; }
+
+/* Harm-or-heal and friend-or-foe are the same distinction: across all 98
+   spells every damaging one targets monsters and every healing one targets the
+   party, no exceptions. Coloring both spent two channels on one fact, so the
+   scope icon is neutral and only its shape speaks. */
+.chip.scope { color: var(--stone-700); }
+
+/* Damage type rides the damage number: the figure and the glyph beside it both
+   take the element's hue, so one glance gives you how much and of what. Fire
+   and cold are not the same thing and must not read as the same thing.
+   Untyped damage keeps the default red: nothing resists it. */
+.icon.element-glyph { width: 1.15em; height: 1.15em; vertical-align: -.22em;
+                      margin-left: .18em; }
+.chip.fire      { color: var(--fire); }
+.chip.cold,
+.chip.freezing  { color: var(--frost); }
+.chip.electric  { color: var(--spark); }
+.chip.poison    { color: var(--venom); }
+.chip.disease   { color: var(--rot); }
+.chip.power,
+.chip.paralysis { color: var(--force); }
+.chip.magic,
+.chip.hexing,
+.chip.cursing   { color: var(--arcane); }
+
+.spell-meta { display: flex; flex-wrap: wrap; gap: .1rem .9rem; margin: .3rem 0 0;
+              color: var(--stone-700); font-size: 12px; }
+.spell-meta .num { color: var(--gold); font-variant-numeric: tabular-nums; }
+/* Derived, not decoded: kept dimmer than the costs it is computed from. */
+.spell-meta .eff { color: var(--stone-600); font-variant-numeric: tabular-nums; }
+
+.cast { display: flex; flex-wrap: wrap; gap: .1rem .9rem; margin: .25rem 0 0; font-size: 12px; }
+.cast-class { color: var(--ink); }
+.cast-class.dim { color: var(--stone-600); }
+
+.spell-desc { margin: .35rem 0 0; color: var(--ink); max-width: 68ch; font-size: 13px; }
+
+mark { background: var(--amber-dim); color: var(--ink-bright); }
+.empty { color: var(--stone-600); padding: 1rem 0; }
+
+/* A legend line that names another map is a door. Making it a control says so:
+   the map is the thing you traverse, not a list you scroll. */
+.map-goto { background: none; border: 0; padding: 0; font: inherit;
+            color: var(--ink-bright); text-align: left; cursor: pointer;
+            border-bottom: 1px dotted var(--amber); }
+.map-goto:hover, .map-goto:focus-visible { color: var(--amber-lit); }
+button.map-mark { cursor: pointer; font: inherit; }
+button.map-mark:hover, button.map-mark:focus-visible { outline: 2px solid var(--amber-lit); }
+
+/* --- guides -------------------------------------------------------------- */
+
+/* Our own writing rather than the game's tables, so it is set as a document:
+   one measured column of prose with its outline beside it. Same shape as the
+   maps tab, where the wide thing keeps the flexible column and the index
+   takes a fixed one. */
+.guide-layout { display: grid; gap: .6rem 1.4rem; align-items: start; }
+/* A grid item is sized to its content by default, so one wide table would set
+   the width of the whole column and push the prose off the panel. The tables
+   scroll inside their own box instead. */
+.guide-layout > * { min-width: 0; }
+/* One column until there is room for two. The outline goes above the document
+   there rather than below it, where it would be an index of text the reader
+   has already scrolled past, and it is capped so it does not push the prose
+   off the screen. */
+.guide-side { order: -1; }
+.guide-toc { max-height: 9rem; overflow-y: auto; }
+@media (min-width: 860px) {
+  /* The prose column is capped for reading rather than stretched, so the
+     outline is placed against it instead of against the far edge, which would
+     leave a column of nothing between the two. */
+  .guide-layout { grid-template-columns: minmax(0, 78ch) 14rem;
+                  justify-content: start; }
+  .guide-side { order: 0; position: sticky; top: 5.5rem; }
+  .guide-toc { max-height: 78vh; }
+}
+body.embedded .guide-side { top: 3.2rem; }
+
+.guide-doc { font-size: 13px; line-height: 1.6;
+             color: var(--ink); }
+.guide-doc > p { margin: 0 0 .85rem; }
+.guide-doc > ul, .guide-doc > ol { margin: 0 0 .85rem; padding-left: 1.3rem; }
+.guide-doc li { margin: 0 0 .3rem; }
+.guide-doc hr { border: 0; border-top: 1px solid var(--stone-400);
+                margin: 1.6rem 0; }
+.guide-doc code { background: var(--stone-200); border: 1px solid var(--stone-400);
+                  border-radius: 2px; padding: 0 .25em; font-size: 12px;
+                  color: var(--amber-lit); }
+.guide-doc pre { background: var(--stone-200); border: 1px solid var(--stone-400);
+                 border-radius: 2px; padding: .6rem .8rem; overflow-x: auto;
+                 font-size: 12px; color: var(--ink); margin: 0 0 .85rem; }
+.guide-doc pre code { background: none; border: 0; padding: 0; }
+.guide-doc blockquote { margin: 0 0 .85rem; padding: .5rem .9rem;
+                        border-left: 2px solid var(--amber);
+                        background: var(--stone-200); color: var(--ink-bright); }
+.guide-doc strong { color: var(--ink-bright); }
+
+/* The heading scale is the panel's, not the document's: h2 is already the
+   section title everywhere else, so a guide's own title sits at that size and
+   everything under it steps down from there. */
+.guide-doc h2 { font-size: 16px; letter-spacing: .04em; color: var(--amber-lit);
+                margin: 0 0 .6rem; }
+.guide-doc h3 { font-size: 14px; letter-spacing: .05em; color: var(--ink-bright);
+                margin: 1.8rem 0 .6rem; padding-top: .2rem; }
+.guide-doc h4 { font-size: 13px; letter-spacing: .04em; color: var(--gold);
+                margin: 1.3rem 0 .5rem; font-weight: 600; }
+.guide-doc h5, .guide-doc h6 { font-size: 12px; color: var(--stone-700);
+                               margin: 1rem 0 .4rem; }
+
+/* A guide's tables run wider than its prose, so they scroll in their own box
+   rather than setting the width of the column. */
+.md-table-wrap { overflow-x: auto; margin: 0 0 .95rem; }
+.md-table { font-size: 12px; }
+
+/* A cross-reference to the other guide, which switches documents. It is a
+   button because it acts on this page; it is underlined because it reads as
+   a link. */
+.guide-link { background: none; border: 0; padding: 0; font: inherit;
+              color: var(--ink-bright); cursor: pointer;
+              border-bottom: 1px dotted var(--amber); }
+.guide-link:hover, .guide-link:focus-visible { color: var(--amber-lit); }
+
+.guide-picker { display: flex; flex-wrap: wrap; gap: 2px;
+                margin: 0 0 .9rem; }
+.guide-picker button {
+  background: var(--stone-200); border: 1px solid var(--stone-400);
+  border-radius: 2px; color: var(--stone-700); font: inherit; font-size: 12px;
+  padding: .25rem .6rem; cursor: pointer;
+}
+.guide-picker button:hover { color: var(--ink); }
+.guide-picker button[aria-current="true"] {
+  background: var(--stone-300); color: var(--amber-lit);
+  border-color: var(--amber-dim);
+}
+
+.guide-toc { display: flex; flex-direction: column; overflow-x: hidden; }
+.guide-toc button {
+  background: none; border: 0; border-left: 2px solid var(--stone-400);
+  color: var(--stone-700); font: inherit; font-size: 12px; line-height: 1.35;
+  text-align: left; padding: .22rem .5rem; cursor: pointer;
+  /* A heading is a sentence, not a label: let it wrap rather than run off the
+     side of a 14rem column. */
+  white-space: normal; overflow-wrap: anywhere;
+}
+.guide-toc button:hover { color: var(--amber-lit); border-left-color: var(--amber); }
+.guide-toc .toc-3 { padding-left: 1.1rem; color: var(--stone-600); }
+
+/* The trainer's editable numbers. Same ink as the panel's own figures, so a
+   value being writable is the only thing that sets them apart. */
+.trainer-table td.trainer-state { color: var(--stone-700); white-space: normal; }
+.trainer-table td.trainer-state.ill { color: var(--blood-lit); }
+.trainer-table td.trainer-buttons { white-space: nowrap; }
+.trainer-table td.trainer-buttons button + button { margin-left: .3rem; }
+/* A button with nothing to do is hidden, not removed: the row keeps its width
+   so the table does not shuffle every time somebody is poisoned. The widest
+   label it can take is what reserves the space. */
+.trainer-cure[hidden] { display: inline-block; visibility: hidden; }
+.trainer-cure { min-width: 4.2rem; }
+.trainer-purse { width: 7rem; }
+.trainer-filter, .trainer-clock, .watch-at { background: var(--stone-100); color: var(--ink);
+                  border: 1px solid var(--stone-500); border-radius: 2px;
+                  font: inherit; font-size: 12px; padding: .25rem .4rem; }
+.trainer-filter { width: 11rem; }
+.trainer-clock { width: 7rem; }
+.trainer-filter.empty { border-color: var(--blood-lit); }
+.trainer-filter:focus-visible, .trainer-clock:focus-visible,
+.watch-at:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.trainer-num { width: 5.5rem; background: var(--stone-100); color: var(--gold);
+               border: 1px solid var(--stone-500); border-radius: 2px;
+               font: inherit; font-size: 13px; padding: .1rem .3rem;
+               font-variant-numeric: tabular-nums; }
+.trainer-num:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+
+/* What the tab is, behind a button rather than across the top of it. */
+.trainer-head { display: flex; align-items: baseline; justify-content: space-between;
+                gap: .5rem; margin-bottom: .4rem; }
+.trainer-head .curve-sub { margin: 0; }
+/* The heading and any complaint share the left of that line, so the button
+   keeps the right of it whichever one is showing. */
+.trainer-headline .trainer-note { margin: 0; }
+.trainer-about-open { line-height: 1; padding: .15rem .5rem; }
+/* Nothing wrong is the usual case, and an empty line still takes one. */
+.trainer-note:empty, .trainer-mobnote:empty { display: none; }
+.trainer-about { max-width: 34rem; background: var(--stone-200); color: var(--ink);
+                 border: 1px solid var(--stone-500); border-radius: 3px;
+                 padding: 1rem 1.2rem; }
+.trainer-about::backdrop { background: rgba(0, 0, 0, .6); }
+.trainer-about h3 { margin: 0 0 .6rem; font-size: 14px; color: var(--ink-bright); }
+.trainer-about .note { max-width: none; }
+
+/* The sheet: twenty-six numbers held twice, two to a row so the whole
+   character fits without scrolling the tab. */
+.trainer-stats { margin-bottom: 1rem; }
+.trainer-sheet-table th[scope="row"] { font-weight: 400; color: var(--stone-700); }
+.trainer-sheet-table .trainer-num { width: 4.2rem; }
+/* The name is the control that opens the sheet, so it reads as a name until
+   it is pointed at. */
+.trainer-sheet { background: none; border: 0; padding: 0; font: inherit;
+                 color: inherit; cursor: pointer; }
+.trainer-sheet:hover, .trainer-sheet.on { color: var(--amber-lit); }
+.trainer-sheet:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.trainer-sheet-table td { padding-right: .7rem; }
+/* Whichever engaged creature the game has selected. */
+.trainer-mobs tr.on th[scope="row"] { color: var(--amber-lit); }
+.trainer-mobs .trainer-num { width: 5rem; }
+.trainer-mobs th[scope="row"] .note { margin: 0; }
+
+/* The debug block: one collapsed section at the foot of the tab, so what the
+   tab looks like is the part that plays the game. */
+.trainer-debug { margin-top: 1.4rem; border-top: 1px solid var(--stone-400);
+                 padding-top: .6rem; }
+.trainer-debug summary { color: var(--stone-700); font-size: 12px;
+                         letter-spacing: .08em; cursor: pointer; }
+.trainer-debug summary:hover { color: var(--amber-lit); }
+.trainer-debug > .note { margin-top: .6rem; }
+.trainer-debug .curve-sub { margin-top: 1.1rem; }
+.debug-band, .debug-cell { width: 4.2rem; }
+/* The creature record: a label and its field, two pairs to a line where there
+   is room for two. */
+.debug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+              gap: .3rem 1rem; margin-bottom: .8rem; }
+.debug-pair { display: flex; align-items: baseline; justify-content: space-between;
+              gap: .5rem; }
+.debug-pair .note { margin: 0; }
+.debug-field { width: 5.5rem; }
+
+/* The memory window. Monospace because the whole point is that the columns
+   line up between one read and the next. */
+.watch-at { width: 6rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.watch-put-bytes { width: 9rem; }
+.watch-frozen { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .2rem; }
+.watch-frozen .note { width: 100%; margin: 0; }
+.watch-thaw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.watch-len, .watch-value { width: 5rem; }
+.watch-dump, .watch-log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+  line-height: 1.45; color: var(--stone-700); background: var(--stone-200);
+  border: 1px solid var(--stone-400); border-radius: 2px; margin: 0 0 .6rem;
+  padding: .4rem .5rem; overflow-x: auto; white-space: pre;
+}
+.watch-dump { max-height: 18rem; overflow-y: auto; }
+.watch-log { max-height: 12rem; overflow-y: auto; color: var(--gold); }
+.watch-moved { color: var(--amber-lit); }
+.watch-hits { display: flex; flex-wrap: wrap; gap: .3rem; }
+.watch-hits .note { width: 100%; margin: 0; }
+.watch-hits button { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

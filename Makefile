@@ -38,8 +38,10 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: data test-py test-js cabinet-deps serve serve-stock session clean \
-        patched patched-debug characters
+.PHONY: all data panel panel-shell test-py test-js cabinet-deps serve \
+        serve-stock session clean patched patched-debug characters
+
+all: data panel
 
 ## Decode WORLD.DAT into data/*.json.
 ##
@@ -55,6 +57,23 @@ data:
 	PYTHONPATH=tools $(PY) tools/pack_maps.py
 	PYTHONPATH=tools $(PY) tools/extract.py
 	PYTHONPATH=tools $(PY) tools/world_map.py
+
+## Build the Restoration page, both ways.
+##
+## web/restoration.html is self-contained, with CSS, JS and every decoded table in
+## one file, so it opens off disk with no server. It holds the game's content
+## and therefore cannot be distributed.
+##
+## web/panel.html is the same panel with the tables fetched at run time. It
+## holds nothing but our own code, so it is the file that ships: the cabinet loads
+## it and the decode of the player's own copy fills it in.
+panel: panel-shell
+	PYTHONPATH=tools $(PY) tools/build_panel.py
+
+## Just the shell. Separate because it needs no game: the Pages build runs
+## where there is no copy of it.
+panel-shell:
+	PYTHONPATH=tools $(PY) tools/build_panel.py --shell
 
 ## Everything that can run without a browser
 test-py:
