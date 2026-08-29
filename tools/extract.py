@@ -68,6 +68,25 @@ def walkthrough_sections(pages: list[dict]) -> list[dict]:
     return out
 
 
+# --- fixed-width name tables ----------------------------------------------
+
+def fixed_width(buf: bytes, width: int) -> list[str]:
+    return [text(buf[i:i + width]).strip()
+            for i in range(0, len(buf) - width + 1, width)]
+
+
+def extract_maps(d: S.Directory) -> list[str]:
+    names = fixed_width(d[S.MAP_NAMES_20].slice(d.world), 20)
+    return [n for n in names if n]
+
+
+# 25 visible characters plus a NUL terminator. Slot 0 is a column ruler
+# ("1234567890123456789012345") the developers left in the data; it is kept so
+# the indices here line up with the game's own, and skipped by the panel.
+LEGEND_RECORD = 26
+LEGEND_RULER = "1234567890123456789012345"
+
+
 def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     d = S.load(game_dir)
     missing = L.verify(d.exe)
@@ -77,6 +96,7 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     payload = {
         "walkthrough": pages,
         "walkthrough_index": walkthrough_sections(pages),
+        "maps": extract_maps(d),
         "labels": {
             "effects": L.EFFECTS,
             "monster_stats": L.MONSTER_STATS,
@@ -105,4 +125,5 @@ if __name__ == "__main__":
     p = build(sys.argv[1] if len(sys.argv) > 1 else "game")
     print(f"walkthrough   {len(p['walkthrough']):>4} pages, "
           f"{len(p['walkthrough_index'])} sections")
+    print(f"maps          {len(p['maps']):>4}")
     print(f"\nwrote data/*.json")
