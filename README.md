@@ -31,7 +31,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Legend markers ([docs/map.md](docs/map.md))
 - [x] Text and prose
 - [x] Leveling and skills ([docs/leveling.md](docs/leveling.md))
-- [ ] Character roster
+- [x] Character roster
 - [x] Artwork (the ten picture runs, the palette and the creature art, [docs/pictures.md](docs/pictures.md))
 - [x] Tile artwork (which tile a map id draws, [docs/map.md](docs/map.md))
 - [x] The world grid (one plane of 800 by 168 cells, and which cells the party may stand on, [docs/map.md](docs/map.md))
