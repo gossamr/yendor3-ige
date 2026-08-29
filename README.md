@@ -26,7 +26,7 @@ Put your copy of the game in `game/`, then run:
 The list below records how far the decode of the game's own file formats has progressed. `docs/` holds the offsets, the record layouts and the evidence for every item marked as settled.
 
 - [x] Section directory
-- [ ] Map grid and object layer
+- [x] Map grid and object layer ([docs/map.md](docs/map.md))
 - [ ] Map registry and names
 - [ ] Legend markers
 - [x] Text and prose
