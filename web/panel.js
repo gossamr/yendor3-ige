@@ -1787,6 +1787,231 @@
     }
   }
 
+  /* --- items ------------------------------------------------------------ */
+
+  // The eight categories the clue book files items under, in its own order.
+  // Six of them are lists of item ids in the executable; the other two are
+  // pages of their own: rules for the enhancers, and three transports that
+  // are not items at all.
+  const ITEM_CATEGORIES = D.labels.item_categories;
+  const PAGE_CATEGORIES = new Set(["ATTRIBUTE ENHANCERS", "TRANSPORTATIONS"]);
+
+  // The ink the game prints each field in, so the panel reads like the screen
+  // it came from: value and weight in yellow, damage and absorption in red,
+  // where it fits in blue, the skill it uses in green.
+  // Several fields are a figure followed by what it applies to, and the game
+  // colors the two halves differently, "40" in red and "JINXING" in green. So
+  // an ink is a pair: one for the number, one for the words after it.
+  const ITEM_INK = {
+    damage: { num: "harm", text: "harm" },
+    absorption: { num: "harm", text: "harm" },
+    "fits in": { num: "fits", text: "fits" },
+    skill: { num: "skill", text: "skill" },
+    protections: { num: "harm", text: "skill" },
+    restores: { num: "harm", text: "skill" },
+    cures: { num: "skill", text: "skill" },
+    adds: { num: "harm", text: "skill" },
+    duration: { num: "value", text: "plain" },
+    uses: { num: "value", text: "plain" },
+    when: { num: "value", text: "plain" },
+    teaches: { num: "skill", text: "skill" },
+    worn: { num: "fits", text: "fits" },
+    magic: { num: "value", text: "plain" },
+  };
+  const DEFAULT_INK = { num: "value", text: "plain" };
+
+  // What the words after the figure are: a named thing the game capitalizes
+  // (a skill, a condition, a container) or ordinary prose that should not be.
+  const PHRASE_FIELDS = new Set(["restores", "cures"]);
+
+  const formatValue = (field, value) => {
+    if (field === "fits in") return value.split(" ").map(titleCase).join(", ");
+    if (PHRASE_FIELDS.has(field)) return value.toLowerCase();
+    return titleCase(value);
+  };
+
+  function itemMatches(item) {
+    if (!item.listed) return false;
+    if (ui.itemCategory && item.category !== ui.itemCategory) return false;
+    if (!query) return true;
+    return matches(item.name)
+      || matches(item.category || "")
+      || Object.values(item.fields || {}).flat().some((v) => matches(String(v)));
+  }
+
+  function renderItems(root) {
+    root.textContent = "";
+
+    const counts = new Map();
+    for (const item of D.items) {
+      if (item.listed) counts.set(item.category, (counts.get(item.category) || 0) + 1);
+    }
+
+    const bar = el("div", { className: "chipbar" });
+    const addCat = (label, value) => {
+      // Same control as the spell class selector: one toggle style for every
+      // filter in the panel.
+      const b = el("button", { type: "button", className: "toggle", textContent: label });
+      b.setAttribute("aria-pressed", String(ui.itemCategory === value));
+      b.onclick = () => { ui.itemCategory = value; draw(); };
+      bar.append(b);
+    };
+    addCat("All items", null);
+    for (const c of ITEM_CATEGORIES) {
+      if (counts.get(c) || PAGE_CATEGORIES.has(c)) addCat(titleCase(c), c);
+    }
+    root.append(bar);
+
+    // ATTRIBUTE ENHANCERS has no items to list: the clue book gives it a page
+    // of rules instead, so show those rather than leaving the category out.
+    if (ui.itemCategory === "ATTRIBUTE ENHANCERS") {
+      root.append(el("p", { className: "note", textContent:
+        "The clue book gives this category a page of rules rather than a list "
+        + "of items: what each kind of enhancer raises, and by how much." }));
+      const rules = el("div", { className: "items" });
+      for (const rule of D.enhancers) {
+        const row = el("div", { className: "item" });
+        const head = el("div", { className: "item-head" });
+        head.append(el("h4", { textContent: titleCase(rule.kind) }));
+        head.append(el("span", { className: "ink caption",
+                                 textContent: "permanently add" }));
+        head.append(el("span", { className: "ink harm",
+                                 textContent: String(rule.amount) }));
+        head.append(el("span", { className: "ink skill",
+                                 textContent: `to ${/^[AEIOU]/.test(rule.raises) ? "an" : "a"} `
+                                   + rule.raises.toLowerCase() }));
+        row.append(head);
+        rules.append(row);
+      }
+      root.append(rules);
+      return;
+    }
+
+    // TRANSPORTATIONS is the other page that is not a list: three things that
+    // appear nowhere in the item records, held in a table of their own.
+    if (ui.itemCategory === "TRANSPORTATIONS") {
+      root.append(el("p", { className: "note", textContent:
+        "Not items: these three are a table of their own, and the game charges "
+        + "for a fixed number of flights rather than selling you the animal." }));
+      const rides = el("div", { className: "items" });
+      for (const t of D.transports) {
+        const row = el("div", { className: "item" });
+        const head = el("div", { className: "item-head" });
+        head.append(el("h4", { textContent: titleCase(t.name) }));
+        head.append(el("span", { className: "ink value",
+                                 textContent: t.value.toLocaleString() }));
+        row.append(head);
+        const meta = el("div", { className: "item-meta" });
+        meta.append(fieldSpan("uses", t.uses));
+        meta.append(fieldSpan("when", t.when));
+        row.append(meta);
+        rides.append(row);
+      }
+      root.append(rides);
+      return;
+    }
+
+    const hits = D.items.filter(itemMatches);
+    root.append(el("p", { className: "note", textContent: ui.itemCategory
+      ? `${hits.length} ${titleCase(ui.itemCategory).toLowerCase()}.`
+      : `${hits.length} items, as the clue book lists them. Every row is `
+        + `decoded from the game's files: the record, the properties table `
+        + `it points at, and the effects entry behind Adds and Protections, `
+        + `and shown in the colors the game prints it in.` }));
+
+    if (!hits.length) {
+      root.append(el("p", { className: "empty", textContent: "No items match." }));
+      return;
+    }
+
+    const list = el("div", { className: "items" });
+    for (const item of hits) list.append(itemCard(item));
+    root.append(list);
+  }
+
+  // One "Caption 40 Jinxing" run, colored the way the game colors it: the
+  // figure in one ink and the words after it in another.
+  function fieldSpan(field, value, caption = true) {
+    const ink = ITEM_INK[field] || DEFAULT_INK;
+    const span = el("span", { className: "field" });
+    // The game prints the caption on the first row of a field and leaves the
+    // continuation rows bare, so a three-line Protections reads as one field.
+    span.append(el("span", { className: "ink caption",
+                             textContent: caption ? `${titleCase(field)} ` : "" }));
+    const lead = String(value).match(/^([\d.,]+)\s*(.*)$/);
+    if (lead) {
+      span.append(el("span", { className: `ink ${ink.num}`,
+                               textContent: lead[1] + (lead[2] ? " " : "") }));
+      if (lead[2]) {
+        const rest = el("span", { className: `ink ${ink.text}` });
+        rest.append(highlight(formatValue(field, lead[2])));
+        span.append(rest);
+      }
+    } else {
+      const only = el("span", { className: `ink ${ink.text}` });
+      only.append(highlight(formatValue(field, String(value))));
+      span.append(only);
+    }
+    return span;
+  }
+
+  function itemCard(item) {
+    const card = el("div", { className: "item" });
+    const head = el("div", { className: "item-head" });
+    const name = el("h4");
+    name.append(highlight(titleCase(item.name)));
+    head.append(name);
+    if (item.value) {
+      head.append(el("span", { className: "ink value",
+                               textContent: item.value.toLocaleString() }));
+    }
+    if (item.weight) {
+      head.append(el("span", { className: "ink value",
+                               title: `weighs ${item.weight}`,
+                               textContent: `${item.weight.toFixed(1)} wt` }));
+    }
+    if (item.absorption) {
+      head.append(el("span", { className: "ink harm",
+                               title: "absorption",
+                               textContent: `${item.absorption} abs` }));
+    }
+    card.append(head);
+
+    const meta = el("div", { className: "item-meta" });
+    // A scroll's own page never says which spell it teaches: the record does.
+    if (item.spell) meta.append(fieldSpan("teaches", item.spell));
+    if (item.slot) meta.append(fieldSpan("worn", item.slot));
+    for (const [field, value] of Object.entries(item.fields || {})) {
+      // A field the game prints on several rows, as Adds and Protections both
+      // carry up to four, comes through as a list, one span each.
+      let first = true;
+      for (const one of [].concat(value)) {
+        if (one === null || one === "") continue;
+        meta.append(fieldSpan(field, one, first));
+        first = false;
+      }
+    }
+    if (meta.childNodes.length) card.append(meta);
+
+    // The book puts an item's enchanted forms behind a +0..+8 selector rather
+    // than listing them, and the record keeps them as separate entries; show
+    // the ladder as one line instead of repeating the item nine times.
+    if (item.variants.length) {
+      const row = el("div", { className: "variants" });
+      row.append(el("span", { className: "variants-label", textContent: "Enchanted" }));
+      for (const v of item.variants) {
+        row.append(el("span", {
+          className: "variant",
+          title: `+${v.plus}: ${v.value.toLocaleString()} value, ${v.weight} weight`
+            + (v.absorption ? `, ${v.absorption} absorption` : ""),
+          textContent: `+${v.plus}`,
+        }));
+      }
+      card.append(row);
+    }
+    return card;
+  }
+
   /* --- markdown --------------------------------------------------------- */
   //
   // Enough of the format for the guides in the repository root and no more:
@@ -2001,6 +2226,7 @@
 
   const TABS = [
     { key: "f1", label: "Maps", render: renderMaps },
+    { key: "f5", label: "Items", render: renderItems },
     // Last, and only when the cabinet booted the hooked emulator for it.
     ...(TRAINER ? [{ key: "tr", label: "Trainer", render: renderTrainer }] : []),
   ];

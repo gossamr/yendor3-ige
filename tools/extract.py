@@ -22,6 +22,7 @@ import re
 import struct
 from pathlib import Path
 
+import items as I
 import labels as L
 import levels as LV
 import markers
@@ -183,6 +184,113 @@ LEGEND_RECORD = 26
 LEGEND_RULER = "1234567890123456789012345"
 
 
+# --- items -----------------------------------------------------------------
+#
+# 631 records of 58 bytes: 19 bytes of fields then three 13-byte name fields, a
+# name running across all three ("BROKEN" + "BO STICK" is one item).
+#
+# The decoding lives in `tools/items.py`, which reads the record, the three
+# properties tables, the effects table and the six category lists in
+# REGISTER.EXE. What that module returns for an item is exactly the set of rows
+# the game's own F5 page prints for it, so the captures below are the check on
+# the decode rather than its source.
+ITEM_BASE = 0x083EE8
+ITEM_RECORD = I.RECORD
+ITEM_FIELD_BYTES = I.FIELD_BYTES
+ITEM_NAME_LEN = I.NAME_LEN
+ITEM_NAME_FIELDS = I.NAME_FIELDS
+
+# Every row of an F5 page is decoded. The captures are the check, in
+# tests/test_extract.py.
+
+# The clue book files items under eight categories, in this order. Six of them
+# are lists, and their contents come out of REGISTER.EXE; the other two are
+# pages of their own: ATTRIBUTE ENHANCERS is a page of rules and
+# TRANSPORTATIONS is three things that are not items at all.
+ITEM_CATEGORIES = L.ITEM_CATEGORIES
+
+# Enhancement runs to +10, so the digits are not always one: `\d` alone left
+# the nine +10 items unmatched, which both leaked them into the list as items
+# in their own right and hid them from the variant table.
+#
+# The optional space is for `RUBY MORNING STAR + 2`, which the game's own data
+# spells with a stray space. Without it that single entry stayed outside its
+# own series, which showed up as a hole between +1 and +3 exactly where its
+# value belongs. How far a series runs is per item (that weapon stops at +8,
+# the nine longest reach +10), so the fold walks to MAX_PLUS rather than to
+# any one item's ceiling.
+PLUS = re.compile(r"^(.*?) \+ ?(\d+)$")
+MAX_PLUS = 10
+
+
+def item_name(rec: bytes) -> str:
+    return I.name(rec)
+
+
+def extract_items(d: S.Directory) -> list[dict]:
+    """Every item, with the rows its clue-book page prints.
+
+    An item's category is the list it appears in, and its fields are what the
+    F5 renderers would print for it, so an item the book never indexes still
+    gets its value, weight and where it fits, and the 461 records the capture
+    never reached are no longer blank.
+    """
+    items = I.Items(d)
+    category_of = {}
+    for category, ids in items.categories().items():
+        for item_id in ids:
+            category_of[item_id] = category
+
+    rows = []
+    for item_id, rec in enumerate(items.records, 1):
+        name = items.names[item_id - 1]
+        if not name:
+            continue
+        page = items.page(item_id)
+        rows.append({
+            "id": item_id,
+            "name": name,
+            "value": page["base value"],
+            "weight": page["weight"],
+            "absorption": page.get("absorption"),
+            # A magic scroll names the spell it teaches; the F5 page does not
+            # print it, so it is a key of its own rather than a field.
+            "spell": items.scroll_spell(rec),
+            # Which slot it occupies; the F5 page has no such row either.
+            "slot": items.equip_slot(rec),
+            "category": category_of.get(item_id),
+            "listed": item_id in category_of,
+            # Value, weight and absorption are their own keys on the item, so
+            # the page's copy of them would be printed twice.
+            "fields": {k: v for k, v in page.items()
+                       if k not in ("base value", "weight", "absorption")},
+        })
+
+    # The book lists a base item once and puts its enchanted forms behind a
+    # +0..+10 selector, so fold "CLOTHES +1" into CLOTHES rather than listing it
+    # as a separate item the way the record does. Only the top tier of gear
+    # reaches +10: nine items, all Royal Plate, Gold Shield or a heavy weapon.
+    by_name = {r["name"]: r for r in rows}
+    out = []
+    for row in rows:
+        if PLUS.match(row["name"]):
+            continue
+        variants = []
+        for plus in range(1, MAX_PLUS + 1):
+            variant = (by_name.get(f"{row['name']} +{plus}")
+                       or by_name.get(f"{row['name']} + {plus}"))
+            if variant:
+                # The enchanted form's own id, which the panel needs to hand
+                # one over. It is the base plus the enchantment on all 327 of
+                # them, but it is read rather than computed.
+                variants.append({"plus": plus, "id": variant["id"],
+                                 "value": variant["value"],
+                                 "weight": variant["weight"],
+                                 "absorption": variant["absorption"]})
+        out.append({**row, "variants": variants})
+    return out
+
+
 # The clue book's maps are drawn pictures, not tile grids: the 37 x 64 table
 # at 0x8CDDE holds tile-placement coordinates into a graphics bank, so there is
 # nothing to decode into cells. The pages are captured from the running game
@@ -329,7 +437,10 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         "map_links": {**K.by_label(d, MAP_PAGES,
                                    markers.by_page(d.world, MAP_PAGES)),
                       **{f"{a}|{b}": v for (a, b), v in _WALKED_LINKS.items()}},
+        "items": extract_items(d),
         "leveling": extract_leveling(d),
+        "enhancers": I.Items(d).enhancers(),
+        "transports": I.Items(d).transports(),
         "labels": {
             "effects": L.EFFECTS,
             "monster_stats": L.MONSTER_STATS,
