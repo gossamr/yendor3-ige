@@ -40,7 +40,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Spell record (every row of a clue book page, and which classes may cast, [docs/spells.md](docs/spells.md))
 - [ ] NPCs, conversation, shops
 - [x] Combat (the resolver, damage, resistance and rewards, [docs/combat.md](docs/combat.md))
-- [ ] Save file
+- [x] Save file (the seven sections, the seek that addresses them, the header's position and clock, and the seen grid, [docs/saves.md](docs/saves.md))
 - [x] Map transitions (the cell event table, and the destination of each door, [docs/map.md](docs/map.md))
 
 ## License
