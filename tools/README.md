@@ -38,11 +38,13 @@ The hosted deployment is the exception. It ships no game and no JSON, so when a 
 
 ## The checks
 
-    panel_check.js   renders the panel in Chromium and asserts each tab fills
-    cabinet_check.js boots the game in a browser and asserts it paints
-    decode_check.js  drops a zip into a browser and asserts the decode runs
-    trainer_check.js boots the cabinet with the hook and reads the party back
-    verify_tiles.py  compares the tiles a page predicts against the cache
+    panel_check.js    renders the panel in Chromium and asserts each tab fills
+    cabinet_check.js  boots the game in a browser and asserts it paints
+    decode_check.js   drops a zip into a browser and asserts the decode runs
+    trainer_check.js  boots the cabinet with the hook and reads the party back
+    verify_tiles.py   compares the tiles a page predicts against the cache
+    spelling_check.py reads every tracked file for British spellings. Needs no
+                      game, so it runs anywhere: `python tools/spelling_check.py`
 
 ## How a field earns a name
 
