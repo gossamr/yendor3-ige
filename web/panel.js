@@ -2047,6 +2047,111 @@
     }
   }
 
+  /* --- F6 walkthrough --------------------------------------------------- */
+
+
+  const PAGE_FOOTER = /^\s*\d+ OF \d+\s*$/;
+
+  /**
+   * The walkthrough as sections, not pages.
+   *
+   * The 33 pages are how the text was *stored* (25 rows of 51 columns, with
+   * a "n OF 33" footer on each) not how it reads. Its own structure is the
+   * numbered locations, and those run across page breaks: section 3 begins on
+   * page 1 and finishes on page 2. Reading it a page at a time therefore cuts
+   * sections in half for no reason, so the reflowed view walks every row of
+   * every page as one stream and groups it by heading instead.
+   *
+   * No paragraph is ever split by a page break, since every page ends with a
+   * blank row before its footer, so joining the pages needs no repair, only the
+   * footers dropped.
+   */
+  function walkthroughSections() {
+    const sections = [];
+    let cur = { n: null, title: null, paras: [] };
+    let buf = [];
+    const flush = () => {
+      if (!buf.length) return;
+      const text = buf.join(" ");
+      buf = [];
+      const head = text.match(/^(\d+)\.\s+(.*)$/);
+      if (!head) { cur.paras.push(text); return; }
+      if (cur.title || cur.paras.length) sections.push(cur);
+      cur = { n: Number(head[1]), title: titleCase(head[2]), paras: [] };
+    };
+    for (const pg of D.walkthrough) {
+      for (const row of pg.rows) {
+        if (PAGE_FOOTER.test(row)) continue;
+        if (row.trim()) buf.push(row.trim());
+        else flush();
+      }
+    }
+    flush();
+    if (cur.title || cur.paras.length) sections.push(cur);
+    return sections;
+  }
+
+  function renderWalkthrough(root) {
+    root.textContent = "";
+    // No heading: the tab strip above already says which section this is.
+    const head = el("div", { style: "display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap" });
+    const toggle = el("button", {
+      className: "toggle", type: "button",
+      textContent: ui.rawPages ? "Original 51-column layout" : "Reflowed for reading",
+    });
+    toggle.setAttribute("aria-pressed", String(ui.rawPages));
+    toggle.onclick = () => { ui.rawPages = !ui.rawPages; renderWalkthrough(root); };
+    head.append(toggle);
+    root.append(head);
+
+    const sections = ui.rawPages ? null : walkthroughSections();
+    root.append(el("p", {
+      className: "note",
+      // Pages are a fact about the original layout, so they are only worth
+      // counting in the view that shows them.
+      textContent: ui.rawPages
+        ? `${D.walkthrough.length} pages, ${D.walkthrough_index.length} locations.`
+        : `${sections.filter((s) => s.title).length} locations, start to finish.`,
+    }));
+
+    if (ui.rawPages) {
+      for (const pg of D.walkthrough) {
+        const body = pg.rows.join("\n");
+        if (query && !matches(body)) continue;
+        const page = el("div", { className: "page" }, [
+          el("span", { className: "pageno", textContent: `${pg.page} / ${D.walkthrough.length}` }),
+        ]);
+        const pre = el("pre", { className: "raw" });
+        pre.append(highlight(body));
+        page.append(pre);
+        root.append(page);
+      }
+    } else {
+      // Searching filters by location rather than by page: a location is the
+      // unit the reader is looking for, and it is what the headings promise.
+      const prose = el("div", { className: "prose walkthrough" });
+      for (const sec of sections) {
+        const body = [sec.title, ...sec.paras].join(" ");
+        if (query && !matches(body)) continue;
+        const box = el("section", { className: "wt-section" });
+        if (sec.title) box.append(el("h4", { textContent: `${sec.n}. ${sec.title}` }));
+        for (const para of sec.paras) {
+          const p = el("p");
+          p.append(highlight(sentenceCase(para)));
+          box.append(p);
+        }
+        prose.append(box);
+      }
+      if (prose.children.length) root.append(prose);
+    }
+    if (!root.querySelector(".page, .wt-section")) {
+      root.append(el("p", {
+        className: "empty",
+        textContent: ui.rawPages ? "No page matches." : "No location matches.",
+      }));
+    }
+  }
+
   /* --- F1 maps, F4 classes, F5 items ------------------------------------ */
 
   /** Draw a map page onto a canvas from its grid and tileset.
@@ -2680,6 +2785,116 @@
       + "option costs about what it deals, and the choice stops mattering." }));
   }
 
+  /* --- leveling --------------------------------------------------------- */
+  //
+  // The clue book has no page for any of this. The game shows you one rung at
+  // a time on the character screen and one price at a time at a trainer, so the
+  // ladder as a whole is the panel's own addition.
+
+  function renderLeveling(root) {
+    root.textContent = "";
+    const lv = D.leveling;
+    if (!lv) return;
+
+    const trainers = lv.trainers || [];
+    // The cheapest trainer who will still take you. The factor-5 trainers all
+    // stop at 25, so the same level-up doubles in price the moment they do.
+    const factorAt = (level) => {
+      const able = trainers.filter((t) => t.through >= level + 1
+                                      && (t.from || 1) <= level);
+      return able.length ? Math.min(...able.map((t) => t.factor)) : null;
+    };
+
+    root.append(el("p", { className: "note", textContent:
+      `Experience is a running total, so the ladder below is what you need in `
+      + `hand, not what the level costs. A trainer sells one level a visit, `
+      + `and level ${lv.cap} is the last one the ladder fills in.` }));
+
+    const table = el("table", { className: "tiers" });
+    const head = el("tr");
+    for (const h of ["Level", "Experience", "Step up", "Cheapest training"]) {
+      head.append(el("th", { textContent: h }));
+    }
+    table.append(el("thead", {}, head));
+    const body = el("tbody");
+    for (const row of lv.experience) {
+      const tr = el("tr");
+      const from = row.level - 1;
+      const factor = factorAt(from);
+      for (const cell of [
+        String(row.level),
+        row.total.toLocaleString(),
+        row.step.toLocaleString(),
+        factor === null ? "\u2014"
+          : (lv.train_base * factor * from).toLocaleString(),
+      ]) tr.append(el("td", { textContent: cell }));
+      body.append(tr);
+    }
+    table.append(body);
+    root.append(table);
+
+    root.append(el("h4", { className: "curve-sub", textContent: "Trainers" }));
+    root.append(el("p", { className: "note", textContent:
+      `One training costs ${lv.train_base} gold, times the price factor below, `
+      + `times the level you are training away from. A factor of 5 is therefore `
+      + `${lv.train_base * 5} gold a level and a factor of 10 is `
+      + `${(lv.train_base * 10).toLocaleString()}. The ladder above is priced at `
+      + `the cheapest factor available to you at each level.` }));
+
+    const caps = el("table", { className: "tiers" });
+    const ch = el("tr");
+    for (const h of ["Covers levels", "Price factor"]) {
+      ch.append(el("th", { textContent: h }));
+    }
+    caps.append(el("thead", {}, ch));
+    const cbody = el("tbody");
+    trainers.forEach((t) => {
+      const tr = el("tr");
+      for (const cell of [
+        `${t.from || 1} to ${t.through}`,
+        String(t.factor),
+      ]) tr.append(el("td", { textContent: cell }));
+      cbody.append(tr);
+    });
+    caps.append(cbody);
+    root.append(caps);
+
+    root.append(el("p", { className: "note", textContent:
+      "The last trainer refuses anyone under level 30, and the one below it "
+      + "stops at exactly 30, so the two hand over with no overlap. From "
+      + "level 25 up, one trainer at a time is the most that will take you." }));
+
+    root.append(el("h4", { className: "curve-sub", textContent: "Bonus points" }));
+    root.append(el("p", { className: "note", textContent:
+      `Each training hands you 13% of your base charisma, rounded, up to `
+      + `${lv.bonus_cap}. Charisma rises 2 a level on its own, so the payout `
+      + `climbs with you and stops climbing here.` }));
+
+    // The payout is a staircase, and only the steps are worth showing.
+    const steps = lv.bonus_points.filter(
+      (r, i, a) => i === 0 || r.points !== a[i - 1].points);
+    const stair = el("table", { className: "tiers" });
+    const sh = el("tr");
+    for (const h of ["Charisma", "Points a training"]) {
+      sh.append(el("th", { textContent: h }));
+    }
+    stair.append(el("thead", {}, sh));
+    const sbody = el("tbody");
+    for (const r of steps) {
+      const tr = el("tr");
+      tr.append(el("td", { textContent: `${r.charisma}+` }));
+      tr.append(el("td", { textContent: String(r.points) }));
+      sbody.append(tr);
+    }
+    stair.append(sbody);
+    root.append(stair);
+
+    root.append(el("p", { className: "note", textContent:
+      `Promotions land at level ${lv.promotions.second} and level `
+      + `${lv.promotions.third}, and change your title only. Spells arrive on `
+      + `even levels, at most two at a time.` }));
+  }
+
   /* --- markdown --------------------------------------------------------- */
   //
   // Enough of the format for the guides in the repository root and no more:
@@ -2890,6 +3105,132 @@
   const slug = (s) => "g-" + s.toLowerCase().replace(/[^a-z0-9]+/g, "-")
                                 .replace(/^-|-$/g, "");
 
+  /* --- guides ----------------------------------------------------------- */
+
+  // Everything that reads as a document rather than a table to look something
+  // up in: the two written guides, the game's own walkthrough, and the leveling
+  // ladder. Four selectors inside one tab instead of four tabs.
+  const DOCS = (window.GUIDES || []).concat([
+    { key: "walkthrough", label: "Walkthrough", render: renderWalkthrough },
+    { key: "leveling", label: "Leveling", render: renderLeveling },
+  ]);
+  const FILES = new Map(DOCS.map((d) => [d.key, d]));
+  if (!FILES.has(ui.docPick)) ui.docPick = DOCS.length ? DOCS[0].key : null;
+
+  // The guides are written for two readers. Someone working on the project
+  // wants to know which script produced a table and where the addresses are
+  // written down; someone playing the game does not, and a path into a source
+  // tree is noise on the page. `<!-- panel:skip -->` in the markdown drops the
+  // block after it from the panel, and nothing else. The provenance stays in
+  // the file, where it is read, and stays out of the rendering, where it is
+  // not: an HTML comment is invisible wherever markdown is rendered anyway, so
+  // the marker itself never shows up either.
+  const SKIP = "panel:skip";
+
+  function forReader(blocks) {
+    const out = [];
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].tag !== "comment") { out.push(blocks[i]); continue; }
+      if (blocks[i].note === SKIP) i++;      // and the block it marks
+    }
+    return out;
+  }
+
+  const parsed = new Map();
+  const blocksFor = (doc) => {
+    if (!parsed.has(doc.key)) {
+      parsed.set(doc.key, forReader(parseMarkdown(doc.text)));
+    }
+    return parsed.get(doc.key);
+  };
+
+  /**
+   * Search inside a guide keeps whole sections rather than loose lines: a
+   * table row on its own says nothing without the heading it sits under.
+   */
+  function sections(blocks) {
+    const out = [];
+    for (const b of blocks) {
+      if (b.tag === "h" && b.level <= 3) out.push({ heading: b, blocks: [] });
+      if (!out.length) out.push({ heading: null, blocks: [] });
+      out[out.length - 1].blocks.push(b);
+    }
+    return out;
+  }
+
+  const blockText = (b) => b.text || (b.items || []).join(" ")
+                           || (b.rows || []).flat().join(" ") || "";
+
+  function renderGuides(root) {
+    root.textContent = "";
+    if (!DOCS.length) {
+      root.append(el("p", { className: "empty",
+                            textContent: "No guides were built into this panel." }));
+      return;
+    }
+
+    // Which document is above the layout rather than inside it: at the width
+    // the panel is docked beside the game there is one column, and anything in
+    // the sidebar falls below the document it is meant to navigate.
+    const picker = el("div", { className: "guide-picker" });
+    for (const d of DOCS) {
+      const b = el("button", { type: "button", textContent: d.label,
+                               dataset: { doc: d.key } });
+      b.setAttribute("aria-current", String(d.key === ui.docPick));
+      b.onclick = () => { ui.docPick = d.key; renderGuides(root); };
+      picker.append(b);
+    }
+    root.append(picker);
+
+    const layout = el("div", { className: "guide-layout" });
+    const article = el("article", { className: "guide-doc" });
+    const side = el("nav", { className: "guide-side" });
+    layout.append(article, side);
+    root.append(layout);
+
+    const doc = FILES.get(ui.docPick) || DOCS[0];
+    if (doc.render) {                       // the leveling tables
+      doc.render(article);
+      return;
+    }
+
+    // The guides cross-reference each other by filename; make those switch
+    // documents instead of pointing at a file the panel cannot open.
+    const links = new Map();
+    for (const g of window.GUIDES || []) {
+      links.set(`${g.label.toUpperCase()}.md`, {
+        label: g.label,
+        open: () => { ui.docPick = g.key; renderGuides(root); },
+      });
+    }
+
+    const all = sections(blocksFor(doc));
+    const shown = all.filter((s) => !query
+      || s.blocks.some((b) => matches(blockText(b))));
+
+    if (!shown.length) {
+      article.append(el("p", { className: "empty",
+                               textContent: "Nothing in this guide matches." }));
+    }
+    const outline = el("div", { className: "guide-toc" });
+    for (const s of shown) {
+      for (const b of s.blocks) article.append(renderBlock(b, links));
+      // The document's own title is not an outline entry; it is the thing the
+      // outline is of.
+      const h = s.heading;
+      if (!h || h.level < 2 || h.level > 3) continue;
+      const link = el("button", { type: "button",
+                                  className: `toc-${h.level}` },
+                      document.createTextNode(h.text.replace(/[*`]/g, "")));
+      link.onclick = () => {
+        const target = article.querySelector(`#${CSS.escape(slug(h.text))}`);
+        if (target) target.scrollIntoView({ block: "start", behavior: "smooth" });
+      };
+      outline.append(link);
+    }
+    side.append(outline);
+  }
+
   /* --- tabs ------------------------------------------------------------- */
 
   const TABS = [
@@ -2897,6 +3238,7 @@
     { key: "f2", label: "Monsters", render: renderMonsters },
     { key: "f3", label: "Spells", render: renderSpells },
     { key: "f5", label: "Items", render: renderItems },
+    { key: "gd", label: "Guides", render: renderGuides },
     // Last, and only when the cabinet booted the hooked emulator for it.
     ...(TRAINER ? [{ key: "tr", label: "Trainer", render: renderTrainer }] : []),
   ];
