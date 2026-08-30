@@ -3,6 +3,8 @@
 import { expect, test } from "bun:test";
 
 import { existsSync } from "fs";
+import { mkdtemp, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
 import { join } from "path";
 
 // The real game is not in this repository, so the tests that read it
@@ -105,4 +107,37 @@ test("an absent game directory yields no files rather than throwing", async () =
   // letting this throw made /game-files.json answer 500, which the page cannot
   // tell apart from a broken server.
   expect(await gameFiles(join(PATCHED_DIR, "..", "no-such-game-dir"))).toEqual([]);
+});
+
+
+// --- the decoder fingerprint ---------------------------------------------
+//
+// The browser keeps the tables it decodes and hands them back on the next
+// visit. What says they are still the right tables is this hash: if it does
+// not move when a decoder does, a player carries an old decode for ever and
+// the panel quietly lacks whatever the new one added.
+
+test("the decoder fingerprint follows what the modules say", async () => {
+  const { decoderFingerprint } = await import("./boot.js");
+  const dir = await mkdtemp(join(tmpdir(), "decoder-"));
+  try {
+    for (const name of ["pack_maps", "extract", "world_map", "patch"]) {
+      await writeFile(join(dir, `${name}.py`), `def main():\n    return "${name}"\n`);
+    }
+    const before = await decoderFingerprint(dir);
+    expect(await decoderFingerprint(dir)).toBe(before);
+
+    // A module that changes what it decodes.
+    await writeFile(join(dir, "extract.py"), 'def main():\n    return "more"\n');
+    const after = await decoderFingerprint(dir);
+    expect(after).not.toBe(before);
+
+    // And a module that arrives, which is how the planner tables appeared.
+    await writeFile(join(dir, "planner.py"), "def build():\n    return {}\n");
+    await writeFile(join(dir, "extract.py"),
+                    'import planner\ndef main():\n    return "more"\n');
+    expect(await decoderFingerprint(dir)).not.toBe(after);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

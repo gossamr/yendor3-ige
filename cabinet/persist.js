@@ -23,8 +23,9 @@ const ROSTER_KEY = "roster";
 // The panel's tables, decoded from the player's own copy. Hosted there is no
 // data/ on the server, so this is the only place they exist, and producing
 // them is about five seconds of Python, which is worth not repeating on every
-// reload. Keyed by a fingerprint of the zip, so a different copy decodes
-// again rather than being served another one's tables.
+// reload. Keyed by a fingerprint of the zip and by one of the decoders that
+// read it, so a different copy decodes again rather than being served another
+// one's tables, and so does the same copy after the decoders change.
 const DECODED_KEY = "decoded";
 // The player's own copy of the game, hosted. Locally the server has it and
 // this is never written; hosted it is the only copy there is, and without it
@@ -149,14 +150,24 @@ export async function clearGame() {
 /**
  * The decoded tables for one copy of the game, or null for anything else.
  *
- * `key` is a fingerprint of the zip the player dropped. A miss is the normal
- * case on a first visit and is not worth a warning; so is a browser that
- * refuses storage, which is why this returns null rather than throwing.
+ * `key` is a fingerprint of the zip the player dropped and `decoder` a
+ * fingerprint of the modules that decoded it; tables kept under either a
+ * different copy or a different build are not this build's tables and are a
+ * miss, so the decode runs again. A record from before the build was recorded
+ * has no `decoder` and misses for the same reason.
+ *
+ * A null `decoder` is "cannot tell", which is what a deployment that does not
+ * publish one gives: then the copy alone decides, as it used to.
+ *
+ * A miss is the normal case on a first visit and is not worth a warning; so is
+ * a browser that refuses storage, which is why this returns null rather than
+ * throwing.
  */
-export async function loadDecoded(key) {
+export async function loadDecoded(key, decoder = null) {
   try {
     const saved = await tx("readonly", (s) => s.get(DECODED_KEY));
     if (!saved || saved.key !== key) return null;
+    if (decoder && saved.decoder !== decoder) return null;
     return {
       restoration: new Uint8Array(saved.restoration),
       worldMap: new Uint8Array(saved.worldMap),
@@ -167,10 +178,12 @@ export async function loadDecoded(key) {
   }
 }
 
-/** Keep one copy's tables. Only the most recent is kept; they are rebuildable. */
-export async function saveDecoded(key, { restoration, worldMap }) {
+/** Keep one copy's tables, under the copy and the build that produced them.
+ *  Only the most recent is kept; they are rebuildable. */
+export async function saveDecoded(key, { restoration, worldMap }, decoder = null) {
   try {
-    await tx("readwrite", (s) => s.put({ key, restoration, worldMap }, DECODED_KEY));
+    await tx("readwrite",
+             (s) => s.put({ key, decoder, restoration, worldMap }, DECODED_KEY));
     return true;
   } catch (err) {
     console.warn("could not keep the decoded tables:", err.message);

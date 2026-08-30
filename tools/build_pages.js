@@ -16,8 +16,8 @@ import { join, resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 import { dosboxConf } from "../cabinet/dosbox.conf.js";
-import { EMU_DIST, PYODIDE_DIST, PYODIDE_FILES, decoderFiles, withoutComments }
-  from "../cabinet/boot.js";
+import { EMU_DIST, PYODIDE_DIST, PYODIDE_FILES, decoderFiles,
+         decoderFingerprint, withoutComments } from "../cabinet/boot.js";
 import { TRAINER_BUILDS, trainerShim } from "../cabinet/trainer.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -113,6 +113,11 @@ for (const name of decoders) {
   await cp(join(ROOT, "tools", name), join(OUT, "tools", name));
 }
 await writeFile(join(OUT, "decoder-files.json"), JSON.stringify(decoders));
+// What produced a decode, for telling a kept one apart from what this build
+// would produce now. A flat file on a flat host: the page fetches it beside
+// the list above, and nothing here has to be served by a program.
+await writeFile(join(OUT, "decoder-version.json"),
+                JSON.stringify({ decoder: await decoderFingerprint() }));
 
 // game-files.json is deliberately not written. Its absence is how the page
 // works out that there is no game here and asks the player for theirs.

@@ -101,15 +101,49 @@ function send(message, onProgress) {
 }
 
 /**
+ * Which build a decode came from, or null when that cannot be told.
+ *
+ * Fetched relative to this module, so a cabinet served out of a subdirectory
+ * needs no configuration, and it is a plain file at both ends: computed by
+ * cabinet/serve.js locally, written by tools/build_pages.js for a host that
+ * serves files and runs nothing.
+ *
+ * Revalidated rather than read from the browser's cache, since a stale copy of
+ * this one file is the case it exists to catch. A deployment too old to carry
+ * it answers 404, and then nothing can be told apart and what was kept is
+ * kept: the same behaviour as before there was a fingerprint at all.
+ */
+let decoderVersion;
+async function decoderBuild() {
+  if (decoderVersion !== undefined) return decoderVersion;
+  decoderVersion = null;
+  try {
+    const res = await fetch(new URL("../decoder-version.json", import.meta.url),
+                            { cache: "no-cache" });
+    if (res.ok) decoderVersion = (await res.json()).decoder ?? null;
+  } catch (err) {
+    console.warn("could not read the decoder version:", err.message);
+  }
+  return decoderVersion;
+}
+
+/**
  * The decoded tables for a zip, from storage if they are there.
  *
  * `bytes` is the archive itself rather than the unpacked files, because it is
  * what identifies the copy: two zips of the same directory made a minute apart
  * are the same game, and fingerprinting the archive says so.
+ *
+ * The copy is half the key. The other half is the build that decoded it: the
+ * payload grows fields as the decode does, and a panel handed tables from
+ * before a field existed does without it and says nothing, which is how the
+ * Planner tab came to be missing for anyone who had decoded their copy
+ * already. A decode kept under a different fingerprint is run again.
  */
 export async function decodedTables(bytes, files, onProgress = () => {}) {
   const key = fingerprint(bytes);
-  const kept = await loadDecoded(key);
+  const decoder = await decoderBuild();
+  const kept = await loadDecoded(key, decoder);
   if (kept) {
     onProgress({ type: "progress", stage: "cached", label: "from storage",
                  fraction: 1, cached: true });
@@ -124,7 +158,7 @@ export async function decodedTables(bytes, files, onProgress = () => {}) {
   // out loud rather than only in a console warning: the tables are 1.2 MB on
   // top of the archive, and a browser short of room refuses the second write
   // while accepting the first.
-  const kept2 = await saveDecoded(key, tables);
+  const kept2 = await saveDecoded(key, tables, decoder);
   if (!kept2) {
     onProgress({ type: "progress", stage: "unkept", fraction: 1,
                  label: "decoded, but too large to keep \u2014 this will run again" });

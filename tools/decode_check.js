@@ -337,6 +337,58 @@ if (/too large to keep/.test(note)) {
 }
 console.log(`second visit: no zip asked for, no decode ran, panel up in ${(again / 1000).toFixed(1)}s`);
 
+// What was kept has to record which build decoded it, or a player carries an
+// old decode for ever: the payload grows fields as the decode does, and a
+// panel handed tables from before a field existed does without it and says
+// nothing. The tab that reads the newest block is simply absent.
+const stamped = await page.evaluate(async () => {
+  const version = await fetch("decoder-version.json", { cache: "no-cache" })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  // cabinet/persist.js: database "yendor3-cabinet", store "state", the tables
+  // under "decoded".
+  const kept = await new Promise((resolve) => {
+    const open = indexedDB.open("yendor3-cabinet");
+    open.onerror = () => resolve(null);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("state")) return resolve(null);
+      const get = db.transaction("state", "readonly").objectStore("state").get("decoded");
+      get.onsuccess = () => resolve(get.result || null);
+      get.onerror = () => resolve(null);
+    };
+  });
+  return { served: version && version.decoder, kept: kept && kept.decoder };
+});
+if (!stamped.served) {
+  await fail("the server published no decoder version, so a stale decode cannot be spotted");
+}
+if (stamped.kept !== stamped.served) {
+  await fail(`the kept tables are stamped ${JSON.stringify(stamped.kept)}, `
+    + `the decoder that produced them ${JSON.stringify(stamped.served)}`);
+}
+console.log(`kept tables stamped with the decoder that made them: ${stamped.served}`);
+
+// And the stamp has to be acted on. A deployment whose decoders have changed
+// serves a different one, and the kept tables are then not what this build
+// would produce, so they are decoded again. Standing in for a new deployment
+// by answering that one file differently is the whole of the difference the
+// page can see.
+decodedAgain.length = 0;
+await page.route("**/decoder-version.json", (route) => route.fulfill({
+  contentType: "application/json",
+  body: JSON.stringify({ decoder: "0000000000000000" }),
+}));
+await page.reload({ waitUntil: "domcontentloaded" });
+if (!await panelReady(90000)) {
+  await fail("the panel never came back after a decoder change");
+}
+await page.waitForTimeout(300);
+if (!decodedAgain.length) {
+  await fail("a decode kept by another build was reused rather than run again");
+}
+console.log(`a changed decoder re-decodes: ${[...new Set(decodedAgain)].join(", ")}`);
+await page.unroute("**/decoder-version.json");
+
 // The trainer, against the copy that was dropped. Everything above is the
 // panel; this is the emulator, and it needs the hooked build to have been
 // published by whatever is serving, which is the part that has no other

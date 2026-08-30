@@ -3,6 +3,7 @@
 // js-dos accepts a plain array mixing {path, contents} file entries with a
 // {dosboxConf, jsdosConf} config object, so the game boots straight from the
 // files on disk: there is no .jsdos bundle to build.
+import { createHash } from "crypto";
 import { createRequire } from "module";
 import { existsSync } from "fs";
 import { readFile, readdir } from "fs/promises";
@@ -116,6 +117,32 @@ export async function decoderFiles(dir = TOOLS) {
     }
   }
   return [...seen].sort().map((stem) => `${stem}.py`);
+}
+
+
+/**
+ * What a decode would be produced by, as a hash of the modules that produce it.
+ *
+ * The browser keeps the tables it decodes, against a fingerprint of the zip
+ * they came from. That alone does not say whether *this* build would produce
+ * the same tables: the payload grows fields as the decode does, and a panel
+ * handed tables from before a field existed simply does without it, silently.
+ * This is the other half of the key.
+ *
+ * Hashed from the contents rather than the names, so any change to any
+ * published module invalidates a kept decode -- a module added, a field
+ * decoded, a number corrected -- with nobody remembering to bump anything.
+ * Sixteen hex digits is plenty for telling two builds apart.
+ */
+export async function decoderFingerprint(dir = TOOLS) {
+  const hash = createHash("sha256");
+  for (const name of await decoderFiles(dir)) {
+    hash.update(name);
+    hash.update("\0");
+    hash.update(await readFile(join(dir, name)));
+    hash.update("\0");
+  }
+  return hash.digest("hex").slice(0, 16);
 }
 
 

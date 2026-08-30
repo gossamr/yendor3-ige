@@ -8,12 +8,12 @@
 //
 //   bun cabinet/serve.js [--port=8080]
 import { watch } from "fs";
-import { join, extname, resolve, normalize } from "path";
+import { join, extname, resolve, normalize, basename } from "path";
 
 import { dosboxConf } from "./dosbox.conf.js";
 import {
   GAME_DIR, PATCHED_DIR, EMU_DIST, PYODIDE_DIST, PYODIDE_FILES,
-  gameFiles, decoderFiles, withoutComments,
+  gameFiles, decoderFiles, decoderFingerprint, withoutComments,
 } from "./boot.js";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -42,14 +42,58 @@ function broadcast(event) {
 // game, so that is announced rather than done, and left to the user.
 const WATCHED = { web: "reload", data: "reload", cabinet: "shell" };
 
+// What the panel is served as, and what it is written in. panel.css and
+// panel.js are *inlined* into panel.html by tools/build_panel.py, so the built
+// file is the artifact and an edit to either source changes nothing that is
+// served until it is rebuilt. Reloading the frame on that edit therefore
+// re-served the same bytes, which looks exactly like a change that did not
+// work. The server runs the build itself instead.
+const PANEL_SOURCES = /^panel\.(js|css)$/;
+const PYTHONS = [process.env.YENDOR_PY, join(ROOT, ".venv/bin/python"), "python3"]
+  .filter(Boolean);
+let building = null;
+
+async function buildShell() {
+  if (building) return building;
+  building = (async () => {
+    for (const python of PYTHONS) {
+      try {
+        const proc = Bun.spawn([python, "tools/build_panel.py", "--shell"], {
+          cwd: ROOT,
+          env: { ...process.env, PYTHONPATH: join(ROOT, "tools") },
+          stdout: "pipe", stderr: "pipe",
+        });
+        if (await proc.exited === 0) return true;
+        // A python that runs but cannot build says why; one that is not there
+        // at all is the next candidate's turn.
+        const why = (await new Response(proc.stderr).text()).trim();
+        if (why) {
+          console.warn(`panel rebuild failed:\n${why}`);
+          return false;
+        }
+      } catch (err) { /* no such python; try the next */ }
+    }
+    console.warn("panel rebuild skipped: no python found."
+      + " Set YENDOR_PY, or run `make panel-shell` after editing panel.js/css.");
+    return false;
+  })();
+  const done = await building;
+  building = null;
+  return done;
+}
+
 for (const [dir, event] of Object.entries(WATCHED)) {
   try {
     watch(join(ROOT, dir), { recursive: true }, (_type, file) => {
       if (!file || !/\.(html|css|js|json)$/.test(file)) return;
       if (dir === "cabinet" && /node_modules/.test(file)) return;
+      // The build writes panel.html, which arrives here as another web/ event.
+      // Only the sources start a build, so the two cannot chase each other.
+      const rebuild = dir === "web" && PANEL_SOURCES.test(basename(file));
       clearTimeout(pending.get(event));   // a rebuild touches several files
-      pending.set(event, setTimeout(() => {
+      pending.set(event, setTimeout(async () => {
         pending.delete(event);
+        if (rebuild) await buildShell();
         broadcast(event);
       }, 150));
     });
@@ -120,6 +164,15 @@ const server = Bun.serve({
     if (path === "/decoder-files.json") {
       return new Response(JSON.stringify(await decoderFiles()), {
         headers: { "content-type": "application/json" },
+      });
+    }
+    // Which build a decode came from. A static host has this as a file that
+    // tools/build_pages.js wrote; here it is computed, so an edit to a decoder
+    // invalidates a kept decode on the next reload with nothing to rebuild.
+    if (path === "/decoder-version.json") {
+      return new Response(JSON.stringify({ decoder: await decoderFingerprint() }), {
+        headers: { "content-type": "application/json",
+                   "cache-control": "no-store" },
       });
     }
     if (path.startsWith("/pyodide/")) {
