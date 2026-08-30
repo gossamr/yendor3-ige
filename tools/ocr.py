@@ -7,7 +7,7 @@ enough structure to segment characters reliably; identifying them is then a
 matter of matching against templates lifted from screens whose text we already
 know.
 
-Templates are bootstrapped from creatures whose values were confirmed by hand
+Templates are bootstrapped from monsters whose values were confirmed by hand
 against the game, so the alphabet is derived from the game itself rather than
 transcribed.
 """
@@ -32,7 +32,7 @@ EFFECT_ROW0, EFFECT_PITCH = 94, 6
 EFFECT_ROWS = 12          # labels.EFFECTS, top to bottom
 SPECIAL_ATTACK_ROW = 169
 
-# Values are drawn in the right-hand column; the creature portrait fills the
+# Values are drawn in the right-hand column; the monster portrait fills the
 # left of the screen and can contain pixels of the same ink colors, so reads
 # start well clear of it.
 VALUE_X_MIN = 200
@@ -124,7 +124,7 @@ class Alphabet:
         return int(text) if text.isdigit() else text
 
 
-# Ground truth for bootstrapping: three creatures whose screens were read by
+# Ground truth for bootstrapping: three monsters whose screens were read by
 # hand against the running game. Between them they cover every digit and the
 # thousands separator. Identifiers are the frame's index in the game's
 # alphabetical list, which is how capture_monsters.js names its output.

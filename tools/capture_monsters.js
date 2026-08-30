@@ -1,4 +1,4 @@
-// Walk the game's F2 monster list and screenshot every creature's stat screen.
+// Walk the game's F2 monster list and screenshot every monster's stat screen.
 //
 // This is the "fast path": a patched executable plus /P lands on the main menu
 // in about two seconds, so the whole list is a few minutes rather than an hour.

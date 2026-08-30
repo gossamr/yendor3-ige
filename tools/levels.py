@@ -154,7 +154,7 @@ OFF_READY_LEVEL = 0x1E  # 0 = not ready; otherwise the level trainable now
 
 # The four party slots, as a table of four record handles at DS:0xd0c9. Every
 # loop over the party walks it: the attack round at image 0x0c186, the round's
-# per-character readouts, and the creature target picker at 0x125b3.
+# per-character readouts, and the monster target picker at 0x125b3.
 PARTY_TABLE = 0xD0C9
 PARTY_SIZE = 4
 CURRENT = 0x3C  # stat index 0 of the current column
@@ -302,16 +302,16 @@ DEAD_BIT = 0x40          # set when current health hits 0, image 0x03745
 
 # stoning | frozen | paralyze | dead. One mask takes a character out of play
 # everywhere: it blocks training (image 0x065c5), drops them from the attack
-# round (0x0c196), and makes creatures reroll rather than target them
+# round (0x0c196), and makes monsters reroll rather than target them
 # (0x125dc). The other five conditions leave a character acting and targetable.
 INCAPACITATED = 0x1C40
 
-# Which party member a creature attacks, at image 0x125b3: rand(3) picks one of
+# Which party member a monster attacks, at image 0x125b3: rand(3) picks one of
 # the four PARTY_TABLE slots, and the roll repeats while the slot is empty or
 # INCAPACITATED. Nothing weights the choice by slot, so the game has no front
 # or back rank. Nor could it: the party is a single point, and the
 # hand-to-hand/ranged distinction is measured from that one position against
-# the creature's (image 0x1252d) rather than per character.
+# the monster's (image 0x1252d) rather than per character.
 TARGET_ROLL = PARTY_SIZE - 1  # rand() is inclusive; see ATTACK_ROLL above
 
 # Printable keys are dispatched through a jump table at image 0x777, indexed
@@ -322,7 +322,7 @@ TARGET_ROLL = PARTY_SIZE - 1  # rand() is inclusive; see ATTACK_ROLL above
 KEY_HANDLERS = 0x777
 ATTACK_ROUTINE = 0x0C13E
 STATE_WORD = 0x5370
-HAND_TO_HAND = 0x1000    # a creature has closed; set at image 0x12b6a
+HAND_TO_HAND = 0x1000    # a monster has closed; set at image 0x12b6a
 MODE_WORD = 0x536E
 VOLLEY = 0x100
 

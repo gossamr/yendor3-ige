@@ -109,7 +109,7 @@ spends the point.
 ### Somebody has to heal levels 6 to 14
 
 No party can afford armor through that window, and every one takes 16 to 78
-damage per creature killed. Party Heal is the only spell that covers it, at 100
+damage per monster killed. Party Heal is the only spell that covers it, at 100
 to all four for 45 magic.
 
 | Class | Party Heal at |
@@ -163,7 +163,7 @@ by level 27 to 35 depending on where you started.
 You spend the early game about 30 points poorer than someone who bought accuracy
 instead, and you break even at level 11 or 12. That debt falls where nothing
 needs the money: through the first ten levels your weapon skill sits at margin
-53 to 58 against creatures of your own level.
+53 to 58 against monsters of your own level.
 
 If you are rerolling for one attribute, reroll for dexterity. It feeds seven of
 the twelve skills. Do not reroll 59 for 60, which is worth two points across an
@@ -232,12 +232,12 @@ expect from the numbers.
 
 Watch the per-hit column, not the average. The rarely-hit stop in section 6
 averages 21
-damage a round and takes 78 in a round where all three creatures connect.
+damage a round and takes 78 in a round where all three monsters connect.
 
 ### What never missing costs
 
 Margin is your accuracy minus their absorption, and both sides move. Every
-training adds 2 to your attack skill for free. Creature absorption climbs about
+training adds 2 to your attack skill for free. Monster absorption climbs about
 3.9 a level, so the margin erodes by about 1.9 a level on its own, and a
 level-40 fighter who bought nothing swings at 143 into 158 and cannot hit
 anything at all. Buying the margin back is a fixed bill, and a small one:
@@ -255,7 +255,7 @@ fighter has to have spent by each level:
 |---|---|---|---|---|---|---|---|---|---|
 | Points | 2 | 5 | 11 | 19 | 23 | 34 | 44 | 64 | 70 |
 
-Level 39 is the one to plan for. Creature absorption jumps 20 there, the
+Level 39 is the one to plan for. Monster absorption jumps 20 there, the
 largest step in the game, and after the free +2 that is 18 points out of the 70
 in a single level. It arrives when there is no more armor to buy.
 
@@ -273,7 +273,7 @@ play asks:
 | Points to hold 55 | 52 | 69 | 77 | 82 |
 
 Only the Titan Lord is a soft target. Paltivar carries more armor than any
-regular creature in the game and wants 12 points past the career bill.
+regular monster in the game and wants 12 points past the career bill.
 
 ---
 
@@ -290,7 +290,7 @@ regular creature in the game and wants 12 points past the career bill.
 > points. The points are what you are spending.
 
 The game re-sorts turn order by dexterity every round. You need to match the
-creature, not beat it. Ties go to the party.
+monster, not beat it. Ties go to the party.
 
 | Level | 15 | 20 | 25 | 30 | 35 | 40 |
 |---|---|---|---|---|---|---|
@@ -304,13 +304,13 @@ because the absorption bonus reads dexterity in fives, so the purchase is
 rounded up to the next multiple of five and the spare points are free
 absorption.
 
-Creature dexterity climbs from 92 at level 10 to 250 at level 40 while yours
+Monster dexterity climbs from 92 at level 10 to 250 at level 40 while yours
 climbs from 78 to 138, so left alone you are slower than what you fight for the
 whole game. At 127 points bought, a sheet total of 265, you match the fastest
 thing in the game and the requirement stops for good.
 
 Buy this at every level, on every character. Do not buy past what is in front of
-you. Extra dexterity does nothing for turn order until the creatures catch up.
+you. Extra dexterity does nothing for turn order until the monsters catch up.
 
 ---
 
@@ -331,8 +331,8 @@ nothing here is above or below anything else.
 | Untouchable | 332 | 470 | 241 | 0% | none | none | 6.7 | no | none |
 
 **Berserker.** Turn order and nothing else, everything left into weapon skill
-and strength. Two-handed weapon, no shield. It kills each creature in the round
-that creature arrives, at every level from 15 to 40, so played well it takes
+and strength. Two-handed weapon, no shield. It kills each monster in the round
+that monster arrives, at every level from 15 to 40, so played well it takes
 nothing at all. Played badly it eats 528 in a single round with no roll to save
 it. Give it a healer.
 
@@ -448,7 +448,7 @@ five training points.
 | % of your budget | 20% | 17% | 34% | 31% | 45% | 20% | 42% |
 
 Free at 15 and 16, where plain armor holds the band by itself and nothing at 16
-can hit you at all. Expensive at 26 and 30, where creature accuracy jumps.
+can hit you at all. Expensive at 26 and 30, where monster accuracy jumps.
 Cheap again at 33 to 35 once enchanted armor lands. Check the number at each of
 those levels instead of buying to a fixed total.
 
@@ -459,12 +459,12 @@ those levels instead of buying to a fixed total.
 | Points for immunity | out of reach | out of reach | out of reach | 57 | 25 | 53 | 96 |
 | Sheet total | | | | 145 | 115 | 145 | 190 |
 
-Four creatures can take a character out of a fight entirely: the Wizard at 19
+Four monsters can take a character out of a fight entirely: the Wizard at 19
 and Ice Dwarf at 30 freeze, the Purple Dragon at 26 paralyzes, the Fire Giant at
 28 turns you to stone. **Absorption of 186 shuts all four out**, and that costs
 202 points of dexterity at level 30, 67 at 35 and 57 at 40 as armor catches up.
 
-Immunity to the creatures *at your level* opens up at 15, and costs less there
+Immunity to the monsters *at your level* opens up at 15, and costs less there
 than the rarely-hit stop does at 30. The 332 points on the untouchable stop
 buy something
 different, permanent immunity: a sheet total of 470, worth 241 absorption, one
@@ -489,7 +489,7 @@ stop.
 
 Stop early. Margin scales spell damage exactly as it scales a weapon's, so a
 caster that keeps buying pool ends up with a large pool and a spell that lands
-for nothing. Levels from 12 to 40 at which no spell you own kills a creature of
+for nothing. Levels from 12 to 40 at which no spell you own kills a monster of
 your own level in one cast:
 
 | Intelligence through | Dead levels | Span |
@@ -503,7 +503,7 @@ your own level in one cast:
 The fallback in a dead level is Magic Attack at 9 damage, which is 38 casts
 against a Black Dragon. What it costs while you are in one:
 
-| Level | Creature health | All casting | Through 12 | Through 18 |
+| Level | Monster health | All casting | Through 12 | Through 18 |
 |---|---|---|---|---|
 | 12 | 87 | 1 cast | 18 | 18 |
 | 14 | 117 | 1 | 17 | 27 |
@@ -523,7 +523,7 @@ for one at 12. Past 12 you are buying endgame pool with mid-game levels you
 cannot fight through.
 
 Dexterity comes last, and late, and the number below is a level rather than a
-dexterity. A caster that acts before the creatures ends
+dexterity. A caster that acts before the monsters ends
 the fight on its own turn, so its initiative is a purchase for the whole party
 and nobody else's matters. Started at level 35 it adds about 7% to a career on every
 intelligence setting. Started at level 30 or earlier it costs more than it returns,
@@ -565,11 +565,11 @@ fight goes long, not while the spells last.
 
 ### Resistance is a tax on the caster half of a party
 
-Thirteen of the 71 creatures halve spell damage and thirteen halve shots.
+Thirteen of the 71 monsters halve spell damage and thirteen halve shots.
 **Nothing halves a hand-to-hand swing.** A martial's output is the only kind in
 the game that is never reduced.
 
-Across levels 15 to 40 the creature the guide measures against halves spells at
+Across levels 15 to 40 the monster the guide measures against halves spells at
 three of the twenty-six and halves shots at four. That is a small share of
 ordinary play and a large share of the fights you plan for: of the four
 end-game bosses, Paltivar and Blazios halve spells and the Chaotic Minotaur
@@ -581,19 +581,19 @@ that declare nothing deal between 10 and 45.
 
 ### Immunity is a different thing, and more common
 
-A creature immune to a damage type takes **nothing at all** from it, not half,
+A monster immune to a damage type takes **nothing at all** from it, not half,
 and only from that one type. Thirty of the 71 carry at least one, and the
-creature this guide measures against carries one at twelve of the twenty-six
+monster this guide measures against carries one at twelve of the twenty-six
 levels from 15 to 40, so it comes up four times as often as halving does.
 
 It removes spells from your list rather than reducing them. Fire, cold,
 electric and power are the four types a spell can carry, and 39 of the 70
 damage spells carry none of them, so there is always something left to throw.
 What it costs is the spell you wanted: a caster leaning on one element finds it
-does nothing against the creatures built to stop it, and has to know its second
+does nothing against the monsters built to stop it, and has to know its second
 choice.
 
-No element is safer than another. Of the 71 creatures, 14 stop electric, 11
+No element is safer than another. Of the 71 monsters, 14 stop electric, 11
 stop power, and 10 each stop fire and cold, and the ones that carry more than
 one almost always pair electric with power. The only spells nothing can be
 immune to are the ones that carry no element at all.
@@ -641,7 +641,7 @@ A monk carries a few dead levels whatever it does, because its damage list
 starts thinner than a mage's. Buying past 12 turns that into half the game.
 
 **Then dexterity, and wait for level 35 to buy it.** Not for the damage. Four
-creatures can take a character out of a fight entirely, and a healer frozen in
+monsters can take a character out of a fight entirely, and a healer frozen in
 the round a Purple Dragon lands is the end of the party. Absorption of 186
 shuts all four out, and what that costs collapses once the enchanted armor
 lands:
@@ -736,20 +736,20 @@ the better defense while your armor is worthless.
 
 **Martial.** Unlimited damage, one target, free. Never runs out.
 
-**Caster.** Area spells hit every engaged creature, so damage scales with the
+**Caster.** Area spells hit every engaged monster, so damage scales with the
 group. Magic points and nuore limit it.
 
 **Healer.** No damage. Its pool decides how many fights you can string together.
 
 More characters means more damage, and usually less damage each. An ordinary
-creature picks one target a round, so a fourth party member takes a quarter of
+monster picks one target a round, so a fourth party member takes a quarter of
 the incoming off everybody else.
 
-Fourteen of the 71 creatures carry PARTY ATTACK, and they break that. One of
+Fourteen of the 71 monsters carry PARTY ATTACK, and they break that. One of
 them swings at all four of you inside its own turn, so each character eats the
 whole group and a fifth party member would not help. Three Black Dragons deal
 519 per character, 2,076 across the party. It is the single field that most
-changes what a fight costs, and it does not track how hard the creature hits.
+changes what a fight costs, and it does not track how hard the monster hits.
 
 ---
 
@@ -855,7 +855,7 @@ halving lands after your margin has already scaled the damage, so a caster who
 has spent everything on casting is halved just as hard as one who has not.
 What answers it is another caster, or a character swinging a hand weapon.
 
-**Do not use area spells on single creatures.** Mimic, both Towers, Alligator
+**Do not use area spells on single monsters.** Mimic, both Towers, Alligator
 and Crocodile always fight alone. A single-target spell is cheaper against them.
 
 Damage per magic point peaks in the first few levels and never improves. Bigger
@@ -879,8 +879,8 @@ Paladin, level 40, 510 points:
 | 100% | 78 | 320 | 0 | 0 | 210 | 630 |
 
 The two damage columns to compare are the two headed *one target*: a swing hits
-one creature and so does one target's share of an area spell. The last column is
-the same cast totalled over the three creatures engaged, which is the spell's
+one monster and so does one target's share of an area spell. The last column is
+the same cast totalled over the three monsters engaged, which is the spell's
 real advantage and not a like-for-like number. The spell columns are what
 actually lands, so they carry the Black Dragon's halving of spell damage; the
 swing column does not, because nothing halves a swing.
@@ -889,9 +889,9 @@ Half the weapon points gives you 43% of the swing. Half the casting points gives
 you 33% of the spell. Margin scales damage, so halving your investment costs you
 more than half the output, on both sides at once.
 
-Against a creature that resists spells the split looks less lopsided than it is.
+Against a monster that resists spells the split looks less lopsided than it is.
 Committing everything to casting gives you 210 a target where the same points in
-the weapon give 175, so on one creature the two ends are close, and the spell
+the weapon give 175, so on one monster the two ends are close, and the spell
 only pulls away because it lands on all three at once.
 
 With no casting at all the pool is dead weight. Natural casting 138 against 158
@@ -954,18 +954,18 @@ casters need two rounds and spend 608 nuore killing it, and get nothing back.
    anything that resists spells; a third and fourth buy staying power rather
    than speed.
 6. **Re-plan at 15, 18, 26, 30 and 39.** Level 15 is when armor becomes
-   affordable. The rest are where creatures gain more in a level than your free
+   affordable. The rest are where monsters gain more in a level than your free
    +2.
 
 ---
 
 ## What this does not cover
 
-Every fight here starts with all creatures already engaged, which is the worst
+Every fight here starts with all monsters already engaged, which is the worst
 case. Arrival rate, positioning, condition attacks and item effects are all
 missing.
 
-The career figures in section 7 count creatures killed between rests, summed
+The career figures in section 7 count monsters killed between rests, summed
 over every level. That measure rewards a large endgame pool and says nothing
 about when the pool arrives, which is why the dead-level count sits beside it
 rather than under it.

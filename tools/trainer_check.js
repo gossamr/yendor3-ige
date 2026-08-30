@@ -166,13 +166,13 @@ else {
     // roster and no further, so what is proved here is that both reads run
     // and report honestly: the three engaged buffers, and the eighty spawn
     // slots, which are only read when they are asked for. That they read the
-    // right numbers off a creature is proved against a real one instead, by
+    // right numbers off a monster is proved against a real one instead, by
     // tools/fight_probe.js.
     const fight = frame.locator('section[data-key="tr"] .trainer-mobs tbody tr');
     console.log(`engaged: ${await fight.count()}`);
     await frame.locator('section[data-key="tr"] .trainer-onmap').check();
     await frame.waitForTimeout(2500);
-    console.log(`with the map: ${await fight.count()} creature rows`);
+    console.log(`with the map: ${await fight.count()} monster rows`);
     const stillOk = await frame.locator('section[data-key="tr"] .trainer-note').innerText();
     if (stillOk.trim()) problems.push(`reading the spawn table failed: ${stillOk}`);
 
@@ -239,12 +239,12 @@ else {
     console.log(`placed: ${JSON.stringify(placed)}`);
     if (!/band 5 cell 6/.test(placed)) problems.push(`the party did not move: ${placed}`);
 
-    // The creature editor has nothing to edit here, and has to say so rather
+    // The monster editor has nothing to edit here, and has to say so rather
     // than show a stale record. Clearing the map is eighty writes that must
     // all land.
     const mobPick = frame.locator('section[data-key="tr"] .debug-mob');
     if (await mobPick.locator("option").count()) {
-      problems.push("the creature picker offered a creature where there are none");
+      problems.push("the monster picker offered a monster where there are none");
     }
     await frame.locator('section[data-key="tr"] .debug-clear').click();
     await frame.waitForTimeout(2500);

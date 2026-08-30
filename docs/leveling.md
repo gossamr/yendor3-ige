@@ -155,7 +155,7 @@ The screen is bracketed by two block copies, and they explain everything about i
 
 Read as little-endian integers these are not round numbers. Read as packed BCD they are round, which is what fixes the encoding. It is the same convention that the enemy reward fields use.
 
-The thresholds are cumulative totals rather than costs per level. The steepest jumps are at 20, 21 and 31, where the slope of the ladder roughly doubles. For scale, PALTIVAR gives 1,000,000 experience, the most of any creature in the tables, and that is most of one level at the top end, because the step from 39 to 40 is 1,185,000.
+The thresholds are cumulative totals rather than costs per level. The steepest jumps are at 20, 21 and 31, where the slope of the ladder roughly doubles. For scale, PALTIVAR gives 1,000,000 experience, the most of any monster in the tables, and that is most of one level at the top end, because the step from 39 to 40 is 1,185,000.
 
 ### The gold cost
 
@@ -211,13 +211,13 @@ There are exactly two attribute bonuses in combat, and these are they. Nothing e
 
 ## The return on a bonus point
 
-[tools/combat_model.py](../tools/combat_model.py), with [tests/test_combat_model.py](../tests/test_combat_model.py), carries the spending model. It is matched by level, setting a character of level *L* against the hardest regular creature of level *L*, which is possible because `data/enemies.json` carries a level for every creature. The row describes **one real creature**, the one with the most experience at that level, with bosses excluded by the food flag. It does not take each field at its maximum independently, because that combination describes no creature in the game.
+[tools/combat_model.py](../tools/combat_model.py), with [tests/test_combat_model.py](../tests/test_combat_model.py), carries the spending model. It is matched by level, setting a character of level *L* against the hardest regular monster of level *L*, which is possible because `data/enemies.json` carries a level for every monster. The row describes **one real monster**, the one with the most experience at that level, with bosses excluded by the food flag. It does not take each field at its maximum independently, because that combination describes no monster in the game.
 
 Two figures out of the item decode ([items.md](items.md)) bound what the points buy:
 
 - **Armor tops out at 111 absorption, or 161 enchanted.** Dexterity is the only other source, so a build aiming to be unhittable must purchase the difference.
 - **The best one-handed weapon that can be bought does 30 damage.** 40 damage is the 2-Handed Sword +10, and carrying that weapon costs the shield, because a two-handed weapon and a shield cannot be carried together, and no class is barred from a shield. Ten damage does not pay for the shield's thirty absorption in any build.
 
-From those: the hardest creature swings at accuracy 240, so **241 absorption can never be hit**, and reaching it from 161 of armor costs **332 dexterity points**. Against a budget of 497 to 525 that is affordable but it is most of the career.
+From those: the hardest monster swings at accuracy 240, so **241 absorption can never be hit**, and reaching it from 161 of armor costs **332 dexterity points**. Against a budget of 497 to 525 that is affordable but it is most of the career.
 
 **Buy strength until the margin equals five times the damage stat.** Past the point where accuracy already lands every blow, further weapon skill buys only the margin term in `pct(damage, margin)`, and strength buys the damage term.

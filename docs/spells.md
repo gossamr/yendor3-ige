@@ -1,6 +1,6 @@
 # The spell record
 
-The spell record is 80 bytes, and there are one hundred and seven of them at `WORLD.DAT 0x41B5BF`, which is section 31 of the directory. Eight of the records are placeholders named `ERROR`, and their bytes are leftovers. This document records settled findings only. What a spell's blow does to a creature is in [combat.md](combat.md), and what a training level costs is in [leveling.md](leveling.md). [tools/extract.py](../tools/extract.py) is the decoder.
+The spell record is 80 bytes, and there are one hundred and seven of them at `WORLD.DAT 0x41B5BF`, which is section 31 of the directory. Eight of the records are placeholders named `ERROR`, and their bytes are leftovers. This document records settled findings only. What a spell's blow does to a monster is in [combat.md](combat.md), and what a training level costs is in [leveling.md](leveling.md). [tools/extract.py](../tools/extract.py) is the decoder.
 
 ## The record
 
@@ -38,7 +38,7 @@ Descriptions are a stream of 39-column lines, held in the last entry of the Rest
 
 ## Which records the clue book lists
 
-The list registry at `DS:0xF6A8` holds the clue book's lists. List 1 is the maps, list 2 is the creatures and list 3 is the spells. List 3 names 98 of the 107 records. The nine it leaves out are the eight `ERROR` placeholders and `SHARD OF ICE`.
+The list registry at `DS:0xF6A8` holds the clue book's lists. List 1 is the maps, list 2 is the monsters and list 3 is the spells. List 3 names 98 of the 107 records. The nine it leaves out are the eight `ERROR` placeholders and `SHARD OF ICE`.
 
 ## AFFECTS and WHEN
 
@@ -84,7 +84,7 @@ Friend-or-foe is not separate information. Across the 98 listed spells, all 70 t
 
 ## The element word
 
-Offset 74 uses the **same bit layout as the enemy immunity word** at enemy offset 100. The game tests one against the other, so `COLD` on a spell and `IMMUNE TO COLD` on a creature are the same flag.
+Offset 74 uses the **same bit layout as the enemy immunity word** at enemy offset 100. The game tests one against the other, so `COLD` on a spell and `IMMUNE TO COLD` on a monster are the same flag.
 
 | Bit | Meaning | Bit | Meaning |
 |---|---|---|---|
@@ -97,9 +97,9 @@ Offset 74 uses the **same bit layout as the enemy immunity word** at enemy offse
 
 This was confirmed bit by bit against the game's prose. The field is never set on a spell that does no damage, and the four condition spells (HEX MONSTER, PARALYZE, FREEZE and CURSE MONSTER) all do damage as well. Zero means untyped damage, which no immunity stops, and **63 of the 98 listed spells hold zero**.
 
-**Bits 5 to 8 are undecoded.** Four spells set one of them and nothing else: DWINDLING DAMAGE `0x0020`, THIN SKIN `0x0040`, FEET OF LEAD `0x0080` and BLIND `0x0100`. No creature's immunity word carries any of the four, so nothing in the game stops these four spells either, and they behave as untyped. Counting them that way makes 67 of the 98 untyped in play, which is the figure the panel uses. What the bits are *for* is not established.
+**Bits 5 to 8 are undecoded.** Four spells set one of them and nothing else: DWINDLING DAMAGE `0x0020`, THIN SKIN `0x0040`, FEET OF LEAD `0x0080` and BLIND `0x0100`. No monster's immunity word carries any of the four, so nothing in the game stops these four spells either, and they behave as untyped. Counting them that way makes 67 of the 98 untyped in play, which is the figure the panel uses. What the bits are *for* is not established.
 
-Offset 76 is also the spell's blow word, and a spell-resistant creature halves the damage on its bit 13. See [combat.md](combat.md). The AFFECTS row reads the low bits of that word, and the resolver reads the upper bits.
+Offset 76 is also the spell's blow word, and a spell-resistant monster halves the damage on its bit 13. See [combat.md](combat.md). The AFFECTS row reads the low bits of that word, and the resolver reads the upper bits.
 
 ## Which classes can cast a spell
 

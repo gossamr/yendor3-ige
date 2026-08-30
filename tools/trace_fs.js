@@ -52,7 +52,7 @@ globalThis.__dumpMemory = function (path) {
 };
 
 // Read a window of the heap without writing 64 MB to disk. Watching a value
-// change, a creature's health as the party swings at it, needs a cheap
+// change, a monster's health as the party swings at it, needs a cheap
 // read taken often, which a dump is not.
 //
 //   globalThis.__find("CENTIPEDE")   -> heap offsets of a byte string

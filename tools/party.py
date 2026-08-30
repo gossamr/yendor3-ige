@@ -14,7 +14,7 @@ roles buy different things and the mix decides which constraint binds.
 Spends its 510 points on the `Rarely hit` rung by default; `--berserker`
 switches it. Costs nothing per fight and so never runs out.
 
-**Caster**: an area spell hits every engaged creature at once, so its output
+**Caster**: an area spell hits every engaged monster at once, so its output
 scales with the group where a martial's does not. Mage: charisma, then
 intelligence 78 for the pool, then first strike, then casting. Bounded by magic
 points, and by nuore, which is a second currency the party shares.
@@ -25,12 +25,12 @@ fights the party sustains rather than how fast it wins one.
 
 ## What is modeled, and what is not
 
-A round is: the party acts (all four outrun every regular creature once first
+A round is: the party acts (all four outrun every regular monster once first
 strike is bought), then whatever is still alive swings. Casters spend their
 spell every round they act. Martials focus-fire, and overkill is not carried
-between creatures within a round.
+between monsters within a round.
 
-Creatures are all engaged from the start, the lost-control case. The other
+Monsters are all engaged from the start, the lost-control case. The other
 bound, one arrival a round, is uninteresting here: any composition that
 one-rounds a group takes nothing at all under it.
 
@@ -55,7 +55,7 @@ HEAL_PER_MANA = 100 * 4 / 45     # Party Heal: 100 to all four for 45 magic
 GREAT_HEAL_PER_MANA = 500 / 100  # the concentrated alternative
 
 # Nuore is the second currency every spell spends, all 98 of them, with no
-# free cast anywhere in the list. Creatures drop it and a shop sells it at ten
+# free cast anywhere in the list. Monsters drop it and a shop sells it at ten
 # gold a unit in lots of ten.
 #
 # It is NOT carried inventory. The party's nuore is a single counter at
@@ -130,7 +130,7 @@ FAMILY_INSECT, FAMILY_UNDEAD = 9, 13
 
 
 def _affects(spell, foe):
-    """Whether this spell can be thrown at this creature at all."""
+    """Whether this spell can be thrown at this monster at all."""
     target = (spell.get("target") or "").lower()
     if "undead" not in target and "insect" not in target:
         return True
@@ -181,7 +181,7 @@ class Member:
             margin = casting - foe["absorption"]
             group = C.group_size(LD.raw_by_level(level))
             # Area and single-target compete. Against a group the area spell
-            # wins by the group size; against a solitary creature they compete
+            # wins by the group size; against a solitary monster they compete
             # head to head, and a single-target spell is usually the cheaper
             # way to kill it.
             # How many of these are in the party changes which spell is right:
@@ -207,7 +207,7 @@ class Member:
         casts and twenty-three rounds of standing there being hit.
 
         `out of hand to hand` spells are excluded throughout: they are inert
-        once a creature has closed, which rules out the mage's two most
+        once a monster has closed, which rules out the mage's two most
         efficient area spells, Finger of Flame and Power Surge.
         """
         options = []
@@ -220,13 +220,13 @@ class Member:
                 continue
             if spell.get("when") == "out of hand to hand":
                 continue
-            # Some spells name a family rather than a creature: TURN UNDEAD
+            # Some spells name a family rather than a monster: TURN UNDEAD
             # reads `undeads` and a dragon is not one, so it cannot be thrown
             # at the group being modeled. Without this the picker chose it and
             # collected 765 a target for a spell that would do nothing.
             if not _affects(spell, foe):
                 continue
-            # Immunity is not resistance: a creature immune to the spell's
+            # Immunity is not resistance: a monster immune to the spell's
             # damage type takes nothing from it, so the spell is not an option
             # at all rather than a halved one.
             if C.immune_to(foe, spell):
@@ -234,7 +234,7 @@ class Member:
             targets = (group if spell.get("scope") == "all"
                        and spell.get("target") in ("monsters",
                                                    "visible monsters") else 1)
-            # A creature that resists this kind of spell halves what lands.
+            # A monster that resists this kind of spell halves what lands.
             per = (odds(margin) * LD.per_hit(spell["damage"], margin)
                    * C.resisted(C.spell_blow(spell), C.foe_resistance(foe)))
             if per <= 0:
@@ -290,7 +290,7 @@ class Member:
             odds, weapon + L.attribute_bonus(natural_attr + st),
             C.natural_attack(code, skill, level) + martial - st,
             foe["absorption"]))
-        # A shot is the one physical blow that carries a word, so a creature
+        # A shot is the one physical blow that carries a word, so a monster
         # with bit 15 halves the marksman's bow and nobody else's hand weapon.
         shot = C.resisted(C.BLOW_SHOT if skill == "projectile" else C.BLOW_MELEE,
                           C.foe_resistance(foe))
@@ -354,21 +354,21 @@ def fight(members, foe, size, attacks_each, odds):
     """Run one engagement with everything already closed.
 
     Order inside a round: whoever has an area spell acts first and one at a
-    time, because an area spell is worth most while every creature is at full
+    time, because an area spell is worth most while every monster is at full
     health, and because the next caster should not spend a spell on a group
     that is already dead. Then the weapons focus-fire what is left. A hybrid
     casts only when the spell would out-damage its own swing across the
-    creatures still standing.
+    monsters still standing.
 
     Returns rounds, damage one character takes, and the magic and nuore the
     party spent.
     """
-    creatures = [float(foe["health"])] * size
+    monsters = [float(foe["health"])] * size
     mana = {i: m.pool for i, m in enumerate(members)}
     taken, rounds, magic, nuore = 0.0, 0, 0.0, 0.0
 
     def alive():
-        return [i for i, h in enumerate(creatures) if h > 0]
+        return [i for i, h in enumerate(monsters) if h > 0]
 
     while alive() and rounds < 50:
         rounds += 1
@@ -384,9 +384,9 @@ def fight(members, foe, size, attacks_each, odds):
                 magic += m.cost
                 nuore += m.nuore
                 for j in standing[:hits]:
-                    creatures[j] -= m.spell_damage
+                    monsters[j] -= m.spell_damage
             elif m.weapon:
-                creatures[standing[0]] -= m.weapon
+                monsters[standing[0]] -= m.weapon
         standing = alive()
         if not standing:
             break
@@ -430,7 +430,7 @@ def evaluate(name, roles, level, odds, martial_policy="Rarely hit",
                         / party_damage)
     return {
         "party": name, "level": level, "rounds": rounds,
-        "creature": foe["name"], "group": size,
+        "monster": foe["name"], "group": size,
         "taken": taken, "health": C.health_pool(52, level),
         "one_rounds": rounds <= 1,
         "magic_a_fight": magic, "nuore_a_fight": nuore,
@@ -465,13 +465,13 @@ def report(level, odds, martial_policy="Rarely hit", spell_choice="damage"):
 def careers(odds, martial_policy="Rarely hit"):
     for name, roles in COMPOSITIONS:
         print(f"\n{name}")
-        print(f"{'lvl':>4}{'creature':22}{'rounds':>8}{'1-rnd':>7}"
+        print(f"{'lvl':>4}{'monster':22}{'rounds':>8}{'1-rnd':>7}"
               f"{'taken/char':>12}{'% pool':>8}{'fights/rest':>13}{'limit':>8}")
         for level in range(15, 41):
             r = evaluate(name, roles, level, odds, martial_policy)
             fights = ("--" if r["fights_per_rest"] == float("inf")
                       else f"{r['fights_per_rest']:.1f}")
-            print(f"{level:>4}{r['creature'][:21]:22}{r['rounds']:>8}"
+            print(f"{level:>4}{r['monster'][:21]:22}{r['rounds']:>8}"
                   f"{('yes' if r['one_rounds'] else 'no'):>7}"
                   f"{r['taken']:>12.0f}{r['taken'] / r['health'] * 100:>7.0f}%"
                   f"{fights:>13}{r['limited_by']:>8}")
@@ -512,7 +512,7 @@ def spellblade_report(level, odds):
           f"{C.enemies_by_level()[level]['name'].title()}, "
           f"{C.group_size(LD.raw_by_level(level)) * C.enemies_by_level()[level]['health']:.0f}"
           f" health between them.")
-    # Swing is one hit on one creature, so the spell is printed per target
+    # Swing is one hit on one monster, so the spell is printed per target
     # beside it. `x group` is the same cast totalled over everything engaged,
     # which is the spell's real advantage but not a like-for-like number.
     print(f"{'class':11}{'to magic':>9}{'attr':>6}{'casting':>9}{'weapon':>8}"

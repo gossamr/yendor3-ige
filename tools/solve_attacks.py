@@ -1,4 +1,4 @@
-"""Identify each creature's special attacks from the game's own screen.
+"""Identify each monster's special attacks from the game's own screen.
 
 The attack line is drawn in blue below the statistics. Rather than transcribe
 the game's font by hand, the alphabet is grown from one line whose text is
@@ -98,7 +98,7 @@ if __name__ == "__main__":
                                       list(rows))
     letters = "".join(sorted({v for v in alpha.by_bits.values() if v.isalpha()}))
     print(f"alphabet: {letters}")
-    print(f"resolved {len(result)}/{len(result) + len(unresolved)} creatures")
+    print(f"resolved {len(result)}/{len(result) + len(unresolved)} monsters")
     for n, (line, count) in unresolved.items():
         print(f"  unresolved {n}: {line!r} ({count} readings)")
     seen = sorted({a for v in result.values() for a in v})

@@ -53,7 +53,7 @@ def test_enemy_count_and_sentinel(directory, data):
     assert first == bytes(S.ENEMY_RECORD)
 
 
-def test_first_creatures_are_the_known_ones(data):
+def test_first_monsters_are_the_known_ones(data):
     assert [e["name"] for e in data["enemies"][:3]] == [
         "WASP", "CENTIPEDE", "WASP QUEEN"]
     assert data["enemies"][-1]["name"] == "PURPLE DRAGON"
@@ -75,7 +75,7 @@ def test_two_field_names_are_joined(data):
 
 def test_stats_verified_against_the_running_game(data):
     """These exact numbers were read off the game's F2 screen under emulation.
-    Two creatures three orders of magnitude apart, so the mapping cannot be a
+    Two monsters three orders of magnitude apart, so the mapping cannot be a
     coincidence of scale."""
     by = {e["name"]: e for e in data["enemies"]}
     aco = by["ACOKNIGHT"]
@@ -95,7 +95,7 @@ def test_stats_rise_with_difficulty(data):
     assert boss["health"] == 3400
 
 
-def test_family_groups_creatures_that_belong_together(data):
+def test_family_groups_monsters_that_belong_together(data):
     """The family code is what the game's INSECT / UNDEAD flags key off."""
     by = {e["name"]: e["family"] for e in data["enemies"]}
     insects = ["WASP", "CENTIPEDE", "WASP QUEEN", "PRAYING MANTIS", "MILLIPEDE"]
@@ -108,7 +108,7 @@ def test_family_groups_creatures_that_belong_together(data):
 def test_rewards_are_packed_bcd(data):
     """Rewards are stored as decimal digits, not integers: WASP's 15 experience
     is the bytes 00 00 00 15, and PALTIVAR's 1,000,000 is 01 00 00 00. All four
-    figures were checked against the game's screen for every creature."""
+    figures were checked against the game's screen for every monster."""
     by = {e["name"]: e for e in data["enemies"]}
     assert (by["WASP"]["experience"], by["WASP"]["gold"]) == (15, 30)
     assert by["ACOKNIGHT"]["experience"] == 1_000
@@ -211,7 +211,7 @@ def test_a_resistance_bit_is_worth_what_sets_it(directory, data):
 
 
 def test_magic_resistance_comes_from_either_source(data):
-    """Four creatures are shown RESISTANT to magic on the strength of the
+    """Four monsters are shown RESISTANT to magic on the strength of the
     immunity word alone, with nothing set in the resistance word."""
     by = {e["name"]: e for e in data["enemies"]}
     for n in ("BLAZIOS", "CHAMELEON MAN", "FIRE DWARF", "SORCERER"):
@@ -240,7 +240,7 @@ def test_the_placeholder_record_is_flagged_unlisted(data):
 
 
 def test_ranged_stats(data):
-    """Only 13 creatures have ranged attacks; for the rest the game leaves the
+    """Only 13 monsters have ranged attacks; for the rest the game leaves the
     rows blank, so they decode to None rather than 0."""
     by = {e["name"]: e for e in data["enemies"]}
     assert (by["BANDIT"]["ranged_accuracy"], by["BANDIT"]["ranged_damage"]) == (92, 60)
@@ -283,7 +283,7 @@ def test_all_undead_share_the_undead_immunity_word(data):
         assert set(by[n]["immune"]) == conditions, n
 
 
-def test_frost_and_fire_creatures_carry_the_right_immunity(data):
+def test_frost_and_fire_monsters_carry_the_right_immunity(data):
     by = {e["name"]: e for e in data["enemies"]}
     for n in ("FROST GIANT", "SNOW GIANT", "ICE DWARF", "FROST DWARF"):
         assert "COLD" in by[n]["immune"] and "FIRE" not in by[n]["immune"], n
@@ -440,8 +440,8 @@ def test_which_records_the_book_lists_comes_out_of_the_list_registry(data):
     """`listed` is read, not inferred from which screens a capture reached.
 
     The registry at `ds:0xf6a8` that holds the six item categories holds the
-    clue book's other sections too: list 2 the creatures, list 3 the spells.
-    Both agree with the walks: the 71 creatures the F2 section pages through,
+    clue book's other sections too: list 2 the monsters, list 3 the spells.
+    Both agree with the walks: the 71 monsters the F2 section pages through,
     and the 98 spells the F3 section does, which are the ones the capture run
     photographed.
     """
@@ -1015,10 +1015,10 @@ def test_build_writes_all_json(tmp_path):
     assert payload["labels"]["effects"][0] == "POISON"
 
 
-# --- creature level and special attacks -------------------------------------
+# --- monster level and special attacks -------------------------------------
 
 
-def test_creature_level_runs_one_to_forty_five(data):
+def test_monster_level_runs_one_to_forty_five(data):
     levels = {c["name"]: c["level"] for c in data["enemies"]}
     assert levels["WASP"] == 1
     assert levels["CENTIPEDE"] == 1
@@ -1026,10 +1026,10 @@ def test_creature_level_runs_one_to_forty_five(data):
     assert levels["NOT USED"] == 0
 
 
-def test_level_orders_the_creatures_the_way_their_stats_do(data):
+def test_level_orders_the_monsters_the_way_their_stats_do(data):
     """Every other stat is grown from the level, so they move together."""
     live = [c for c in data["enemies"] if c["listed"]]
-    # Rank correlation rather than monotonicity: creatures at the same level
+    # Rank correlation rather than monotonicity: monsters at the same level
     # are tuned against each other, so neighbors swap. What must hold is that
     # the field tracks the stats across the whole table, and a wrong offset does
     # not score 0.95 by accident.
@@ -1053,7 +1053,7 @@ def test_special_attacks_decode_exactly_as_the_game_prints_them(data):
     `attacks` comes from the monster's attack id and the table the printer
     indexes with it. `observed_attacks.json` is what
     `tools/capture_monsters.js` read off the game's own F2 pages. They have to
-    agree for every creature the book lists, which is what makes the id a
+    agree for every monster the book lists, which is what makes the id a
     decode rather than a guess, and it is the only thing that file is for.
     """
     seen = observed("observed_attacks.json")
@@ -1061,11 +1061,11 @@ def test_special_attacks_decode_exactly_as_the_game_prints_them(data):
                   if c["listed"]
                   and sorted(c["attacks"]) != sorted(seen.get(c["name"], []))]
     assert mismatched == []
-    # ...and it is not vacuous: 30 of the 71 creatures carry one.
+    # ...and it is not vacuous: 30 of the 71 monsters carry one.
     assert sum(1 for c in data["enemies"] if c["attacks"]) == 30
 
 
-def test_creatures_sharing_an_attack_id_share_their_attacks(data):
+def test_monsters_sharing_an_attack_id_share_their_attacks(data):
     import collections
 
     # PARTY ATTACK and BREAK SHIELD come from other bits, so ignore those.
@@ -1081,10 +1081,10 @@ def test_creatures_sharing_an_attack_id_share_their_attacks(data):
     assert shared >= 3
 
 
-def test_the_ranged_fields_are_set_for_exactly_the_ranged_creatures(data):
+def test_the_ranged_fields_are_set_for_exactly_the_ranged_monsters(data):
     """Five fields describe the shot and all five agree on who has one: the
     picture, the sound, the attack id, and the accuracy and damage the clue
-    book prints. A creature with any of them has all of them."""
+    book prints. A monster with any of them has all of them."""
     ranged = {c["name"] for c in data["enemies"] if c["ranged"]}
     assert len(ranged) == 13
     for c in data["enemies"]:
@@ -1108,7 +1108,7 @@ def test_a_shot_names_a_picture_the_projectile_run_holds(data, directory):
     assert all(0 < n < run.count for n in pictures), pictures
 
 
-def test_how_often_a_creature_shoots_is_one_of_five_figures(data):
+def test_how_often_a_monster_shoots_is_one_of_five_figures(data):
     """The AI rolls against a threshold picked by the highest of four bits of
     word 98. Only shooters carry one, and the three that cannot move carry the
     highest."""
@@ -1121,16 +1121,16 @@ def test_how_often_a_creature_shoots_is_one_of_five_figures(data):
 
 
 def test_only_the_creeping_fungus_recolours_its_shot(data):
-    """Twelve creatures carry the bit that turns the shot's recolour list on;
+    """Twelve monsters carry the bit that turns the shot's recolour list on;
     one of them has a list to apply, and it is the recoloured fungus."""
     lists = {c["name"]: c["ranged"]["recolour"]
              for c in data["enemies"] if c["ranged"] and c["ranged"]["recolour"]}
     assert lists == {"CREEPING FUNGUS": [{"from": 4, "to": 3}]}
 
 
-def test_every_creature_animates_one_way_or_the_other(data):
+def test_every_monster_animates_one_way_or_the_other(data):
     """Two bits of word 96 choose between running the walk cycle in a loop and
-    running it back and forth. Every creature the game lists carries exactly
+    running it back and forth. Every monster the game lists carries exactly
     one; the third bit, which stops the animation, is carried by none."""
     walks = collections.Counter(c["walk"] for c in data["enemies"] if c["listed"])
     assert walks == collections.Counter({"loop": 48, "bounce": 23})
@@ -1138,7 +1138,7 @@ def test_every_creature_animates_one_way_or_the_other(data):
 
 def test_xref_finds_the_instruction_that_reads_a_known_field():
     """The technique the record was decoded with, held to a case whose answer
-    is already known: the creature's sprite is record 26, so the draw loop's
+    is already known: the monster's sprite is record 26, so the draw loop's
     read of it is a reference to `[si+0x4c]`. A superset disassembly of a
     real-mode image is mostly noise, and this is what says the filter still
     keeps the signal."""
@@ -1250,7 +1250,7 @@ def test_an_enchanted_item_carries_its_own_id(data):
 
 def test_a_steal_takes_a_fixed_sum(data):
     """Offsets 92-95 are a packed-BCD amount in the same form as the four
-    rewards, and only the three creatures whose special attack is STEAL GOLD
+    rewards, and only the three monsters whose special attack is STEAL GOLD
     carry one."""
     stolen = {c["name"]: c["steal"] for c in data["enemies"] if c["steal"]}
     stealers = {c["name"] for c in data["enemies"]
@@ -1260,8 +1260,8 @@ def test_a_steal_takes_a_fixed_sum(data):
                       "FROST DWARF TOWER": 1000}
 
 
-def test_sprite_groups_creatures_that_share_artwork(data):
-    """The draw loop sets the current frame from this field, so creatures with
+def test_sprite_groups_monsters_that_share_artwork(data):
+    """The draw loop sets the current frame from this field, so monsters with
     the same value are drawn the same, which is what the groups look like."""
     import collections
 
@@ -1291,12 +1291,12 @@ def test_sound_is_an_index_into_the_executables_voc_table(data):
     sounds = [c[k] for c in data["enemies"] for k in ("sound_hit", "sound_miss")]
     sounds += [c["ranged"]["sound"] for c in data["enemies"] if c["ranged"]]
     assert max(sounds) <= entries
-    # The two towers are the only creatures with nothing to say in melee, and
+    # The two towers are the only monsters with nothing to say in melee, and
     # they are the two that never enter it.
     silent = {c["name"] for c in data["enemies"]
               if c["listed"] and not c["sound_hit"] and not c["sound_miss"]}
     assert silent == {"FROST DWARF TOWER", "FIRE DWARF TOWER"}
-    # A creature with a weapon swishes when it misses, whatever it sounds like
+    # A monster with a weapon swishes when it misses, whatever it sounds like
     # when it connects: fifteen of them share one miss sound.
     misses = collections.Counter(c["sound_miss"] for c in data["enemies"]
                                  if c["listed"] and c["sound_miss"])
@@ -1315,7 +1315,7 @@ def test_recolour_is_a_terminated_list_of_distinct_substitutions(data):
 
     Neither property is guaranteed by the bytes being *something*: if these
     were counts or coordinates, some list would run past a zero and some would
-    replace the same color twice. Across every creature that carries one,
+    replace the same color twice. Across every monster that carries one,
     neither happens, which is the evidence that they are substitutions.
     """
     carrying = [c for c in data["enemies"] if c["recolour"]]
@@ -1335,7 +1335,7 @@ def test_recolour_needs_its_flag(data):
 
 
 def test_a_shared_sprite_is_told_apart_by_its_recolouring(data):
-    """Which is what the pair of fields is for: one drawing, several creatures."""
+    """Which is what the pair of fields is for: one drawing, several monsters."""
     by = {c["name"]: c for c in data["enemies"]}
     giants = ["FROST GIANT", "SNOW GIANT", "FIRE GIANT"]
     assert len({by[n]["sprite"] for n in giants}) == 1

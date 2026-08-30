@@ -1,12 +1,12 @@
 """Solve the enemy record's immunity and resistance bit layout.
 
-Method: capture the game's own F2 screen for every creature, read the twelve
+Method: capture the game's own F2 screen for every monster, read the twelve
 effect rows off it (tools/read_stats.py), then look for a (word, bit) in the
-106-byte record whose set of creatures is *exactly* the set the game shows for
-that effect and state. An exact set match over 70-odd creatures is not
+106-byte record whose set of monsters is *exactly* the set the game shows for
+that effect and state. An exact set match over 70-odd monsters is not
 something a wrong bit can fake.
 
-The game lists creatures alphabetically while the records are in table order,
+The game lists monsters alphabetically while the records are in table order,
 so the alignment is checked both ways, with and without the placeholder
 "NOT USED" record, and the one that fits is the right one.
 """
@@ -85,7 +85,7 @@ def solve(shot_dir: str | Path = "tmp/monsters"):
                 else:
                     missing.append((effect, state, len(target)))
         score = len(found)
-        print(f"alignment '{label}' over {usable} creatures: "
+        print(f"alignment '{label}' over {usable} monsters: "
               f"{score} exact matches, {len(missing)} unmatched")
         if best is None or score > best[0]:
             best = (score, label, names, seen, found, missing, sets)
@@ -104,4 +104,4 @@ if __name__ == "__main__":
     if missing:
         print("\nnot matched by any single bit:")
         for effect, state, n in missing:
-            print(f"  {effect:<16} {state:<10} ({n} creatures)")
+            print(f"  {effect:<16} {state:<10} ({n} monsters)")

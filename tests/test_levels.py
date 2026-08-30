@@ -398,7 +398,7 @@ def test_the_attack_resolver():
     assert L.attack_expected(100, 70, 50) / L.attack_expected(100, 60, 50) > 3.0
 
 
-def test_creatures_pick_their_victim_at_random():
+def test_monsters_pick_their_victim_at_random():
     """The target picker at image 0x125b3, read out of the executable.
 
     It rolls one number over the four party slots and rerolls while the slot
@@ -442,7 +442,7 @@ def test_shoot_and_attack_are_one_routine_in_two_modes():
 
     attack, shoot = body("A"), body("S")
     assert attack[0] == guard and shoot[0] == guard
-    # Opposite senses: one runs when a creature has closed, the other when not.
+    # Opposite senses: one runs when a monster has closed, the other when not.
     assert attack[1][0] == "je" and shoot[1][0] == "jne"
     assert attack[1][1] == shoot[1][1]        # and both bail to the same place
     # Only the shoot path marks the action a party volley.
@@ -623,17 +623,17 @@ def test_the_free_growth_over_a_career():
 
 def test_monster_absorption_outpaces_free_accuracy_growth(data):
     """The strategic claim in the manual: a weapon skill gaining 2 a level
-    keeps pace with the creatures but never gets ahead, so accuracy is the one
-    number that has to be bought. Checked against the decoded creature table.
+    keeps pace with the monsters but never gets ahead, so accuracy is the one
+    number that has to be bought. Checked against the decoded monster table.
     """
     import statistics
 
-    creatures = sorted(
+    monsters = sorted(
         (e for e in data["enemies"]
          if e.get("absorption") is not None and e.get("experience")),
         key=lambda e: e["experience"])
-    n = len(creatures)
-    bands = [creatures[:n // 3], creatures[n // 3:2 * n // 3], creatures[2 * n // 3:]]
+    n = len(monsters)
+    bands = [monsters[:n // 3], monsters[n // 3:2 * n // 3], monsters[2 * n // 3:]]
     medians = [int(statistics.median(e["absorption"] for e in b)) for b in bands]
 
     # Absorption climbs steeply across the difficulty bands.
@@ -656,18 +656,18 @@ def test_monster_absorption_outpaces_free_accuracy_growth(data):
 
 
 def test_initiative_is_not_winnable(data):
-    """Creature dexterity outruns a character's for the whole game, so the
+    """Monster dexterity outruns a character's for the whole game, so the
     manual tells the reader not to budget for turn order. Checked against the
-    creature table.
+    monster table.
     """
     import statistics
 
-    creatures = sorted(
+    monsters = sorted(
         (e for e in data["enemies"]
          if e.get("dexterity") is not None and e.get("experience")),
         key=lambda e: e["experience"])
-    n = len(creatures)
-    bands = [creatures[:n // 3], creatures[n // 3:2 * n // 3], creatures[2 * n // 3:]]
+    n = len(monsters)
+    bands = [monsters[:n // 3], monsters[n // 3:2 * n // 3], monsters[2 * n // 3:]]
     medians = [int(statistics.median(e["dexterity"] for e in b)) for b in bands]
     assert medians == [79, 137, 217]
 
@@ -703,11 +703,11 @@ def test_health_and_magic_need_no_points(data):
     assert one_point / health < 0.02               # about one per cent
 
     # And the pool is large against what actually hits you.
-    creatures = sorted(
+    monsters = sorted(
         (e for e in data["enemies"]
          if e.get("damage") is not None and e.get("experience")),
         key=lambda e: e["experience"])
-    hardest = creatures[2 * len(creatures) // 3:]
+    hardest = monsters[2 * len(monsters) // 3:]
     median_damage = statistics.median(e["damage"] for e in hardest)
     assert median_damage / health < 0.35           # before absorption cuts it
 
@@ -781,10 +781,10 @@ def test_armour_is_a_second_race_run_in_gold(data):
     """
     import statistics
 
-    creatures = sorted((e for e in data["enemies"] if e.get("experience")),
+    monsters = sorted((e for e in data["enemies"] if e.get("experience")),
                        key=lambda e: e["experience"])
-    n = len(creatures)
-    middle = creatures[n // 3:2 * n // 3]
+    n = len(monsters)
+    middle = monsters[n // 3:2 * n // 3]
     accuracy = int(statistics.median(e["accuracy"] for e in middle))
     damage = int(statistics.median(e["damage"] for e in middle))
     assert (accuracy, damage) == (143, 142)
@@ -944,7 +944,7 @@ def test_accuracy_is_cheap_to_solve_and_unbounded_after():
     assert natural40 == 136
 
     hard, toughest = 123, 170
-    assert hard + 55 - natural40 == 42            # margin 55 vs a typical hard creature
+    assert hard + 55 - natural40 == 42            # margin 55 vs a typical hard monster
     assert toughest - natural40 == 34             # to land a hit on the worst
     assert toughest + 55 - natural40 == 89        # and to stop missing it
     assert 89 < 0.2 * 497                         # under a fifth of the smallest budget
@@ -1071,7 +1071,7 @@ def test_a_caster_wants_some_intelligence_after_all(data):
 
 def test_casters_buy_intelligence_first_then_casting(data):
     """Intelligence compounds (0.3 magic at every remaining training) and
-    casting does not, so the order dominates the ratio. Measured in creatures
+    casting does not, so the order dominates the ratio. Measured in monsters
     killed between rests, which is what counts overkill correctly.
     """
     import math

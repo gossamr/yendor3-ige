@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Find every instruction that touches a given struct offset.
 
-The game keeps a creature, an item or a character in a struct and reads its
+The game keeps a monster, an item or a character in a struct and reads its
 fields as `[si+0x5e]`, `[bx+0x5e]` and so on, so the question "what is offset
 44 of the enemy record?" becomes "what does the code do with `[reg+0x5e]`?"
--- the in-memory creature struct sits 50 bytes before the record's own origin.
+-- the in-memory monster struct sits 50 bytes before the record's own origin.
 
 A 16-bit real-mode image cannot be disassembled linearly: data sits between
 functions and a byte inside one instruction decodes as another. So this reads
@@ -29,7 +29,7 @@ from mz import HEADER
 
 BASES = ("bx", "si", "di", "bp")
 
-# The creature struct the combat code walks is the 106-byte record copied to an
+# The monster struct the combat code walks is the 106-byte record copied to an
 # origin 50 bytes earlier, so record offset N is struct offset N + 50.
 RECORD_TO_STRUCT = 50
 
@@ -94,7 +94,7 @@ def main(argv: list[str]) -> int:
     exe = Exe("game/REGISTER.EXE")
     hits = find(exe, disp, regs)
     print(f"{len(hits)} instructions touch +{disp:#x} "
-          f"(record offset {disp - RECORD_TO_STRUCT} if this is a creature)")
+          f"(record offset {disp - RECORD_TO_STRUCT} if this is a monster)")
     for addr, mnem, ops in hits:
         print(f"  {addr:#07x}  {mnem} {ops}")
         if context:

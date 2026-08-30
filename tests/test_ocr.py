@@ -44,7 +44,7 @@ def test_reads_the_values_the_game_displays():
     assert blazios["gold"] == 3_000_000
     assert blazios["food"] == 8
     assert blazios["nuore"] == 100
-    # Melee-only creature: the ranged rows are blank, not zero.
+    # Melee-only monster: the ranged rows are blank, not zero.
     assert blazios["ranged_accuracy"] is None
 
 
@@ -87,7 +87,7 @@ def test_acoknight_is_the_undead_style_immunity_set():
                       "FREEZING", "HEXING", "CURSING"]
 
 
-def test_every_effect_row_of_every_creature_matches(directory):
+def test_every_effect_row_of_every_monster_matches(directory):
     """The three fixtures above cover 36 rows; a capture run covers all 852.
 
     Skipped where there is no capture, the way the artwork check is, since the
@@ -100,22 +100,22 @@ def test_every_effect_row_of_every_creature_matches(directory):
     shots = sorted(p for p in SHOTS.glob("m*.png")
                    if re.fullmatch(r"m\d+\.png", p.name))
     if not shots:
-        pytest.skip(f"no creature captures in {SHOTS.relative_to(ROOT)}; "
+        pytest.skip(f"no monster captures in {SHOTS.relative_to(ROOT)}; "
                     "run tools/capture_monsters.js")
 
-    listed = V.creatures(directory)
+    listed = V.monsters(directory)
     assert len(shots) >= len(listed)
     wrong, rows, filled = [], 0, set()
-    for creature, shot in zip(listed, shots):
+    for monster, shot in zip(listed, shots):
         seen = read_stats.read_effects(shot)
-        want = V.expected(creature["immunity"], creature["resistance"])
+        want = V.expected(monster["immunity"], monster["resistance"])
         for effect, got, expect in zip(EFFECTS, seen, want):
             rows += 1
             if got != read_stats.NONE:
                 filled.add(effect)
             if got != expect:
-                wrong.append((creature["name"], effect, got, expect))
+                wrong.append((monster["name"], effect, got, expect))
     assert wrong == []
     assert rows == len(EFFECTS) * len(listed)
-    # Not vacuous: each of the twelve rows carries a word on some creature.
+    # Not vacuous: each of the twelve rows carries a word on some monster.
     assert filled == set(EFFECTS)

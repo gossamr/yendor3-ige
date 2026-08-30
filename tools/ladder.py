@@ -21,9 +21,9 @@ Two framings, and mixing them up is the other easy mistake.
 
 **The ladder, the bosses, the marginal-points table and the career walk are
 party against group**: offence is *four* characters of the same build, focus
--firing the selected creature, and every damage-taken figure is what **one** of
+-firing the selected monster, and every damage-taken figure is what **one** of
 those four takes. The two do not scale together: four characters deal four
-times the damage, but against a PARTY ATTACK creature each of them still takes
+times the damage, but against a PARTY ATTACK monster each of them still takes
 the whole group's attention, so a party of four facing three Black Dragons is
 absorbing 2,076 a round between them while one character sees 519 of it.
 
@@ -38,17 +38,17 @@ not modeled here.
 
 ## The conventions, which are the part that goes wrong
 
-**`attacks_each` is one creature's attacks on one character**, so it is 1 for a
-PARTY ATTACK creature and 0.25 for anything else. `attacks_the_party` is the
+**`attacks_each` is one monster's attacks on one character**, so it is 1 for a
+PARTY ATTACK monster and 0.25 for anything else. `attacks_the_party` is the
 party-wide total and is four times larger; passing it to `clear_group` is the
 mistake that put a factor of four into the damage-taken columns.
 
 **"Party rounds" is `group x health / (4 x one character's output)`**, four
-characters of the same build, overkill not carried between creatures.
+characters of the same build, overkill not carried between monsters.
 
 **"Taken all three" is the fight lost**, `arriving=group`: everything closes
 before you kill anything. The other bound, `arriving=1`, is still computed but
-is not worth a column: creatures of one type share a dexterity and the sort is
+is not worth a column: monsters of one type share a dexterity and the sort is
 stable, so they act as a block, and a party that outruns them lands its whole
 round before any of them swings. That makes the one-at-a-time case entirely
 determined by whether the party one-rounds an arrival, which is printed as its
@@ -58,8 +58,8 @@ own yes/no instead.
 over 39 trainings once 40 have gone into charisma itself. The totals below add
 up to exactly that, and `budget()` is where the number comes from.
 
-**The basis creature is the hardest regular creature of the level**, one real
-creature, chosen by experience with bosses excluded, not a field-by-field
+**The basis monster is the hardest regular monster of the level**, one real
+monster, chosen by experience with bosses excluded, not a field-by-field
 maximum over the level. `enemies_by_level` does that.
 """
 from __future__ import annotations
@@ -80,7 +80,7 @@ ARMOUR_SHIELD, ARMOUR_2H = C.ENCHANTED[0], C.ENCHANTED_2H[0]
 PARTY = 4
 
 def raw(name):
-    """The creature's record with its mask words, which `enemies_by_level`
+    """The monster's record with its mask words, which `enemies_by_level`
     drops. `group_size` and `attacks_a_character` both need them."""
     import json
     records = json.loads((C.ROOT / "data" / "enemies.json").read_text())
@@ -177,7 +177,7 @@ def ladder(odds, foe):
             "hit_you": odds(margin),
             # What lands when it lands. `taken_a_round` folds the hit chance
             # in, which is the healing cadence; this is the survivability
-            # figure, and against three creatures the worst round is 3x it.
+            # figure, and against three monsters the worst round is 3x it.
             "per_hit": per_hit(foe["damage"], margin),
             "party_rounds": size * foe["health"] / mine if mine else None,
             "one_rounds": bool(mine) and mine >= foe["health"],
@@ -194,7 +194,7 @@ def ladder(odds, foe):
 
 
 # Paltivar is the fastest and the hardest-swinging thing in the game, and two of
-# the stops are named by it rather than by the creature of the level.
+# the stops are named by it rather than by the monster of the level.
 PALTIVAR_DEX, PALTIVAR_ACC = 265, 240
 
 # Each stop says what it is aiming at, because they do not all aim at the same
@@ -215,7 +215,7 @@ def stops(odds, foe, targets=STOPS, budget=510):
 
     A stop is a chance of being hit, and the dexterity that reaches it is
     whatever the armour of the day leaves to buy. Two of them are measured
-    against Paltivar rather than against the creature of the level: the
+    against Paltivar rather than against the monster of the level: the
     berserker because turn order is the one thing it will not go without, and
     the untouchable stop because being unhittable by the last boss is the point
     of paying for it.
@@ -231,7 +231,7 @@ def stops(odds, foe, targets=STOPS, budget=510):
         weapon = TWO_HANDED if two_handed else ONE_HANDED
         armour = ARMOUR_2H if two_handed else ARMOUR_SHIELD
         if target == "turn order":
-            # Matching is enough: characters sort ahead of creatures on a tie.
+            # Matching is enough: characters sort ahead of monsters on a tie.
             dexterity = max(0, PALTIVAR_DEX - NATURAL_ATTR)
             while (NATURAL_ATTR + dexterity) % 5:
                 dexterity += 1
@@ -414,7 +414,7 @@ def rung_at(target, odds, foe, budget=510, weapon=ONE_HANDED,
 #
 # Everything above is a level-40 snapshot. A build is really a *policy* for
 # spending points as they arrive, and whether the snapshot's verdict holds for
-# the twenty-five levels before it is a separate question: the creatures gain
+# the twenty-five levels before it is a separate question: the monsters gain
 # absorption and accuracy on their own schedule, and the budget and the gold
 # arrive on theirs.
 
@@ -494,7 +494,7 @@ def career_table(policy, odds, levels=range(15, LEVEL + 1)):
                                  size, atk, True, arriving=size)[1]
         rows.append({
             "level": level, "policy": policy, "reachable": True,
-            "creature": foe["name"], "group": size, "budget": b["budget"],
+            "monster": foe["name"], "group": size, "budget": b["budget"],
             "dexterity": b["dexterity"], "first_strike": b["first_strike"],
             "skill": b["skill"], "strength": b["strength"],
             "armour": b["armour"], "weapon": b["weapon"],
@@ -509,7 +509,7 @@ def career_table(policy, odds, levels=range(15, LEVEL + 1)):
 
 
 def raw_by_level(level):
-    """The basis creature's record, or the nearest real one when the level is
+    """The basis monster's record, or the nearest real one when the level is
     interpolated: `enemies_by_level` fills the gaps with a synthetic row."""
     name = C.enemies_by_level()[level]["name"]
     try:
@@ -579,7 +579,7 @@ DEX_FROM = (None, 40, 38, 35, 33, 30)
 
 
 def caster_schedule(switches=SWITCHES, dex_froms=DEX_FROM):
-    """STRATEGY: *the caster's two switches*. Creatures killed between rests
+    """STRATEGY: *the caster's two switches*. Monsters killed between rests
     over the whole career, for every combination of `intelligence through X`
     and `dexterity from Y`.
 
@@ -606,7 +606,7 @@ def caster_schedule(switches=SWITCHES, dex_froms=DEX_FROM):
 def dead_levels(switches=SWITCHES, levels=range(12, LEVEL + 1),
                 class_code=MAGE):
     """STRATEGY: *why the switch is early*. Levels at which no spell the caster
-    owns kills a creature of its own level in one cast.
+    owns kills a monster of its own level in one cast.
 
     Margin scales spell damage exactly as it scales a weapon's, so a caster
     that spends its early points on the pool has a large pool and a spell that
@@ -645,7 +645,7 @@ def intelligence_years(switches=(0, 12, 18), levels=(12, 14, 16, 18, 20, 24)):
     Hit rate saturates at 100% and then stops telling you anything, so a caster
     that has spent its early points on the pool looks identical to one that has
     not. The cost is in casts per kill instead: `dealt` against `foe_health` is
-    how much of a creature one cast removes.
+    how much of a monster one cast removes.
     """
     runs = {s: C.career(MAGE, s, "intelligence", "attack") for s in switches}
     out = []
@@ -682,7 +682,7 @@ def caster_rungs(odds, foe, budget=510, intelligence=78, area_damage=350):
         casting = spare - dexterity
         absorption = ARMOUR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
         margin = natural + casting - foe["absorption"]
-        # Earthquake is an ordinary damage spell, so a creature carrying bit 13
+        # Earthquake is an ordinary damage spell, so a monster carrying bit 13
         # takes half of it. The Black Dragon is one of the thirteen that do.
         dealt = per_hit(area_damage, margin) * C.resisted(
             C.BLOW_SPELL, C.foe_resistance(foe))
@@ -891,7 +891,7 @@ def careers(odds):
     print(f"\n{'=' * 78}\nThe same policies from level 15 to 40\n{'=' * 78}")
     for policy in POLICIES:
         print(f"\n{policy}, four of them; damage columns are per character")
-        print(f"{'lvl':>4}{'creature':22}{'dex':>5}{'(fs)':>6}{'skill':>6}"
+        print(f"{'lvl':>4}{'monster':22}{'dex':>5}{'(fs)':>6}{'skill':>6}"
               f"{'str':>5}{'armr':>6}{'wpn':>5}{'absorb':>8}{'hit you':>9}"
               f"{'per hit':>8}{'worst':>7}{'% pool':>8}{'rnds':>6}"
               f"{'1-rnd':>7}{'lost fight':>11}")
@@ -902,7 +902,7 @@ def careers(odds):
             worst = "--" if not r["hit_you"] else f"{r['worst_round']:.0f}"
             share = "--" if not r["hit_you"] else \
                 f"{r['worst_round'] / r['health'] * 100:.0f}%"
-            print(f"{r['level']:>4}{r['creature'][:21]:22}{r['dexterity']:>5}"
+            print(f"{r['level']:>4}{r['monster'][:21]:22}{r['dexterity']:>5}"
                   f"{r['first_strike']:>6}{r['skill']:>6}{r['strength']:>5}"
                   f"{r['armour']:>6}{r['weapon']:>5}{r['absorption']:>8}"
                   f"{_pct(r['hit_you']):>9}"
@@ -916,7 +916,7 @@ def builds(odds, foe):
     print(f"\n{'=' * 78}\nThe caster, the healer, and where the points go"
           f"\n{'=' * 78}")
 
-    print("\nThe caster's two switches: creatures killed between rests,"
+    print("\nThe caster's two switches: monsters killed between rests,"
           " whole career")
     print(f"{'intelligence':>14}" + "".join(
         f"{('never' if d is None else f'dex from {d}'):>14}" for d in DEX_FROM))
@@ -933,7 +933,7 @@ def builds(odds, foe):
         span = "" if not r["dead"] else f"  {r['dead'][0]} to {r['dead'][-1]}"
         print(f"{label:>14}{r['count']:>13}{r['worst_run']:>13}{span:<6}")
 
-    print("\nWhat the intelligence years cost, one cast against one creature")
+    print("\nWhat the intelligence years cost, one cast against one monster")
     switches = (0, 12, 18)
     print(f"{'lvl':>4}{'health':>8}" + "".join(
         f"{('all casting' if not s else f'switch {s}'):>22}" for s in switches))

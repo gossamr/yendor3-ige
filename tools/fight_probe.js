@@ -1,18 +1,18 @@
-// Change a creature's record, fight it, and watch what a blow takes off it.
+// Change a monster's record, fight it, and watch what a blow takes off it.
 //
 //   bun tools/fight_probe.js --resist=0x2000 --blows=4 --how='aaac_'
 //
 // Reading the code says what a field *should* do. This says what it does. The
 // party walks out of the Athaneum to the centipede that waits beyond the gate,
-// swings and casts at it, and the creature's health is read straight out of
+// swings and casts at it, and the monster's health is read straight out of
 // the emulator between blows, so a blow's damage is a number, not an
 // impression of one.
 //
 // What makes the reading clean, all of it done to WORLD.DAT before boot:
 //
-//   * the creature gets 30,000 health, no damage and no accuracy, so the run
+//   * the monster gets 30,000 health, no damage and no accuracy, so the run
 //     is as long as it likes and the party is never interrupted;
-//   * bits 13-15 of its word 96 are cleared, so no second or third creature
+//   * bits 13-15 of its word 96 are cleared, so no second or third monster
 //     joins and fills another buffer;
 //   * the party's four stock characters are armed and their combat words
 //     forced to 250 accuracy and 100 damage, which puts the resolver at its
@@ -31,7 +31,7 @@
 //     data segment and carries the same strings, so an anchor string finds
 //     both. The live one is told apart by a *pointer*, DS:0x537C, the
 //     character whose turn it is, which is zero in the image on disk.
-//   * The game is tactical about time as well as actions: the creature closes
+//   * The game is tactical about time as well as actions: the monster closes
 //     while the party stands, so a 64 MB search for that anchor has to happen
 //     before the party steps out, not after.
 //
@@ -89,7 +89,7 @@ const get = (off) => world.contents[rec + off] | (world.contents[rec + off + 1] 
 say(`centipede resistance 0x${get(RESISTANCE).toString(16).padStart(4, "0")}`
   + ` -> 0x${resist.toString(16).padStart(4, "0")}`);
 put(RESISTANCE, resist);
-// A creature with eight health dies in four blows, which is too few readings
+// A monster with eight health dies in four blows, which is too few readings
 // to see a halving in. Give it more health than the run can spend, and take
 // its own attack away so the party is never interrupted.
 const w98 = arg("w98", "");
@@ -97,7 +97,7 @@ if (w98 !== "") {
   say(`centipede word 98 0x${get(WORD98).toString(16)} -> 0x${Number(w98).toString(16)}`);
   put(WORD98, Number(w98));
 }
-// Bits 13-15 of word 96 let two more of the creature join, which fills the
+// Bits 13-15 of word 96 let two more of the monster join, which fills the
 // other buffers and makes a health reading ambiguous. Clear them: one
 // centipede, one buffer, one number to watch.
 put(WORD96, get(WORD96) & ~GROUP & 0xffff);
@@ -166,7 +166,7 @@ for (const k of "6789") { await tap(ci, A(k), 120); await sleep(700); }
 await tap(ci, A("d"), 120); await sleep(3000);
 await tap(ci, A("e"), 120); await sleep(13000);
 await tap(ci, A("r"), 120); await sleep(2500);
-// Up to the gate and through it, and no further: the creature is a step or
+// Up to the gate and through it, and no further: the monster is a step or
 // two beyond, and it gets a move for every one the party spends.
 const KEY = { "^": KEYS.up, v: KEYS.down, "<": KEYS.left, ">": KEYS.right, " ": KEYS.space };
 for (const m of arg("walk", "<<^^^^^^^^^^^^ ")) {
@@ -177,21 +177,21 @@ shot("00-gate");
 const peek16 = (a) => { const b = globalThis.__peek(a, 2); return b[0] | (b[1] << 8); };
 const str = (a, n) => String.fromCharCode.apply(null, globalThis.__peek(a, n));
 // The data segment, anchored on two strings the game keeps at known offsets in
-// it. The engaged-creature buffers and the resolved-damage word are all
+// it. The engaged-monster buffers and the resolved-damage word are all
 // DS-relative, so one anchor addresses the lot.
 //
 // This reads the whole 64 MB heap and takes seconds, and seconds are a
-// resource: the creature closes while the party stands. So it happens *before*
-// the party steps out, and the step that meets the creature is the last thing
+// resource: the monster closes while the party stands. So it happens *before*
+// the party steps out, and the step that meets the monster is the last thing
 // before the first blow.
 const PICTURES = 0x969E, WORLD = 0x96D0, RESOLVED = 0xF36;
-// A creature lives in one of the 80 spawn slots at DS:0x122C while it is out
+// A monster lives in one of the 80 spawn slots at DS:0x122C while it is out
 // on the map, and is copied into one of three engaged buffers when it closes
 // to hand-to-hand. A shot is resolved against the slot and a swing against the
 // buffer, so a probe that only watched the buffers would see a volley land and
 // read no damage anywhere.
 const ENGAGED = [0x54B8, 0x5554, 0x55F0];
-const SPAWN = 0x122C, SPAWN_SLOTS = 80, CREATURE = 156, RECORD_AT = 0x32;
+const SPAWN = 0x122C, SPAWN_SLOTS = 80, MONSTER = 156, RECORD_AT = 0x32;
 // The executable's own image is in memory too, and its copy of the data
 // segment carries the same strings, so a string is not enough to tell the live
 // segment from the file it was loaded out of. What tells them apart is a
@@ -204,16 +204,16 @@ const ds = globalThis.__find("PICTURES.VGA", 32)
 if (ds === undefined) { say("could not find the data segment"); await ci.exit(); process.exit(1); }
 say(`data segment at heap 0x${ds.toString(16)}`);
 // Reading eighty-three slots one at a time is that many calls across the
-// emulator boundary, and it costs enough time for the creature to close before
+// emulator boundary, and it costs enough time for the monster to close before
 // the first shot. Two bulk reads cost nothing: the engaged buffers are
 // contiguous, and so is the spawn table.
-const REGIONS = [[ENGAGED[0], ENGAGED.length * CREATURE],
-                 [SPAWN, SPAWN_SLOTS * CREATURE]];
-function creatures() {
+const REGIONS = [[ENGAGED[0], ENGAGED.length * MONSTER],
+                 [SPAWN, SPAWN_SLOTS * MONSTER]];
+function monsters() {
   const out = [];
   for (const [start, len] of REGIONS) {
     const buf = globalThis.__peek(ds + start, len);
-    for (let at = 0; at + CREATURE <= len; at += CREATURE) {
+    for (let at = 0; at + MONSTER <= len; at += MONSTER) {
       const word = (o) => buf[at + o] | (buf[at + o + 1] << 8);
       // A slot or a buffer is occupied when its first word, the object's
       // number, is set. That is the test every walker over either of them
@@ -224,7 +224,7 @@ function creatures() {
         null, buf.slice(at + RECORD_AT, at + RECORD_AT + 9));
       if (name !== "CENTIPEDE") continue;
       out.push({
-        where: start === SPAWN ? "slot" + at / CREATURE : "engaged",
+        where: start === SPAWN ? "slot" + at / MONSTER : "engaged",
         health: word(0x10),
         resist: word(RECORD_AT + RESISTANCE),
       });
@@ -238,10 +238,10 @@ for (const m of arg("engage", "^")) { await tap(ci, KEY[m], 120); await sleep(Nu
 
 let hits = 0, total = 0;
 for (let i = 0; i < blows; i++) {
-  // Reading before the first blow costs the round the party has: the creature
+  // Reading before the first blow costs the round the party has: the monster
   // closes while the read happens, and a volley is refused in hand-to-hand.
   // Its health at that point is the one this run set, so take it and shoot.
-  const before = i === 0 ? [{ where: "as set", health: 30000, resist }] : creatures();
+  const before = i === 0 ? [{ where: "as set", health: 30000, resist }] : monsters();
   for (const k of how) {
     if (k === "*") { await click(ci, 0.18, 0.195); }   // the first row of a list
     else if (k === "_") await tap(ci, KEYS.enter, 120);
@@ -257,8 +257,8 @@ for (let i = 0; i < blows; i++) {
     if (v > 0 && v < 5000) resolved = v;
     await sleep(55);
   }
-  const after = creatures();
-  // The same creature shows in two places while it is closing, still in its
+  const after = monsters();
+  // The same monster shows in two places while it is closing, still in its
   // map slot and already copied into a buffer, so what a blow took is what the
   // lowest reading anywhere went down by.
   const low = (rs) => (rs.length ? Math.min(...rs.map((r) => r.health)) : 0);

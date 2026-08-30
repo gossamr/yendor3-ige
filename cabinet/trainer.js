@@ -17,7 +17,7 @@
 // lives.
 //
 // Structured clone moves about a gigabyte a second and the largest thing the
-// trainer reads at once is the 12 KB creature table, so the channel is not the
+// trainer reads at once is the 12 KB monster table, so the channel is not the
 // constraint and a SharedArrayBuffer would buy nothing, which matters,
 // because one needs cross-origin isolation and a static host cannot provide it.
 

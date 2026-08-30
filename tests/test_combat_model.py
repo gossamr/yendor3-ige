@@ -35,11 +35,11 @@ def experience():
     return lv.experience_table(lv.load(ROOT / "game" / "REGISTER.EXE"))
 
 
-# --- The creatures ---------------------------------------------------------
+# --- The monsters ---------------------------------------------------------
 
 
 def test_breakpoints_are_the_eight_the_manual_names(enemies):
-    """Regular creatures only: the boss levels 11, 22, 28 and 36 drop out."""
+    """Regular monsters only: the boss levels 11, 22, 28 and 36 drop out."""
     got = [s["level"] for s in cm.breakpoints(enemies) if s["level"] <= cm.LEVEL_CAP]
     assert got == [4, 10, 18, 26, 29, 30, 39, 40]
 
@@ -50,7 +50,7 @@ def test_level_39_is_the_largest_step(enemies):
     assert max(steps.values()) == steps[39]
 
 
-def test_the_table_is_one_real_creature_not_a_field_by_field_worst(enemies):
+def test_the_table_is_one_real_monster_not_a_field_by_field_worst(enemies):
     """A build has to survive what the level can throw at it, not the median --
     but the row must describe something the player can actually meet."""
     rows = [e for e in json.loads((ROOT / "data" / "enemies.json").read_text())
@@ -64,7 +64,7 @@ def test_the_table_is_one_real_creature_not_a_field_by_field_worst(enemies):
     assert enemies[40]["damage"] < max(e["damage"] for e in rows)
 
 
-def test_bosses_are_the_creatures_carrying_food(enemies):
+def test_bosses_are_the_monsters_carrying_food(enemies):
     """Ten of the 71, and they are exactly the named individuals."""
     rows = [e for e in json.loads((ROOT / "data" / "enemies.json").read_text())
             if e["listed"]]
@@ -77,7 +77,7 @@ def test_bosses_are_the_creatures_carrying_food(enemies):
 
 
 def test_missing_levels_are_interpolated_not_dropped(enemies):
-    # No creature carries level 12, 23, 24, 43 or 44.
+    # No monster carries level 12, 23, 24, 43 or 44.
     assert 12 in enemies
     assert enemies[11]["absorption"] < enemies[12]["absorption"] < enemies[13]["absorption"]
 
@@ -248,7 +248,7 @@ def test_absorption_at_their_accuracy_ends_the_incoming_damage(enemies):
 # --- The healing economy ---------------------------------------------------
 #
 # The build advice turns on which heal is efficient for how many wounded, and
-# on which creatures can take a character out of a fight. Both are read from
+# on which monsters can take a character out of a fight. Both are read from
 # data/spells.json and data/enemies.json rather than asserted.
 
 import json  # noqa: E402
@@ -297,7 +297,7 @@ def test_a_monk_cannot_cast_party_heal_often_at_level_nine():
 INCAPACITATING = {"PARALYZE", "FROZEN", "STONING"}
 
 
-def test_four_creatures_can_incapacitate_and_186_absorption_stops_them():
+def test_four_monsters_can_incapacitate_and_186_absorption_stops_them():
     rows = [e for e in json.loads((ROOT / "data" / "enemies.json").read_text())
             if e["listed"]]
     bad = [e for e in rows
@@ -422,7 +422,7 @@ def test_group_bits_take_only_three_of_eight_combinations():
     assert sizes == {3: 46, 2: 20, 1: 5}
 
 
-def test_the_solo_creatures_are_the_five_named():
+def test_the_solo_monsters_are_the_five_named():
     assert {e["name"] for e in _listed() if cm.group_size(e) == 1} == {
         "MIMIC", "FROST DWARF TOWER", "FIRE DWARF TOWER", "ALLIGATOR",
         "CROCODILE"}
@@ -439,27 +439,27 @@ def test_party_attack_multiplies_what_one_character_takes():
     by_name = {e["name"]: e for e in _listed()}
     dragon = by_name["BLACK DRAGON"]
     assert cm.group_size(dragon) == 3
-    assert cm.attacks_the_party(dragon) == 12     # 3 creatures x all four
+    assert cm.attacks_the_party(dragon) == 12     # 3 monsters x all four
     assert cm.attacks_a_character(dragon) == 1.0  # one swing each, every round
     ghoul = by_name["GHOUL"]
     assert cm.group_size(ghoul) == 3
-    assert cm.attacks_the_party(ghoul) == 3       # 3 creatures, one target each
+    assert cm.attacks_the_party(ghoul) == 3       # 3 monsters, one target each
     assert cm.attacks_a_character(ghoul) == 0.25  # spread over the four slots
     # The party-wide figure is always four times the per-character one, which
     # is exactly the size of the error if the two are confused.
-    for creature in _listed():
-        assert (cm.attacks_the_party(creature)
-                == 4 * cm.attacks_a_character(creature) * cm.group_size(creature))
+    for monster in _listed():
+        assert (cm.attacks_the_party(monster)
+                == 4 * cm.attacks_a_character(monster) * cm.group_size(monster))
 
 
 def test_arrival_rate_is_the_whole_of_tactical_play():
     """The same fight, won without a scratch or lost, on when they close."""
-    # a party killing one creature a round, acting first, against three of
-    # them; attacks_each is one creature's swings at one character, which is 1
-    # for the PARTY ATTACK creatures this models.
-    singly = cm.clear_group(output=700, incoming=100, creature_health=635,
+    # a party killing one monster a round, acting first, against three of
+    # them; attacks_each is one monster's swings at one character, which is 1
+    # for the PARTY ATTACK monsters this models.
+    singly = cm.clear_group(output=700, incoming=100, monster_health=635,
                             size=3, attacks_each=1, first=True, arriving=1)
-    together = cm.clear_group(output=700, incoming=100, creature_health=635,
+    together = cm.clear_group(output=700, incoming=100, monster_health=635,
                               size=3, attacks_each=1, first=True, arriving=3)
     assert singly[0] == together[0] == 3      # same rounds either way
     assert singly[1] == 0                     # each dies before it swings
@@ -559,7 +559,7 @@ def test_the_rarely_hit_rung_has_to_be_re_bought():
 def test_the_level_forty_verdict_does_not_hold_for_the_whole_career():
     """The ladder is a snapshot, and the three rungs move under it.
 
-    Immunity to the creature *at your level* is what is out of reach before 15,
+    Immunity to the monster *at your level* is what is out of reach before 15,
     not immunity in general, which is the pivot the manual already names. The
     berserker is the only policy whose position gets worse every level, and the
     rarely-hit rung is nearly free early and costs two fifths of the budget at
@@ -620,7 +620,7 @@ def test_buying_the_pool_too_long_leaves_nothing_that_kills():
 
 def test_resistance_is_a_floor_of_half_and_never_compounds():
     """The check leaves on the first bit that matches, so two matches halve
-    once rather than quartering. Blazios is the only creature carrying two
+    once rather than quartering. Blazios is the only monster carrying two
     resistance bits and no blow matches both, so this guards the code rather
     than a case that arises today."""
     assert cm.resisted(cm.BLOW_SPELL, 0x2000) == 0.5
@@ -637,7 +637,7 @@ def test_a_melee_swing_carries_no_word_so_nothing_halves_it():
         assert cm.resisted(cm.BLOW_MELEE, word) == 1.0
 
 
-def test_the_level_forty_basis_creature_halves_spell_damage():
+def test_the_level_forty_basis_monster_halves_spell_damage():
     """The Black Dragon carries bit 13, which is why a single caster no longer
     one-rounds a group of them however much casting it has bought."""
     import ladder

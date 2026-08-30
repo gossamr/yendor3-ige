@@ -3,7 +3,7 @@
 The twelve effect rows sit at a fixed pitch and their values are drawn in the
 game's green, so IMMUNE and RESISTANT can be told apart by the width of the
 green run alone, with no character recognition needed. That turns a screenful of
-ground truth into three numbers per creature, cheaply enough to do all 72.
+ground truth into three numbers per monster, cheaply enough to do all 72.
 
 Geometry, measured from the captures (320x200 frames):
     row k of 12 occupies y = 94 + 6k .. +4

@@ -1,17 +1,17 @@
-"""Creatures killed between rests, for any class and any spending policy.
+"""Monsters killed between rests, for any class and any spending policy.
 
 The manual's strategy chapters all ask one question, given a budget of bonus
-points where do they go, and answer it with one measure: how many creatures
+points where do they go, and answer it with one measure: how many monsters
 a character kills before running out of the resource that limits them. Health
 limits a fighter, the magic pool limits a caster, and overkill counts for
 nothing either way, because damage landing on a corpse buys nothing.
 
 This module is that measure, written once. It was previously worked out inline
 and separately for casters and for fighters, which let the two drift onto
-different assumptions: different budgets, and creatures picked two different
+different assumptions: different budgets, and monsters picked two different
 ways. Everything here is level-matched: a character of level L is measured
-against the worst creature of level L that regular play puts in front of them,
-bosses excluded, because `data/enemies.json` carries a level for every creature.
+against the worst monster of level L that regular play puts in front of them,
+bosses excluded, because `data/enemies.json` carries a level for every monster.
 
     python tools/combat_model.py                # breakpoints and both policies
     python tools/combat_model.py --json
@@ -42,14 +42,14 @@ TRAININGS = LEVEL_CAP - 1
 
 # --- Resistance ------------------------------------------------------------
 #
-# A creature carries a word at record offset 102 naming what it shrugs off.
+# A monster carries a word at record offset 102 naming what it shrugs off.
 # Every blow builds a word describing itself, and the applier tests the two
 # against each other.
 #
 # **Resistance is 50% and never compounds.** The check leaves on the first bit
-# that matches rather than carrying on through the rest, so a creature that
+# that matches rather than carrying on through the rest, so a monster that
 # resists two of the things a blow is made of still halves it once. Blazios is
-# the only creature carrying two resistance bits and no blow in the game
+# the only monster carrying two resistance bits and no blow in the game
 # matches both, so this is a statement about the code rather than a case that
 # arises; it is written this way so that it stays right if either changes.
 #
@@ -70,7 +70,7 @@ BLOW_SPELL = 0x2000
 BLOW_ANTI_UNDEAD = 0x0200
 BLOW_MELEE = 0x0000
 
-# Bit 14 prints on the PHYSICAL row and no blow sets it. Nine creatures carry
+# Bit 14 prints on the PHYSICAL row and no blow sets it. Nine monsters carry
 # it, so on the game as shipped their RESISTANT line never fires. If it turns
 # out to mean a melee swing, set this to BLOW_SHOT's sibling and every melee
 # figure against those nine halves. Kept as a switch rather than a guess.
@@ -120,7 +120,7 @@ def _from_extract() -> dict[str, int]:
             for name, fields in resistances().items()}
 
 
-# Immunity is not a strong resistance. A creature immune to a damage type takes
+# Immunity is not a strong resistance. A monster immune to a damage type takes
 # **nothing** from it, not half, and only from that one type. The types are the
 # bottom bits of the immunity word; the top bits are the six conditions, which
 # are a separate question and not damage at all.
@@ -130,7 +130,7 @@ _IMMUNE_CACHE: dict[str, set[str]] | None = None
 
 
 def immune_elements() -> dict[str, set[str]]:
-    """{name: the damage types that creature takes nothing from}."""
+    """{name: the damage types that monster takes nothing from}."""
     global _IMMUNE_CACHE
     if _IMMUNE_CACHE is None:
         records = json.loads((ROOT / "data" / "enemies.json").read_text())
@@ -142,7 +142,7 @@ def immune_elements() -> dict[str, set[str]]:
 
 
 def immune_to(foe: dict, spell: dict) -> bool:
-    """Whether this creature takes nothing at all from this spell.
+    """Whether this monster takes nothing at all from this spell.
 
     A spell with no element is not of any of the five types and so is not
     stopped by any of them; 39 of the 70 damage spells are in that position,
@@ -153,10 +153,10 @@ def immune_to(foe: dict, spell: dict) -> bool:
 
 
 def foe_resistance(foe: dict) -> int:
-    """The resistance word of the creature a table is measured against.
+    """The resistance word of the monster a table is measured against.
 
     Interpolated levels carry a made-up name and so resist nothing, which is
-    the right default: the row is a line between two creatures, not one you
+    the right default: the row is a line between two monsters, not one you
     can meet.
     """
     global _RESIST_CACHE
@@ -169,13 +169,13 @@ def spell_blow(spell: dict) -> int:
     """The word a spell's blow carries, from its record at offset 76.
 
     Across the 70 listed damage spells, 59 set bit 13 and are halved by a
-    spell-resistant creature. The four that set nothing deal 10 to 45 damage,
+    spell-resistant monster. The four that set nothing deal 10 to 45 damage,
     so there is no dodging this by spell choice.
     """
     return spell.get("blow", (spell.get("unknown") or {}).get("u76", 0))
 
 
-def resisted(blow: int, creature_resistance: int) -> float:
+def resisted(blow: int, monster_resistance: int) -> float:
     """The multiplier on a blow's damage: 1.0, or 0.5 if anything matches.
 
     Half is the floor. One matching bit is enough and further matches change
@@ -188,32 +188,32 @@ def resisted(blow: int, creature_resistance: int) -> float:
     word = blow
     if MELEE_RESISTED and blow == BLOW_MELEE:
         word = BIT_14
-    return 0.5 if word & creature_resistance else 1.0
+    return 0.5 if word & monster_resistance else 1.0
 
 
-# --- The creatures ---------------------------------------------------------
+# --- The monsters ---------------------------------------------------------
 
 
 def enemies_by_level(path: Path | None = None,
                      bosses: bool = False) -> dict[int, dict[str, float]]:
-    """The worst creature at each level, gaps filled by interpolation.
+    """The worst monster at each level, gaps filled by interpolation.
 
-    One real creature per level, not a maximum taken field by field: the four
+    One real monster per level, not a maximum taken field by field: the four
     fields have to describe something the player can actually meet. Taking each
     field's worst independently builds a chimera: at level 40 it would carry
     the Black Dragon's absorption and accuracy with the Titan Lord's damage and
     health, which is harder than anything in the game.
 
-    "Worst" is the creature carrying the most experience, which is the game's
+    "Worst" is the monster carrying the most experience, which is the game's
     own ranking of difficulty.
 
     Bosses are excluded by default, because they are not what a character meets
     on an ordinary floor of a dungeon: the Titan Lord's 2,000 health is a fight
-    you plan for, not one you budget a rest around. **A boss is a creature that
+    you plan for, not one you budget a rest around. **A boss is a monster that
     carries food.** Ten of the 71 do, and they are exactly the named
     individuals (Wasp Queen, King Bariag, Pixie Leader, Acoknight, Queen
     Obversia, Vishan, King Slator, Titan Lord, Chaotic Minotaur, Blazios. At
-    every other level the top two creatures are within 20% of each other on
+    every other level the top two monsters are within 20% of each other on
     experience, so there is no spike left once the food-carriers are out.
 
     Paltivar is the exception the flag misses: it carries no food but is the
@@ -221,7 +221,7 @@ def enemies_by_level(path: Path | None = None,
     absorption benchmark.
 
     A build has to survive what the level can throw at it, which the median
-    hides. Levels 12, 23, 24, 43 and 44 have no creature of their own, and
+    hides. Levels 12, 23, 24, 43 and 44 have no monster of their own, and
     excluding bosses empties 15 as well; a character passing through them is
     measured against the line between its neighbors rather than dropped.
     """
@@ -253,52 +253,52 @@ def enemies_by_level(path: Path | None = None,
 # Group size and PARTY ATTACK, from the word at record offset 96. Bits 15/14/13
 # take only three of their eight combinations (000, 110, 101) and the
 # engagement code at image 0x12b5c fills three buffers of 0x9c bytes, so they
-# encode how many of a creature can be fighting you at once. Bit 12 is PARTY
-# ATTACK: that creature swings at all four characters instead of one.
+# encode how many of a monster can be fighting you at once. Bit 12 is PARTY
+# ATTACK: that monster swings at all four characters instead of one.
 GROUP_BITS, PARTY_ATTACK_BIT = 0xE000, 0x1000
 
 
-def group_size(creature: dict) -> int:
-    """How many of this creature can engage at once: 1, 2 or 3."""
-    bits = creature["masks"]["w96"] & GROUP_BITS
+def group_size(monster: dict) -> int:
+    """How many of this monster can engage at once: 1, 2 or 3."""
+    bits = monster["masks"]["w96"] & GROUP_BITS
     if not bits:
         return 1
     return 3 if bits == 0xA000 else 2
 
 
-def attacks_the_party(creature: dict) -> int:
-    """Attacks a full group of this creature lands on the party in a round.
+def attacks_the_party(monster: dict) -> int:
+    """Attacks a full group of this monster lands on the party in a round.
 
-    A creature takes one turn and makes one attack, so a group of three
-    delivers three, spread over the four characters. A PARTY ATTACK creature
+    A monster takes one turn and makes one attack, so a group of three
+    delivers three, spread over the four characters. A PARTY ATTACK monster
     swings at all four inside its own turn, so the same group delivers twelve.
 
     This is a party-wide total. What `clear_group` wants is the per-character
     rate below, which is a quarter of it: getting those two the wrong way
     round is what put a factor of four into MANUAL.md's damage-taken columns.
     """
-    return group_size(creature) * (
-        4 if creature["masks"]["w96"] & PARTY_ATTACK_BIT else 1)
+    return group_size(monster) * (
+        4 if monster["masks"]["w96"] & PARTY_ATTACK_BIT else 1)
 
 
-def attacks_a_character(creature: dict) -> float:
+def attacks_a_character(monster: dict) -> float:
     """Attacks ONE of these lands on ONE character in a round.
 
-    An ordinary creature draws its target uniformly from the four party slots,
+    An ordinary monster draws its target uniformly from the four party slots,
     so it averages a quarter of an attack on any one of them. A PARTY ATTACK
-    creature swings at every character, so it lands exactly one on each, four
+    monster swings at every character, so it lands exactly one on each, four
     times the damage on the character you are counting, whatever the group
     size. This is the `attacks_each` argument `clear_group` takes.
     """
-    return 1.0 if creature["masks"]["w96"] & PARTY_ATTACK_BIT else 0.25
+    return 1.0 if monster["masks"]["w96"] & PARTY_ATTACK_BIT else 0.25
 
 
 def breakpoints(table: dict[int, dict[str, float]],
                 min_loss: int = 4) -> list[dict]:
-    """Levels where creature absorption outruns the +2 a level you gain.
+    """Levels where monster absorption outruns the +2 a level you gain.
 
     A character's attack skill rises by exactly PER_LEVEL each training, so the
-    margin only worsens where the creatures gain more than that. `min_loss` is
+    margin only worsens where the monsters gain more than that. `min_loss` is
     how much ground has to be lost in one level to be worth naming.
     """
     out = []
@@ -456,7 +456,7 @@ def weapon_afforded(level: int, experience: dict[int, int],
 
 # --- What gold can actually have bought by a given level -------------------
 #
-# The armor track is not a free parameter. Creatures carry gold in a fixed
+# The armor track is not a free parameter. Monsters carry gold in a fixed
 # ratio to the experience they give (a median of 1.11 gold per point across
 # the 71 listed) so reaching a level implies having earned a knowable amount,
 # and the experience ladder in REGISTER.EXE fixes what reaching it takes.
@@ -530,7 +530,7 @@ def expected(damage: float, accuracy: float, opposing: float) -> float:
 
 @dataclass
 class Encounter:
-    """One character against the median creature of their own level."""
+    """One character against the median monster of their own level."""
 
     level: int
     accuracy: float
@@ -541,10 +541,10 @@ class Encounter:
     cost: float = 0.0        # magic points per cast
 
     def kills_per_rest(self, foe: dict[str, float]) -> float:
-        """Creatures killed before the limiting resource runs out.
+        """Monsters killed before the limiting resource runs out.
 
         Overkill is discarded: however hard an attack lands, one attack kills
-        at most one creature. Health limits a fighter and the pool limits a
+        at most one monster. Health limits a fighter and the pool limits a
         caster, so whichever runs out first is the one that counts.
         """
         out = expected(self.damage, self.accuracy, foe["absorption"])
@@ -558,21 +558,21 @@ class Encounter:
         return attacks * per_attack
 
 
-def clear_group(output: float, incoming: float, creature_health: float,
+def clear_group(output: float, incoming: float, monster_health: float,
                 size: int, attacks_each: int, first: bool,
                 arriving: int = 1) -> tuple[int, float]:
     """Rounds to clear a group, and damage one character takes doing it.
 
-    Creatures are not all present when the fight starts. The engagement code
+    Monsters are not all present when the fight starts. The engagement code
     adds them one at a time as each closes to melee, so `arriving` is how many
     join per round: 1 if you are fighting somewhere they reach you singly, up
     to `size` if you let them gather. That spread is the whole of tactical play:
-    against the same creatures a party that kills as fast as they arrive can
+    against the same monsters a party that kills as fast as they arrive can
     take nothing at all, and the same party letting three close at once can
     take more than its health.
 
     `output` is the party's damage a round, `incoming` one attack's damage,
-    `attacks_each` what one creature puts on one character a round.
+    `attacks_each` what one monster puts on one character a round.
     """
     remaining, engaged, killed = size, 0, 0
     current, taken, rounds = 0.0, 0.0, 0
@@ -582,7 +582,7 @@ def clear_group(output: float, incoming: float, creature_health: float,
         remaining -= join
         engaged += join
         if current <= 0 and engaged > killed:
-            current = creature_health
+            current = monster_health
         if not first:
             taken += (engaged - killed) * incoming * attacks_each
         spare = output
@@ -590,7 +590,7 @@ def clear_group(output: float, incoming: float, creature_health: float,
             if spare >= current:
                 spare -= current
                 killed += 1
-                current = creature_health if engaged > killed else 0.0
+                current = monster_health if engaged > killed else 0.0
             else:
                 current -= spare
                 spare = 0.0
@@ -629,16 +629,16 @@ def spell_options(class_name: str, level: int) -> list[tuple[float, float]]:
 
 def first_strike_cost(level: int, table: dict[int, dict[str, float]],
                       charisma_roll: int = 52) -> int:
-    """Dexterity points needed to act before the worst creature of this level.
+    """Dexterity points needed to act before the worst monster of this level.
 
     Turn order is rebuilt every round and sorted by dexterity, so this is a
     running requirement, not a one-off. It is a threshold rather than a scale --
-    matching the creature wins the round as completely as passing it by fifty --
-    so buying ahead of the creature in front of you is damage you did not do.
+    matching the monster wins the round as completely as passing it by fifty --
+    so buying ahead of the monster in front of you is damage you did not do.
 
     **Matching is enough.** Characters are added to the turn list before
     monsters and the sort only moves an entry when the one behind is strictly
-    faster, so a creature of equal dexterity still acts second. The total lands
+    faster, so a monster of equal dexterity still acts second. The total lands
     on a multiple of five, which the absorption bonus wants anyway.
     """
     natural = ROLL_CAP + PER_LEVEL * (level - 1)
@@ -663,7 +663,7 @@ def career(class_code: int, switch: int, first: str, second: str,
     compounds, since a point adds to the pool at every training still to come,
     so dexterity bought during the intelligence years costs endgame pool twice
     over. Bought after them it costs only the skill points it displaces. The
-    phase runs until dexterity clears the creature of the level and then stops,
+    phase runs until dexterity clears the monster of the level and then stops,
     because turn order is a threshold and buying past it is wasted.
 
     `dex_from` makes that a third phase with a level of its own: from `dex_from`
@@ -749,7 +749,7 @@ def main(argv: list[str]) -> None:
     if "--json" in argv:
         print(json.dumps({"breakpoints": steps}, indent=2))
         return
-    print("Levels where the creatures gain more absorption than your +2:\n")
+    print("Levels where the monsters gain more absorption than your +2:\n")
     print(f"  {'level':>5} {'absorption':>11} {'jump':>6} {'margin lost':>12}")
     for s in steps:
         print(f"  {s['level']:>5} {s['absorption']:>11.0f} "

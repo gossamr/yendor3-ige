@@ -97,7 +97,7 @@ def test_the_game_is_not_in_the_shippable_tree():
 def _code_only(path: Path) -> str:
     """The file with its comments and docstrings removed.
 
-    A decoder has to talk about what it decodes, and naming one creature to
+    A decoder has to talk about what it decodes, and naming one monster to
     show how a field is encoded ("PALTIVAR's 1,000,000 is stored as
     01 00 00 00") is documentation, not distribution. What may not appear is
     the content itself, in a position where the program uses it as data.

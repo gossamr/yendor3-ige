@@ -136,7 +136,7 @@ const inPanel = (fn, arg) => page.evaluate(
   }, { src: fn.toString(), a: arg ?? null });
 
 // Text as textContent, not innerText. Only Chromium counts the text of an
-// <option> as rendered, and the creature and item lists are <select> elements.
+// <option> as rendered, and the monster and item lists are <select> elements.
 const panelText = () => inPanel((d) => d.querySelector("main").textContent);
 
 // Polled, not page.waitForFunction. That defaults to polling on

@@ -2,7 +2,7 @@
 """Check the immunity and resistance words against the game's own F2 rows.
 
 `tools/capture_monsters.js` photographs the F2 MONSTER STATISTICS page for
-every creature the game lists, in the order it lists them. Below the combat
+every monster the game lists, in the order it lists them. Below the combat
 figures the page prints twelve rows, `labels.EFFECTS` in order, each blank or
 carrying one word. Ten of them are single bits of the immunity word at record
 offset 100. The other two are the resistance word at 102, which the printer
@@ -40,7 +40,7 @@ MAGIC_VIA_IMMUNITY = 0x0010  # tested at 0x07E6D, right after the magic mask
 
 
 def expected(immunity: int, resistance: int) -> list[str]:
-    """The twelve rows the printer should draw for one creature."""
+    """The twelve rows the printer should draw for one monster."""
     rows = [RS.IMMUNE if immunity >> b & 1 else RS.NONE for b in IMMUNE_BITS]
     magic = resistance & RESIST_MAGIC or immunity & MAGIC_VIA_IMMUNITY
     rows.append(RS.RESISTANT if magic else RS.NONE)
@@ -48,8 +48,8 @@ def expected(immunity: int, resistance: int) -> list[str]:
     return rows
 
 
-def creatures(d: S.Directory) -> list[dict]:
-    """Every creature the book lists, in the alphabetical order F2 uses."""
+def monsters(d: S.Directory) -> list[dict]:
+    """Every monster the book lists, in the alphabetical order F2 uses."""
     out = []
     for rec in d[S.ENEMIES].records(d.world, S.ENEMY_RECORD):
         if not any(rec):
@@ -71,21 +71,21 @@ def main(shot_dir: str = "tmp/monsters") -> int:
         print(f"no captures in {shot_dir}; run tools/capture_monsters.js")
         return 2
 
-    listed = creatures(S.load())
+    listed = monsters(S.load())
     agree = filled = 0
     rows = 0
-    for creature, shot in zip(listed, shots):
+    for monster, shot in zip(listed, shots):
         got = RS.read_effects(shot)
-        want = expected(creature["immunity"], creature["resistance"])
+        want = expected(monster["immunity"], monster["resistance"])
         for row, (g, w) in enumerate(zip(got, want)):
             rows += 1
             filled += g != RS.NONE
             if g == w:
                 agree += 1
             else:
-                print(f"  {creature['name']:20} {L.EFFECTS[row]:16} "
+                print(f"  {monster['name']:20} {L.EFFECTS[row]:16} "
                       f"screen {g}, record {w}")
-    print(f"{agree}/{rows} effect rows agree, over {len(listed)} creatures; "
+    print(f"{agree}/{rows} effect rows agree, over {len(listed)} monsters; "
           f"{filled} of them carry a word")
     return 0 if agree == rows and rows else 1
 
