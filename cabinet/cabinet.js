@@ -540,8 +540,12 @@ async function applyKeptCharacters(files) {
     console.warn("kept characters not applied: WORLD.DAT is not the expected build");
     return [];
   }
-  const { world: patched, kept } = graft(world.contents, roster);
+  const { world: patched, kept, renumbered } = graft(world.contents, roster);
   world.contents = patched;
+  for (const m of renumbered) {
+    console.warn(`slot ${m.slot}: container record ${m.from} was already taken, `
+      + `moved to ${m.to}`);
+  }
   return kept;
 }
 

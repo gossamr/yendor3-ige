@@ -41,13 +41,13 @@ def make_roster(name: bytes, slot: int = 1) -> bytes:
 
 
 def test_graft_writes_the_record_into_the_template():
-    out, moved = K.graft(WORLD, make_roster(b"ZORBAX\0"))
+    out, moved, _ = K.graft(WORLD, make_roster(b"ZORBAX\0"))
     assert moved == ["slot 1: ZORBAX"]
     assert dict(K.slots(out, K.ROSTER))[1] == "ZORBAX"
 
 
 def test_graft_changes_only_that_slot():
-    out, _ = K.graft(WORLD, make_roster(b"ZORBAX\0"))
+    out, _, _ = K.graft(WORLD, make_roster(b"ZORBAX\0"))
     assert len(out) == len(WORLD)
     at = K.ROSTER + K.SLOT
     differing = {i for i in range(len(WORLD)) if WORLD[i] != out[i]}
@@ -60,7 +60,7 @@ def test_graft_leaves_the_header_and_the_stock_four_alone():
     roster = bytearray(K.SLOTS * K.SLOT)
     for i in range(K.SLOTS):
         roster[i * K.SLOT:i * K.SLOT + 7] = b"INTRUDE"
-    out, moved = K.graft(WORLD, bytes(roster))
+    out, moved, _ = K.graft(WORLD, bytes(roster))
 
     assert len(moved) == len(K.CREATED)
     found = dict(K.slots(out, K.ROSTER))
@@ -69,8 +69,8 @@ def test_graft_leaves_the_header_and_the_stock_four_alone():
 
 
 def test_grafting_twice_accumulates_rather_than_replaces():
-    first, _ = K.graft(WORLD, make_roster(b"ZORBAX\0", slot=1))
-    second, moved = K.graft(first, make_roster(b"MIRABEL\0", slot=2))
+    first, _, _ = K.graft(WORLD, make_roster(b"ZORBAX\0", slot=1))
+    second, moved, _ = K.graft(first, make_roster(b"MIRABEL\0", slot=2))
 
     assert moved == ["slot 2: MIRABEL"]
     found = dict(K.slots(second, K.ROSTER))
@@ -78,8 +78,8 @@ def test_grafting_twice_accumulates_rather_than_replaces():
 
 
 def test_an_empty_source_slot_clears_nothing():
-    grafted, _ = K.graft(WORLD, make_roster(b"ZORBAX\0"))
-    again, moved = K.graft(grafted, bytes(K.SLOTS * K.SLOT))
+    grafted, _, _ = K.graft(WORLD, make_roster(b"ZORBAX\0"))
+    again, moved, _ = K.graft(grafted, bytes(K.SLOTS * K.SLOT))
 
     assert moved == []
     assert again == grafted

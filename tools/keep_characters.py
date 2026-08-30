@@ -35,6 +35,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import containers as C
+
 ROSTER = 0x41D72F      # "PRE-CREATED PARTY", the roster template in WORLD.DAT
 SLOT = 500             # bytes per character record
 SLOTS = 10             # slot 0 is a header, 1-5 are free, 6-9 are the stock four
@@ -67,13 +69,22 @@ def read_roster(path: Path) -> bytes:
     return blob[:SLOTS * SLOT]
 
 
-def graft(world: bytes, roster: bytes, which=CREATED) -> tuple[bytes, list[str]]:
+def graft(world: bytes, roster: bytes, which=CREATED,
+          ids=None) -> tuple[bytes, list[str], list[str]]:
     """Copy the created slots of `roster` into a copy of `world`.
 
     Only slots 1-5 are touched: slot 0 is the header and 6-9 are the four the
     game ships, and overwriting either would lose something the player did not
     create. An empty slot in the source clears nothing: a character kept in
     one session and a character kept in the next therefore accumulate.
+
+    The one thing taken out of slot 0 is the container allocator's two words.
+    They are part of the roster, so a graft that left them alone would put the
+    counter behind the characters it just wrote: the kept bags hold the records
+    they were given and the counter still reads 3, so the next container
+    equipped is handed a record one of them is using, and the two bags then
+    share their contents. [containers.py](containers.py) has the mechanism and
+    the rest of the repair.
     """
     out = bytearray(world)
     moved = []
@@ -85,7 +96,9 @@ def graft(world: bytes, roster: bytes, which=CREATED) -> tuple[bytes, list[str]]
         at = ROSTER + i * SLOT
         out[at:at + SLOT] = rec
         moved.append(f"slot {i}: {n}")
-    return bytes(out), moved
+    fixed, renumbered = C.repair_template(
+        bytes(out), ids or C.container_ids(), ROSTER)
+    return fixed, moved, renumbered
 
 
 def build_game_dir(source: Path, game: Path, out: Path) -> list[str]:
@@ -109,9 +122,10 @@ def build_game_dir(source: Path, game: Path, out: Path) -> list[str]:
     # across runs rather than each run replacing the last.
     existing = out / "WORLD.DAT"
     base = existing if existing.exists() else game / "WORLD.DAT"
-    world, moved = graft(base.read_bytes(), read_roster(source))
+    world, moved, renumbered = graft(base.read_bytes(), read_roster(source),
+                                     ids=C.container_ids(game))
     (out / "WORLD.DAT").write_bytes(world)
-    return moved
+    return moved + [f"container: {n}" for n in renumbered]
 
 
 if __name__ == "__main__":

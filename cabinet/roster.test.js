@@ -10,7 +10,8 @@ import { join } from "path";
 
 import {
   ROSTER, SLOT, SLOTS, CREATED, SAVE_SIZE,
-  graft, nameOf, rosterOf, slotsOf, looksLikeWorld,
+  CONTAINER_ITEMS, FREE_HEAD, NEXT_RECORD, SLOT_AT,
+  graft, nameOf, rosterOf, slotsOf, looksLikeWorld, renumberContainers,
 } from "./roster.js";
 
 const GAME_FILES = join(import.meta.dir, "..", "game");
@@ -101,6 +102,100 @@ test.skipIf(!HAVE_GAME)("an empty source slot clears nothing", () => {
 
   expect(kept).toEqual([]);
   expect(world).toEqual(grafted);
+});
+
+const u16 = (blob, at) => blob[at] | (blob[at + 1] << 8);
+
+// A character's container slot: the id at +318 of the record, its record
+// number at +320. That is the tenth of the eleven pairs from SLOT_AT.
+const CONTAINER_SLOT = SLOT_AT + 4 * 9;
+
+/** A roster whose character in `slot` carries a BAG on container `record`. */
+function rosterWithBag(name, record, slot = 1) {
+  const roster = rosterWith(name, slot);
+  const at = slot * SLOT + CONTAINER_SLOT;
+  roster[at] = CONTAINER_ITEMS[0];
+  roster[at + 2] = record;
+  return roster;
+}
+
+const bagRecord = (world, slot) =>
+  u16(world, ROSTER + slot * SLOT + CONTAINER_SLOT + 2);
+
+test.skipIf(!HAVE_GAME)("the stock four hold the first two container records", () => {
+  expect(bagRecord(WORLD, 6)).toBe(1);      // SQUIRE
+  expect(bagRecord(WORLD, 9)).toBe(2);      // JOSEPHINE
+  expect(u16(WORLD, ROSTER + 6 * SLOT + CONTAINER_SLOT)).toBe(CONTAINER_ITEMS[0]);
+  expect(u16(WORLD, ROSTER + NEXT_RECORD)).toBe(3);
+  expect(u16(WORLD, ROSTER + FREE_HEAD)).toBe(0);
+});
+
+test.skipIf(!HAVE_GAME)("the shipped template needs no renumbering", () => {
+  const world = new Uint8Array(WORLD);
+  expect(renumberContainers(world)).toEqual([]);
+  expect(world).toEqual(WORLD);
+});
+
+test.skipIf(!HAVE_GAME)("a kept bag never lands on a record already in use", () => {
+  // Record 1 is SQUIRE's. A character kept while the counter was behind can
+  // arrive holding it.
+  const { world, renumbered } = graft(WORLD, rosterWithBag("ZORBAX", 1));
+
+  expect(renumbered).toEqual([{ slot: 1, from: 1, to: 3 }]);
+  expect(bagRecord(world, 1)).toBe(3);
+  expect(bagRecord(world, 6)).toBe(1);
+  expect(u16(world, ROSTER + NEXT_RECORD)).toBe(4);
+});
+
+test.skipIf(!HAVE_GAME)("the counter moves past a kept bag, so the next one is fresh", () => {
+  const { world } = graft(WORLD, rosterWithBag("ZORBAX", 40));
+
+  expect(bagRecord(world, 1)).toBe(40);
+  expect(u16(world, ROSTER + NEXT_RECORD)).toBe(41);
+});
+
+test.skipIf(!HAVE_GAME)("two sessions that were both handed record 3 keep one each", () => {
+  const first = graft(WORLD, rosterWithBag("ZORBAX", 3, 1)).world;
+  const { world } = graft(first, rosterWithBag("MIRABEL", 3, 2));
+
+  expect(bagRecord(world, 1)).toBe(3);
+  expect(bagRecord(world, 2)).toBe(4);
+  expect(u16(world, ROSTER + NEXT_RECORD)).toBe(5);
+});
+
+test.skipIf(!HAVE_GAME)("a character with no container writes nothing down", () => {
+  // DIANA and YENDOR ship without a bag: their container slot holds item 0.
+  for (const slot of [7, 8]) {
+    expect(u16(WORLD, ROSTER + slot * SLOT + CONTAINER_SLOT)).toBe(0);
+    expect(bagRecord(WORLD, slot)).toBe(0);
+  }
+  expect(renumberContainers(new Uint8Array(WORLD))).toEqual([]);
+});
+
+test.skipIf(!HAVE_GAME)("the header slot is not walked for containers", () => {
+  // Slot 0 is the party header. The sky ramp starts at +310 and runs through
+  // the offsets a character keeps items at, so a ramp byte of 28 beside a zero
+  // would read as a BAG on a record.
+  const world = new Uint8Array(WORLD);
+  world[ROSTER + CONTAINER_SLOT] = CONTAINER_ITEMS[0];
+  world[ROSTER + CONTAINER_SLOT + 2] = 1;
+  const before = new Uint8Array(world);
+
+  expect(renumberContainers(world)).toEqual([]);
+  expect(world).toEqual(before);
+});
+
+test.skipIf(!HAVE_GAME)("a state word that is not a container is left alone", () => {
+  // Item 34 is the TORCH, whose second word is how much is left to burn.
+  const roster = rosterWith("ZORBAX");
+  const at = SLOT + SLOT_AT;
+  roster[at] = 34;
+  roster[at + 2] = 1;
+  const { world, renumbered } = graft(WORLD, roster);
+
+  expect(renumbered).toEqual([]);
+  expect(u16(world, ROSTER + SLOT + SLOT_AT + 2)).toBe(1);
+  expect(u16(world, ROSTER + NEXT_RECORD)).toBe(3);
 });
 
 test.skipIf(!HAVE_GAME)("rosterOf takes the first five thousand bytes of a save", () => {
