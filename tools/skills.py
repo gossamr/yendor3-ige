@@ -137,7 +137,7 @@ def casting_and_magic(class_code: int, intelligence: int, wisdom: int) -> tuple[
     elif class_code == 9:    # marksman
         blend = pct(intelligence, 50)
         bonus = blend - (wisdom & 1)  # yes, wisdom: the parity test reads 0x84
-    else:                    # mage, and anything unrecognised
+    else:                    # mage, and anything unrecognized
         blend, bonus = intelligence, 10
     return blend + bonus, blend >> 2
 

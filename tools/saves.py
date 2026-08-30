@@ -61,7 +61,7 @@ ROSTER_SLOTS = 10
 # Gold, food and nuore, and a character's experience, are packed BCD: two
 # decimal digits to a byte, most significant byte first, four bytes wide. The
 # item table's BASE VALUE uses the same encoding (see docs/items.md), which is
-# what made it recognisable: 3,557 gold reads `00 00 35 57`.
+# what made it recognizable: 3,557 gold reads `00 00 35 57`.
 PURSE = {"gold": 180, "food": 184, "nuore": 188}
 EXPERIENCE_AT, BCD_BYTES = 24, 4
 

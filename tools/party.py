@@ -157,7 +157,7 @@ class Member:
         self.spell = None
         natural_attr = C.ROLL_CAP + C.PER_LEVEL * (level - 1)
         budget = dict(C.grants(52, 4))[level]
-        armour = C.armor_afforded(level, L.experience_table(L.load()), 0.5)
+        armor = C.armor_afforded(level, L.experience_table(L.load()), 0.5)
 
         if role == "martial":
             build = LD.build_at(martial_policy, level, odds)
@@ -170,7 +170,7 @@ class Member:
 
         # Both casting roles pay first strike out of the same budget.
         strike = C.first_strike_cost(level, C.enemies_by_level())
-        self.absorption = armour + L.attribute_bonus(natural_attr + strike)
+        self.absorption = armor + L.attribute_bonus(natural_attr + strike)
         spent = min(budget, strike)
 
         if role == "caster":
@@ -200,10 +200,10 @@ class Member:
                     spell_choice, casters=1):
         """Choose from every spell castable in melee, by simulating each.
 
-        `damage` takes the biggest, which minimises rounds. `efficiency` takes
+        `damage` takes the biggest, which minimizes rounds. `efficiency` takes
         the cheapest spell that still clears the group in the *same* number of
         rounds: efficiency alone is degenerate, because damage per magic point
-        is maximised by the level-1 Magic Attack, which would need twenty-three
+        is maximized by the level-1 Magic Attack, which would need twenty-three
         casts and twenty-three rounds of standing there being hit.
 
         `out of hand to hand` spells are excluded throughout: they are inert
@@ -260,7 +260,7 @@ class Member:
 
     def _spellblade(self, role, level, odds, foe, budget, spent, natural_attr,
                     casting_share=1.0):
-        """A hybrid at a stated split, rather than an optimised one.
+        """A hybrid at a stated split, rather than an optimized one.
 
         `casting_share` is the fraction of the remaining budget given to the
         magic side; of that, the first 78 points go to the magic attribute (the
@@ -268,7 +268,7 @@ class Member:
         casting. What is left goes to weapon skill, with strength taken to the
         crossover.
 
-        There is no single right objective to optimise here, since per-round
+        There is no single right objective to optimize here, since per-round
         output says all-casting and the pool says otherwise, so the splits are shown
         and the reader picks. That is the whole question about spellblades.
         """
@@ -513,7 +513,7 @@ def spellblade_report(level, odds):
           f"{C.group_size(LD.raw_by_level(level)) * C.enemies_by_level()[level]['health']:.0f}"
           f" health between them.")
     # Swing is one hit on one monster, so the spell is printed per target
-    # beside it. `x group` is the same cast totalled over everything engaged,
+    # beside it. `x group` is the same cast totaled over everything engaged,
     # which is the spell's real advantage but not a like-for-like number.
     print(f"{'class':11}{'to magic':>9}{'attr':>6}{'casting':>9}{'weapon':>8}"
           f"{'swing':>8}{'spell/target':>14}{'x group':>9}{'pool':>7}"

@@ -190,7 +190,7 @@ def _best_set(enchanted: bool) -> int:
     return sum(best.values()) + sum(sorted(rings, reverse=True)[:2])
 
 
-def test_armour_ceiling_is_one_item_per_slot():
+def test_armor_ceiling_is_one_item_per_slot():
     """Not the eight highest numbers: four body armors cannot be worn at once."""
     assert _best_set(enchanted=False) == cm.UNENCHANTED[0] == 111
     assert _best_set(enchanted=True) == cm.ENCHANTED[0] == 161
@@ -501,7 +501,7 @@ def test_the_ladder_uses_the_per_character_attack_rate():
     assert rows["Untouchable"]["taken_together"] == 0
 
 
-def test_the_roll_moves_defence_and_leaves_offence_alone():
+def test_the_roll_moves_defense_and_leaves_offense_alone():
     """Every level-40 build sits far past the margin where the hit chance
     saturates, so correcting the roll cannot touch a single offensive column --
     which is why the ladder's ordering survived the correction."""

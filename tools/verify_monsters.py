@@ -4,7 +4,7 @@
 `tools/capture_monsters.js` photographs the F2 MONSTER STATISTICS page for
 every monster the game lists, in the order it lists them. Each page draws the
 monster at a fixed place, so rendering the record's own picture and comparing
-it pixel for pixel says whether the picture, the palette and the recolour list
+it pixel for pixel says whether the picture, the palette and the recolor list
 are all right.
 
 The comparison takes the best of the monster's ten pictures because the page
@@ -72,7 +72,7 @@ def main(shot_dir: str = "tmp/monsters") -> int:
             continue
         sw, sh, rgb = pngutil.read(str(path))
         index = [slot.get(rgb[i * 3:i * 3 + 3], -1) for i in range(sw * sh)]
-        swaps = {s["from"]: s["to"] for s in e["recolour"]}
+        swaps = {s["from"]: s["to"] for s in e["recolor"]}
         best = (0.0, None)
         for f in range(P.FRAMES):
             run, raw = P.monster(pics, runs, e["sprite"], e["masks"]["w96"],

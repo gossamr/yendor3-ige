@@ -111,7 +111,7 @@ function send(message, onProgress) {
  * Revalidated rather than read from the browser's cache, since a stale copy of
  * this one file is the case it exists to catch. A deployment too old to carry
  * it answers 404, and then nothing can be told apart and what was kept is
- * kept: the same behaviour as before there was a fingerprint at all.
+ * kept: the same behavior as before there was a fingerprint at all.
  */
 let decoderVersion;
 async function decoderBuild() {

@@ -69,10 +69,10 @@ TRANSPARENT = 0xFF
 TALL, WIDE = 2, 3       # the two runs monsters are drawn from
 WIDE_BIT = (96, 0)      # record word 96, bit 0: the monster is drawn wide
 RECOLOR_BIT = (96, 2)  # record word 96, bit 2: the recolor list applies
-GREY_BIT = (98, 15)     # record word 98, bit 15: drawn in ramp 0 throughout
+GRAY_BIT = (98, 15)     # record word 98, bit 15: drawn in ramp 0 throughout
 
 RAMP = 0x10             # colors a ramp; the high nibble of a pixel picks one
-GREY_RAMP = 0
+GRAY_RAMP = 0
 
 SPRITE = 26             # record offset of the first of the ten pictures
 FRAMES = 10
@@ -126,7 +126,7 @@ def picture(pics: bytes, run: Run, n: int) -> bytes:
     return pics[at:at + run.size]
 
 
-def recoloured(raw: bytes, swaps: dict[int, int]) -> bytes:
+def recolored(raw: bytes, swaps: dict[int, int]) -> bytes:
     """The picture with each named ramp moved to another, shade preserved."""
     if not swaps:
         return raw
@@ -135,9 +135,9 @@ def recoloured(raw: bytes, swaps: dict[int, int]) -> bytes:
     return raw.translate(table)
 
 
-def greyed(raw: bytes) -> bytes:
+def grayed(raw: bytes) -> bytes:
     """The picture with every pixel moved to the gray ramp, shade preserved."""
-    return recoloured(raw, {r: GREY_RAMP for r in range(RAMP)})
+    return recolored(raw, {r: GRAY_RAMP for r in range(RAMP)})
 
 
 def bounds(raw: bytes, width: int) -> tuple[int, int, int, int]:
@@ -167,5 +167,5 @@ def monster(pics: bytes, runs: list[Run], sprite: int, word96: int,
              frame: int = 0) -> tuple[Run, bytes]:
     """One of a monster's ten pictures, drawn the way the game draws it."""
     run = monster_run(runs, word96)
-    raw = recoloured(picture(pics, run, sprite + frame), swaps)
-    return run, greyed(raw) if word98 >> GREY_BIT[1] & 1 else raw
+    raw = recolored(picture(pics, run, sprite + frame), swaps)
+    return run, grayed(raw) if word98 >> GRAY_BIT[1] & 1 else raw

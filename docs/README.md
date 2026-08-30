@@ -16,7 +16,7 @@ an Evidence column. There are six classifiers.
 
 | Classifier | What was done |
 |---|---|
-| **measured** | the field was changed in the running game and the game's behaviour changed with it, or a value was read back out of it and compared against the field. [tools/fight_probe.js](../tools/fight_probe.js), the cabinet's trainer, a scripted session. |
+| **measured** | the field was changed in the running game and the game's behavior changed with it, or a value was read back out of it and compared against the field. [tools/fight_probe.js](../tools/fight_probe.js), the cabinet's trainer, a scripted session. |
 | **observed** | the game was run and what it did was recorded rather than what it held: which byte ranges it read ([tools/trace_fs.js](../tools/trace_fs.js)), or what stopped being drawn when a range was blanked ([tools/probe_map_data.js](../tools/probe_map_data.js)). |
 | **screens** | the game printed a value on its own clue-book page, and that value was compared against the field, for every record the book lists. The page and the count are given. A mismatch is the field's. |
 | **rendered** | the game drew from the field, and the drawing was rebuilt from the field and diffed pixel for pixel against a capture of the same page. This is how a field the book prints no value for is checked, a picture number or a recolor list. The comparison covers the drawing model as well, so a mismatch can be in either. |

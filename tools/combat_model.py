@@ -488,18 +488,18 @@ def gold_earned(level: int, experience: dict[int, int]) -> float:
 
 
 def armor_afforded(level: int, experience: dict[int, int],
-                    share_to_armour: float = 0.5, shield: bool = True) -> int:
+                    share_to_armor: float = 0.5, shield: bool = True) -> int:
     """Absorption the gold will stretch to, once training is paid for.
 
     Training is the one unavoidable competing cost and it is quadratic in
     level: 100 gold times the level, once per level already held. What is left
     is split between armor and everything else a party buys (weapons, food,
-    potions, raising the dead) which `share_to_armour` sets. Armor is cheap
+    potions, raising the dead) which `share_to_armor` sets. Armor is cheap
     up to the plain set and then roughly a hundred times dearer, because past
     that point the money is buying enchantment rather than another piece.
     """
     spare = (gold_earned(level, experience)
-             - 100 * level * (level - 1) / 2) * share_to_armour
+             - 100 * level * (level - 1) / 2) * share_to_armor
     if spare <= 0:
         return 0
     plain_cap, plain_cost = UNENCHANTED if shield else UNENCHANTED_2H

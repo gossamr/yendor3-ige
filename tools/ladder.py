@@ -20,7 +20,7 @@ rather than re-deriving the tables.
 Two framings, and mixing them up is the other easy mistake.
 
 **The ladder, the bosses, the marginal-points table and the career walk are
-party against group**: offence is *four* characters of the same build, focus
+party against group**: offense is *four* characters of the same build, focus
 -firing the selected monster, and every damage-taken figure is what **one** of
 those four takes. The two do not scale together: four characters deal four
 times the damage, but against a PARTY ATTACK monster each of them still takes
@@ -32,7 +32,7 @@ nobody else swinging. That is the worst case the game offers and the right one
 for sizing armor, and it is why its rounds-to-kill are four times longer than
 the ladder's.
 
-Four identical builds is a modelling convenience, not a party anyone plays --
+Four identical builds is a modeling convenience, not a party anyone plays --
 the manual's own advice is to mix one berserker with a healer. A mixed party is
 not modeled here.
 
@@ -76,7 +76,7 @@ LEVEL = 40
 NATURAL_SKILL = C.natural_attack(1, "slashing", LEVEL)      # 143
 NATURAL_ATTR = C.ROLL_CAP + C.PER_LEVEL * (LEVEL - 1)       # 138
 HEALTH = C.health_pool(52, LEVEL)                           # 1066
-ARMOUR_SHIELD, ARMOUR_2H = C.ENCHANTED[0], C.ENCHANTED_2H[0]
+ARMOR_SHIELD, ARMOR_2H = C.ENCHANTED[0], C.ENCHANTED_2H[0]
 PARTY = 4
 
 def raw(name):
@@ -98,10 +98,10 @@ class Build:
     """One column of the ladder. Skill, strength and dexterity are points
     *bought*; the natural value of each is added here, not by the caller."""
 
-    def __init__(self, name, skill, strength, dexterity, weapon, armour):
+    def __init__(self, name, skill, strength, dexterity, weapon, armor):
         self.name = name
         self.skill, self.strength, self.dexterity = skill, strength, dexterity
-        self.weapon, self.armour = weapon, armour
+        self.weapon, self.armor = weapon, armor
 
     @property
     def spent(self):
@@ -117,7 +117,7 @@ class Build:
 
     @property
     def absorption(self):
-        return self.armour + L.attribute_bonus(NATURAL_ATTR + self.dexterity)
+        return self.armor + L.attribute_bonus(NATURAL_ATTR + self.dexterity)
 
 
 # The berserker's split is 331/47/132, which is what MANUAL.md's derived tables
@@ -126,13 +126,13 @@ class Build:
 # manual prints them as one. 331/47/132 is kept here because it is the split the
 # numbers in the manual belong to.
 BUILDS = [
-    Build("Berserker",   331, 47, 132, TWO_HANDED, ARMOUR_2H),
-    Build("Rarely hit",  276, 47, 187, ONE_HANDED, ARMOUR_SHIELD),
-    Build("Untouchable", 176,  2, 332, ONE_HANDED, ARMOUR_SHIELD),
+    Build("Berserker",   331, 47, 132, TWO_HANDED, ARMOR_2H),
+    Build("Rarely hit",  276, 47, 187, ONE_HANDED, ARMOR_SHIELD),
+    Build("Untouchable", 176,  2, 332, ONE_HANDED, ARMOR_SHIELD),
 ]
 # The healer spends its 510 on wisdom, dexterity and casting instead, so it has
 # no weapon row; only its absorption is comparable.
-HEALER = Build("Healer", 0, 0, 127, ONE_HANDED, ARMOUR_SHIELD)
+HEALER = Build("Healer", 0, 0, 127, ONE_HANDED, ARMOR_SHIELD)
 
 
 # --- the two roll models ---------------------------------------------------
@@ -214,7 +214,7 @@ def stops(odds, foe, targets=STOPS, budget=510):
     """STRATEGY: *pick a stopping point*. One row per stop, all from one place.
 
     A stop is a chance of being hit, and the dexterity that reaches it is
-    whatever the armour of the day leaves to buy. Two of them are measured
+    whatever the armor of the day leaves to buy. Two of them are measured
     against Paltivar rather than against the monster of the level: the
     berserker because turn order is the one thing it will not go without, and
     the untouchable stop because being unhittable by the last boss is the point
@@ -229,7 +229,7 @@ def stops(odds, foe, targets=STOPS, budget=510):
     rows = []
     for name, target, acc, two_handed in targets:
         weapon = TWO_HANDED if two_handed else ONE_HANDED
-        armour = ARMOUR_2H if two_handed else ARMOUR_SHIELD
+        armor = ARMOR_2H if two_handed else ARMOR_SHIELD
         if target == "turn order":
             # Matching is enough: characters sort ahead of monsters on a tie.
             dexterity = max(0, PALTIVAR_DEX - NATURAL_ATTR)
@@ -238,14 +238,14 @@ def stops(odds, foe, targets=STOPS, budget=510):
         else:
             aim = foe["accuracy"] if acc is None else acc
             for dexterity in range(0, budget + 1):
-                absorb = armour + L.attribute_bonus(NATURAL_ATTR + dexterity)
+                absorb = armor + L.attribute_bonus(NATURAL_ATTR + dexterity)
                 if odds(aim - absorb) <= target:
                     break
             else:
                 continue
         spare = budget - dexterity
         build = max(
-            (Build(name, spare - st, st, dexterity, weapon, armour)
+            (Build(name, spare - st, st, dexterity, weapon, armor)
              for st in range(spare + 1)),
             key=lambda b: output(odds, b.damage, b.accuracy, foe["absorption"]))
         margin = foe["accuracy"] - build.absorption
@@ -321,7 +321,7 @@ def survival(odds, foe, roll=52):
     for label, switch in (("All to weapon skill", 0), ("Stamina through 15", 15),
                           ("Stamina through 20", 20)):
         skill, health = stamina_policy(switch)
-        rows.append((Build(label, skill, 0, 0, ONE_HANDED, ARMOUR_SHIELD),
+        rows.append((Build(label, skill, 0, 0, ONE_HANDED, ARMOR_SHIELD),
                      health))
     rows += [(b, HEALTH) for b in BUILDS]
 
@@ -373,7 +373,7 @@ def caster(odds, foe, area_damage=350):
                                      ("Rarely hit", 187, 245),
                                      ("Untouchable", 332, 100)):
         margin = natural + casting - foe["absorption"]
-        absorption = ARMOUR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
+        absorption = ARMOR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
         dealt = per_hit(area_damage, margin)
         out.append({"rung": name, "dexterity": dexterity, "casting": casting,
                     "margin": margin, "absorption": absorption,
@@ -386,7 +386,7 @@ def caster(odds, foe, area_damage=350):
 
 
 def rung_at(target, odds, foe, budget=510, weapon=ONE_HANDED,
-            armour=ARMOUR_SHIELD):
+            armor=ARMOR_SHIELD):
     """The cheapest build whose chance to be hit is at most `target`.
 
     The rarely-hit rung was named for one swing in four and priced under a flat
@@ -397,14 +397,14 @@ def rung_at(target, odds, foe, budget=510, weapon=ONE_HANDED,
     derivative and the split here is a few points either side of it.
     """
     for dexterity in range(0, budget + 1):
-        absorption = armour + L.attribute_bonus(NATURAL_ATTR + dexterity)
+        absorption = armor + L.attribute_bonus(NATURAL_ATTR + dexterity)
         if odds(foe["accuracy"] - absorption) <= target:
             break
     else:
         return None
     spare = budget - dexterity
     best = max(
-        (Build("", spare - st, st, dexterity, weapon, armour)
+        (Build("", spare - st, st, dexterity, weapon, armor)
          for st in range(spare + 1)),
         key=lambda b: output(odds, b.damage, b.accuracy, foe["absorption"]))
     return best
@@ -421,7 +421,7 @@ def rung_at(target, odds, foe, budget=510, weapon=ONE_HANDED,
 POLICIES = ("Berserker", "Rarely hit", "Untouchable")
 
 
-def build_at(policy, level, odds, target=0.266, share_to_armour=0.5):
+def build_at(policy, level, odds, target=0.266, share_to_armor=0.5):
     """The cheapest build following `policy` at `level`, or None if the rung is
     out of reach on that level's budget.
 
@@ -436,13 +436,13 @@ def build_at(policy, level, odds, target=0.266, share_to_armour=0.5):
     natural_attr = C.ROLL_CAP + C.PER_LEVEL * (level - 1)
     natural_skill = C.natural_attack(1, "slashing", level)
     two_handed = policy == "Berserker"
-    armour = C.armor_afforded(level, experience, share_to_armour,
-                              shield=not two_handed)
+    armor = C.armor_afforded(level, experience, share_to_armor,
+                             shield=not two_handed)
     weapon = C.weapon_afforded(level, experience, 0.2,
                                C.shop_weapons(two_handed=two_handed))
 
     def absorb(dexterity):
-        return armour + L.attribute_bonus(natural_attr + dexterity)
+        return armor + L.attribute_bonus(natural_attr + dexterity)
 
     first_strike = C.first_strike_cost(level, table)
     need = first_strike
@@ -468,7 +468,7 @@ def build_at(policy, level, odds, target=0.266, share_to_armour=0.5):
     return {
         "level": level, "policy": policy, "budget": budget,
         "skill": spare - best, "strength": best, "dexterity": need,
-        "first_strike": first_strike, "armour": armour, "weapon": weapon,
+        "first_strike": first_strike, "armor": armor, "weapon": weapon,
         "accuracy": natural_skill + spare - best, "damage": damage(best),
         "absorption": absorb(need), "health": C.health_pool(52, level),
         "foe": foe,
@@ -497,7 +497,7 @@ def career_table(policy, odds, levels=range(15, LEVEL + 1)):
             "monster": foe["name"], "group": size, "budget": b["budget"],
             "dexterity": b["dexterity"], "first_strike": b["first_strike"],
             "skill": b["skill"], "strength": b["strength"],
-            "armour": b["armour"], "weapon": b["weapon"],
+            "armor": b["armor"], "weapon": b["weapon"],
             "absorption": b["absorption"], "hit_you": odds(margin),
             "per_hit": blow, "worst_round": blow * size,
             "health": b["health"],
@@ -543,13 +543,13 @@ def marginal(odds, foe, extra=15, builds=None):
         for field in ("skill", "strength"):
             grown = Build(b.name, b.skill + (extra if field == "skill" else 0),
                           b.strength + (extra if field == "strength" else 0),
-                          b.dexterity, b.weapon, b.armour)
+                          b.dexterity, b.weapon, b.armor)
             mine = PARTY * output(odds, grown.damage, grown.accuracy,
                                   foe["absorption"])
             row[f"into_{field}"] = size * foe["health"] / mine
         taken = []
         for absorption in (b.absorption,
-                           b.armour + L.attribute_bonus(
+                           b.armor + L.attribute_bonus(
                                NATURAL_ATTR + b.dexterity + extra)):
             margin = foe["accuracy"] - absorption
             taken.append(odds(margin) * per_hit(foe["damage"], margin)
@@ -680,7 +680,7 @@ def caster_rungs(odds, foe, budget=510, intelligence=78, area_damage=350):
     for name, dexterity in (("First strike", 112), ("Rarely hit", 212),
                             ("Untouchable", 332)):
         casting = spare - dexterity
-        absorption = ARMOUR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
+        absorption = ARMOR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
         margin = natural + casting - foe["absorption"]
         # Earthquake is an ordinary damage spell, so a monster carrying bit 13
         # takes half of it. The Black Dragon is one of the thirteen that do.
@@ -719,7 +719,7 @@ def healer_splits(odds, foe, budget=510, wisdom=120,
     pool = C.magic_pool(4, LEVEL, C.ROLL_CAP, C.ROLL_CAP + wisdom)
     out = []
     for casting, dexterity in splits:
-        absorption = ARMOUR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
+        absorption = ARMOR_SHIELD + L.attribute_bonus(NATURAL_ATTR + dexterity)
         margin = foe["accuracy"] - absorption
         taken = odds(margin) * per_hit(foe["damage"], margin) * size * atk
         cost = taken / GREAT_HEAL * GREAT_HEAL_COST
@@ -743,12 +743,12 @@ def incapacitators(odds, floor=186):
     experience = L.experience_table(L.load())
     out = []
     for level in (30, 35, 40):
-        armour = C.armor_afforded(level, experience, 0.5, shield=True)
+        armor = C.armor_afforded(level, experience, 0.5, shield=True)
         natural = C.ROLL_CAP + C.PER_LEVEL * (level - 1)
         need = 0
-        while armour + L.attribute_bonus(natural + need) < floor:
+        while armor + L.attribute_bonus(natural + need) < floor:
             need += 1
-        out.append({"level": level, "armour": armour, "points": need})
+        out.append({"level": level, "armor": armor, "points": need})
     return out
 
 
@@ -777,14 +777,14 @@ def allocation(odds, foe):
     # weapon skill and strength, split by brute force.
     priced = {r["build"]: r["dexterity"] for r in stops(odds, foe)}
     rows = []
-    for name, weapon, armour in (
-            ("Berserker", TWO_HANDED, ARMOUR_2H),
-            ("Half the time", ONE_HANDED, ARMOUR_SHIELD),
-            ("Rarely hit", ONE_HANDED, ARMOUR_SHIELD),
-            ("Untouchable", ONE_HANDED, ARMOUR_SHIELD)):
+    for name, weapon, armor in (
+            ("Berserker", TWO_HANDED, ARMOR_2H),
+            ("Half the time", ONE_HANDED, ARMOR_SHIELD),
+            ("Rarely hit", ONE_HANDED, ARMOR_SHIELD),
+            ("Untouchable", ONE_HANDED, ARMOR_SHIELD)):
         dexterity = priced[name]
         spare = 510 - dexterity
-        b = max((Build(name, spare - st, st, dexterity, weapon, armour)
+        b = max((Build(name, spare - st, st, dexterity, weapon, armor)
                  for st in range(spare + 1)),
                 key=lambda x: output(odds, x.damage, x.accuracy,
                                      foe["absorption"]))
@@ -904,7 +904,7 @@ def careers(odds):
                 f"{r['worst_round'] / r['health'] * 100:.0f}%"
             print(f"{r['level']:>4}{r['monster'][:21]:22}{r['dexterity']:>5}"
                   f"{r['first_strike']:>6}{r['skill']:>6}{r['strength']:>5}"
-                  f"{r['armour']:>6}{r['weapon']:>5}{r['absorption']:>8}"
+                  f"{r['armor']:>6}{r['weapon']:>5}{r['absorption']:>8}"
                   f"{_pct(r['hit_you']):>9}"
                   f"{('--' if not r['hit_you'] else r['per_hit']):>8}"
                   f"{worst:>7}{share:>8}{r['party_rounds']:>6.1f}"
@@ -975,11 +975,11 @@ def builds(odds, foe):
           " 186)")
     print(f"{'lvl':>4}{'armor gold affords':>20}{'dexterity points':>18}")
     for r in incapacitators(odds):
-        print(f"{r['level']:>4}{r['armour']:>20.0f}{r['points']:>18}")
+        print(f"{r['level']:>4}{r['armor']:>20.0f}{r['points']:>18}")
 
     rungs = [Build(r["build"], r["skill"], r["strength"], r["dexterity"],
-                   r["weapon"], ARMOUR_2H if r["weapon"] == TWO_HANDED
-                   else ARMOUR_SHIELD)
+                   r["weapon"], ARMOR_2H if r["weapon"] == TWO_HANDED
+                   else ARMOR_SHIELD)
              for r in allocation(odds, foe)[1]]
     print("\nWhat fifteen more points do, on the recommended rungs")
     print(f"{'build':13}{'into skill':>20}{'into strength':>20}"

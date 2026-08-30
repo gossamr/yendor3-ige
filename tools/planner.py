@@ -99,7 +99,7 @@ def classes() -> list[dict]:
     return out
 
 
-def armour() -> dict:
+def armor() -> dict:
     """What gold can have bought by a level, as the curve's own inputs.
 
     Exported rather than evaluated because the split between armor and
@@ -173,7 +173,7 @@ def build(payload: dict) -> dict:
     return {
         "constants": constants(),
         "classes": classes(),
-        "armour": armour(),
+        "armor": armor(),
         "weapons": weapons(payload["items"]),
         "incapacitating": incapacitating(payload["enemies"]),
     }

@@ -1,7 +1,7 @@
-/* Palette sampled pixel-for-pixel from the running game: the stone greys of
+/* Palette sampled pixel-for-pixel from the running game: the stone grays of
    its screen backgrounds, the burnt orange of its menu text, and the yellow /
    red / green / blue it uses for numbers, stats, immunities and special
-   attacks. Only the three darkest greys are new, to carry a dark UI where the
+   attacks. Only the three darkest grays are new, to carry a dark UI where the
    game used a lit stone texture. */
 :root {
   --stone-000: #0c0c0c;
@@ -316,7 +316,7 @@ details.curve-box[open] > summary { color: var(--amber-lit);
 .world-map-shell { overflow: auto; min-height: 0;
                    background: var(--stone-000); border: 1px solid var(--stone-400); }
 /* Fitted by default; at its own size it is 6,400 pixels wide and the shell
-   scrolls to it. Nearest-neighbour either way: the source is a bitmap. */
+   scrolls to it. Nearest-neighbor either way: the source is a bitmap. */
 .world-map-img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .world-map-shell.full .world-map-img { width: auto; max-width: none; }
 
@@ -682,7 +682,7 @@ body.embedded .guide-side { top: 3.2rem; }
 .plan-sheet { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
               gap: .35rem 1.2rem; margin: 0 0 1rem; }
 .plan-sheet > div { display: flex; flex-direction: column; }
-/* The monster cards colour a value with the game's own blood red, which reads
+/* The monster cards color a value with the game's own blood red, which reads
    there as a threat. These are the player's own numbers, so they take the same
    gold every other figure in the panel uses. */
 .plan-sheet dd { margin: 0; color: var(--gold); }
@@ -741,7 +741,7 @@ body.embedded .guide-side { top: 3.2rem; }
 .plan-mine-value, .plan-theirs-value { display: flex; flex-wrap: wrap;
                                        gap: 0 .35rem; color: var(--gold); }
 .plan-mine-value .note, .plan-theirs-value .note { flex-basis: 100%; margin: 0; }
-/* The comparison the verdict turns on. It carries the colour, because it is
+/* The comparison the verdict turns on. It carries the color, because it is
    the one line that says which way the block went. */
 .plan-decides { grid-column: 1 / -1; display: flex; flex-wrap: wrap;
                 gap: 0 .4rem; align-items: baseline; margin-top: .25rem;

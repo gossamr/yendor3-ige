@@ -48,7 +48,7 @@ class Exe(Image):
         Reading a 16-bit image from a guessed address is how a decode goes
         wrong: start one byte late and every instruction after it is a
         different instruction, for as long as it takes the stream to
-        resynchronise. A `test word ptr [0x5df2], 0x8000` read from its second
+        resynchronize. A `test word ptr [0x5df2], 0x8000` read from its second
         byte becomes `push es / pop bp / add byte ptr [bx+si+0x874], al`, and
         the guard it applies disappears without leaving a hole.
 

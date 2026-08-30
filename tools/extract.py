@@ -151,7 +151,7 @@ ATTACK_EFFECT_BITS = {
 # list stop at the first zero byte, and in all 32 the colors being replaced
 # are distinct: neither would survive if these bytes were something else. And
 # it explains the sprite groups: FROST GIANT carries no list and SNOW GIANT and
-# FIRE GIANT recolour it, SLIME carries none and PURPLE SLIME swaps one color.
+# FIRE GIANT recolor it, SLIME carries none and PURPLE SLIME swaps one color.
 ENEMY_PALETTE = 64
 ENEMY_PALETTE_BYTES = 6
 ENEMY_PALETTE_BIT = (96, 2)
@@ -261,7 +261,7 @@ ENEMY_UNKNOWN = [104]
 #     projectile +0x04  <- record 46   the picture, in PICTURES.VGA run 1
 #     projectile +0x14  <- record 48   the sound, played on impact (0x123b8)
 #     projectile +0x12  <- record 62   an id into the attack table below
-#     projectile +0x0c  <- &record 70  a recolour list, six bytes
+#     projectile +0x0c  <- &record 70  a recolor list, six bytes
 #     projectile +0x10  <- word 96 bit 1, which turns that list on
 #
 # The picture is drawn from run 1 with `[0xfc5] = 0x10` (image 0x123df), and
@@ -269,7 +269,7 @@ ENEMY_UNKNOWN = [104]
 # a white bolt and a comet, each picture holding the four angles the shot
 # can travel at.
 RANGED_PICTURE, RANGED_SOUND, RANGED_ATTACK_ID = 46, 48, 62
-RANGED_RECOLOUR, RANGED_RECOLOUR_BYTES = 70, 6
+RANGED_RECOLOR, RANGED_RECOLOR_BYTES = 70, 6
 RANGED_RECOLOR_BIT = (96, 1)
 
 # How often the monster shoots rather than closing. The AI rolls 1..100 and
@@ -322,8 +322,8 @@ def ranged_attack(exe: bytes, rec: bytes) -> dict | None:
                        RANGED_CHANCE_DEFAULT),
         "attack_id": attack_id,
         "attacks": attack_effects(exe, attack_id),
-        "recolour": (palette_swaps(rec, RANGED_RECOLOUR, RANGED_RECOLOUR_BYTES)
-                     if u16(rec, word) >> bit & 1 else []),
+        "recolor": (palette_swaps(rec, RANGED_RECOLOR, RANGED_RECOLOR_BYTES)
+                    if u16(rec, word) >> bit & 1 else []),
     }
 
 
@@ -374,7 +374,7 @@ def extract_enemies(d: S.Directory) -> list[dict]:
         e["resist_physical"] = bool(resistance & RESIST_PHYSICAL_ROW)
         e["resist_shot"] = bool(resistance & RESIST_SHOT)
         e["resist_unmatched"] = bool(resistance & RESIST_UNMATCHED)
-        e["recolour"] = palette_swaps(rec)
+        e["recolor"] = palette_swaps(rec)
         e["walk"] = next((n for b, n in WALK_BITS.items()
                           if u16(rec, WALK_BIT_WORD) >> b & 1), None)
         e["hit_offset"] = [u16(rec, o) for o in HIT_OFFSET]
@@ -434,7 +434,7 @@ def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, d
             continue
         run, raw = P.monster(
             pics, runs, e["sprite"], e["masks"]["w96"], e["masks"]["w98"],
-            {s["from"]: s["to"] for s in e["recolour"]}, MONSTER_FRAME)
+            {s["from"]: s["to"] for s in e["recolor"]}, MONSTER_FRAME)
         w, h, crop = _cropped(raw, run.width)
         png = _indexed(w, h, crop, palette)
         out[e["name"]] = _png_entry(w, h, png)
@@ -461,8 +461,8 @@ def projectile_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str
         shot = e["ranged"]
         if not shot or str(shot["picture"]) in out:
             continue
-        raw = P.recoloured(P.picture(pics, run, shot["picture"]),
-                           {s["from"]: s["to"] for s in shot["recolour"]})
+        raw = P.recolored(P.picture(pics, run, shot["picture"]),
+                           {s["from"]: s["to"] for s in shot["recolor"]})
         w, h, crop = _cropped(raw, run.width)
         out[str(shot["picture"])] = _png_entry(w, h, _indexed(w, h, crop, palette))
     return out

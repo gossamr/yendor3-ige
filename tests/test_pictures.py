@@ -59,21 +59,21 @@ def test_a_monster_names_a_picture_that_exists(directory):
         assert e["sprite"] + P.FRAMES <= run.count, e["name"]
 
 
-def test_recolouring_moves_a_ramp_and_leaves_the_shade(directory):
+def test_recoloring_moves_a_ramp_and_leaves_the_shade(directory):
     raw = bytes([0x00, 0x2F, 0xA3, P.TRANSPARENT])
-    assert P.recoloured(raw, {2: 5, 10: 1}) == bytes([0x00, 0x5F, 0x13, P.TRANSPARENT])
-    assert P.greyed(raw) == bytes([0x00, 0x0F, 0x03, P.TRANSPARENT])
+    assert P.recolored(raw, {2: 5, 10: 1}) == bytes([0x00, 0x5F, 0x13, P.TRANSPARENT])
+    assert P.grayed(raw) == bytes([0x00, 0x0F, 0x03, P.TRANSPARENT])
 
 
 def test_the_monsters_drawn_gray_are_the_three_the_bit_names(directory):
-    off, bit = P.GREY_BIT
+    off, bit = P.GRAY_BIT
     gray = {e["name"] for e in extract.extract_enemies(directory)
             if e["masks"][f"w{off}"] >> bit & 1}
     assert gray == {"GHOST", "SPECTRE", "PHASE TITAN"}
 
 
 def test_the_art_reproduces_the_games_own_monster_screens(directory):
-    """The proof of the whole chain: run, picture number, palette, recolour
+    """The proof of the whole chain: run, picture number, palette, recolor
     and the gray bit. Each capture is one step of an animation the clue book
     runs, so the monster's ten pictures are all candidates; a page caught
     mid-refresh shows two steps at once and matches neither exactly.
@@ -102,7 +102,7 @@ def test_the_art_reproduces_the_games_own_monster_screens(directory):
         seen += 1
         sw, sh, rgb = pngutil.read(str(shot))
         index = [slot.get(rgb[i * 3:i * 3 + 3], -1) for i in range(sw * sh)]
-        swaps = {s["from"]: s["to"] for s in e["recolour"]}
+        swaps = {s["from"]: s["to"] for s in e["recolor"]}
         best = 0.0
         for f in range(P.FRAMES):
             run, raw = P.monster(pics, rs, e["sprite"], e["masks"]["w96"],

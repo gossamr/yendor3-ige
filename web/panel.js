@@ -3531,7 +3531,7 @@
     cls.magic_blend.reduce((n, [, weight]) => n + weight, 0) < 100
     && !!cls.magic_blend.length;
 
-  /** The weapon skill a class is least penalised in. */
+  /** The weapon skill a class is least penalized in. */
   function bestSkill(cls) {
     let best = WEAPON_SKILLS[0];
     for (const s of WEAPON_SKILLS) if (cls.modifier[s] > cls.modifier[best]) best = s;
@@ -3576,11 +3576,11 @@
    * are what the gold affords by then rather than what is worn, since a
    * character that does not exist yet is carrying nothing.
    */
-  function byHand(code, level, weapon, armourShare, weaponShare) {
+  function byHand(code, level, weapon, armorShare, weaponShare) {
     const cls = classAt(code);
     const grown = K.roll_cap + K.per_level * (level - 1);
     const skill = bestSkill(cls);
-    const armour = armourAfforded(level, armourShare, weapon !== "two_handed");
+    const armor = armorAfforded(level, armorShare, weapon !== "two_handed");
     const damage = weaponAfforded(level, weaponShare, weapon === "two_handed");
     return {
       source: "hand", name: null, code, level, skill,
@@ -3589,9 +3589,9 @@
       accuracy: grown + cls.modifier[skill],
       casting: cls.casting ? cls.casting + K.per_level * (level - 1) : 0,
       casts: attacksWithCasting(cls.casting, K.roll_cap + cls.modifier[skill]),
-      armour,
+      armor,
       weapon: damage,
-      absorption: armour + attributeBonus(grown),
+      absorption: armor + attributeBonus(grown),
       damage: damage + attributeBonus(grown),
       // Both accumulators walk the climb themselves, so they are given the
       // roll rather than the attribute as it stands at this level.
@@ -3636,7 +3636,7 @@
       // The sheet shows armor plus the dexterity bonus, and weapon plus the
       // strength bonus. Taking the bonus back out is what says how much of
       // each is equipment, which is the part gold moves and points do not.
-      armour: Math.max(0, absorption - attributeBonus(dexterity)),
+      armor: Math.max(0, absorption - attributeBonus(dexterity)),
       weapon: Math.max(0, damage - attributeBonus(strength)),
       health: base("health"), magic: base("magic"),
     };
@@ -3650,7 +3650,7 @@
 
   /** One character's share of the party's gold, less what training cost. */
   function spareGold(level, share) {
-    const A = PLAN.armour;
+    const A = PLAN.armor;
     const earned = experienceFor(level) * A.gold_per_xp / A.party;
     return (earned - A.train_base * level * (level - 1) / 2) * share;
   }
@@ -3659,18 +3659,18 @@
    *  about a hundred times dearer past it, where the money is buying
    *  enchantment rather than another piece. */
   const afforded = new Map();
-  function armourAfforded(level, share, shield) {
+  function armorAfforded(level, share, shield) {
     const key = `a${level}:${share}:${shield}`;
     if (afforded.has(key)) return afforded.get(key);
-    const value = armourValue(level, share, shield);
+    const value = armorValue(level, share, shield);
     afforded.set(key, value);
     return value;
   }
 
-  function armourValue(level, share, shield) {
+  function armorValue(level, share, shield) {
     const spare = spareGold(level, share);
     if (spare <= 0) return 0;
-    const set = shield ? PLAN.armour.shield : PLAN.armour.two_handed;
+    const set = shield ? PLAN.armor.shield : PLAN.armor.two_handed;
     const [plainCap, plainCost] = set.plain;
     const [topCap, topCost] = set.top;
     if (spare <= plainCost) return Math.floor(spare / (plainCost / plainCap));
@@ -3810,8 +3810,8 @@
     const grown = K.per_level * (level - c.level);
     const dexterity = c.dexterity + grown + bought.dexterity;
     const strength = c.strength + grown + bought.strength;
-    const armour = Math.max(c.armour, armourAfforded(
-      level, plan.armourShare, plan.weapon !== "two_handed"));
+    const armor = Math.max(c.armor, armorAfforded(
+      level, plan.armorShare, plan.weapon !== "two_handed"));
     const weapon = Math.max(c.weapon, weaponAfforded(
       level, plan.weaponShare, plan.weapon === "two_handed"));
 
@@ -3851,13 +3851,13 @@
     const accuracy = c.accuracy + grown + bought.attack;
     const casting = c.casting ? c.casting + grown + bought.casting : 0;
     return {
-      level, dexterity, strength, armour, weapon, health, magic,
+      level, dexterity, strength, armor, weapon, health, magic,
       accuracy, casting,
       // What an attack of this character's rolls with, and what a landed one
       // delivers. A caster's blow is the spell, so the damage behind it is
       // read off the spell rather than off the weapon it is not swinging.
       attack: c.casts ? casting : accuracy,
-      absorption: armour + attributeBonus(dexterity),
+      absorption: armor + attributeBonus(dexterity),
       damage: weapon + attributeBonus(strength),
     };
   }
@@ -3967,7 +3967,7 @@
       describe: () => "Untouchable",
       holds: (plan, me, at) => at.accuracy.value - me.absorption < 0,
       rows: (plan, me, at) => [
-        versus(["Armor", me.armour],
+        versus(["Armor", me.armor],
                ["Accuracy", at.accuracy.value, at.accuracy.monster,
                 at.accuracy.shot && "shot"]),
         versus(["They hit", percentTarget(rollOdds(at.accuracy.value - me.absorption))],
@@ -3990,7 +3990,7 @@
           versus(["Absorption", me.absorption],
                  ["Accuracy", at.accuracy.value, at.accuracy.monster,
                   at.accuracy.shot && "shot"]),
-          versus(["Armor", me.armour],
+          versus(["Armor", me.armor],
                  ["Per hit", perHit(at.damage.value, margin), at.damage.monster,
                   at.damage.shot && "shot"]),
           decides("They hit", percentTarget(rollOdds(margin)),
@@ -4031,7 +4031,7 @@
            armor half shown the same way: what a shield is worth is the whole
            difference between the stops. */
         const { met, needs } = incapacitatorsBy(me.level);
-        const rows = [versus(["Armor", me.armour], null)];
+        const rows = [versus(["Armor", me.armor], null)];
         for (const c of met) {
           /* The label is the monster's name, so tagging the value with it
              again would say it twice. */
@@ -4211,7 +4211,7 @@
    * stat at once.
    *
    * Taking each stat from whichever monster carries the most of it is right
-   * for a threshold: landing every swing on the best-armoured thing of the
+   * for a threshold: landing every swing on the best-armored thing of the
    * level and being untouchable by the fastest are separate promises, and each
    * has to hold. A rate is not a promise, it is a fight repeated, and the
    * chimera describes a fight nobody has: at level 30 it puts three monsters
@@ -4417,7 +4417,7 @@
    *
    * Priced against a character that has bought nothing, so a goal whose cost
    * depends on another lever -- the tempo goal reads the damage strength
-   * feeds -- is quoted a little high. It errs towards buying early, which is
+   * feeds -- is quoted a little high. It errs toward buying early, which is
    * the side to err on when nothing can be saved up.
    */
   function eventualNeeds(plan, active) {
@@ -4472,9 +4472,9 @@
 
       /* A goal's level is a deadline, not a start: "condition proof from 24"
          is a promise about level 24, and a stop is reached by having bought
-         towards it, never by beginning to buy on the day it falls due. So a
+         toward it, never by beginning to buy on the day it falls due. So a
          goal not yet due is priced at the level it comes due and bought
-         towards from here, in its own place in the order. */
+         toward from here, in its own place in the order. */
       /* The pool takes the early trainings before anything else asks for them.
          Every other lever is worth the same whenever it is bought, so a goal
          that waits loses nothing; the pool is not retroactive, so a point of
@@ -4716,7 +4716,7 @@
       code: stored.code || 1,
       bosses: !!stored.bosses,
       evidence: !!stored.evidence,
-      armourShare: stored.armourShare === undefined ? 0.5 : stored.armourShare,
+      armorShare: stored.armorShare === undefined ? 0.5 : stored.armorShare,
       weaponShare: stored.weaponShare === undefined ? 0.2 : stored.weaponShare,
       /* Whether this tab listens to the game. Off, the character is the class
          as it rolls; on, it is whoever the party holds, watched. */
@@ -4731,7 +4731,7 @@
                                              && stored[k] !== undefined)),
     };
     plan.character = (plan.source === "game" && planCharacter)
-      || byHand(plan.code, 1, plan.weapon, plan.armourShare, plan.weaponShare);
+      || byHand(plan.code, 1, plan.weapon, plan.armorShare, plan.weaponShare);
     if (settings.attacksWith && canDoEither(classAt(plan.character.code))) {
       plan.character = Object.assign({}, plan.character,
                                      { casts: settings.attacksWith === "casting" });
@@ -4860,7 +4860,7 @@
 
     /* An archetype is a character, not a goal: it names a build the strategy
        guide prices, and what it puts in the goal list is how that build is
-       recognised. Edit any row and the plan is no longer that build, which the
+       recognized. Edit any row and the plan is no longer that build, which the
        list says by falling to Custom. */
     const archetype = el("select", { className: "picker plan-archetype" });
     const matches = (key) => {
@@ -5340,7 +5340,7 @@
       const goal = GOALS[g.type];
       const block = el("div", { className: "plan-evidence-block" });
       /* The working says what the numbers are; the heading says which way they
-         came out, in the same mark and colour the row above uses, so a block
+         came out, in the same mark and color the row above uses, so a block
          read on its own is not a page of figures with no verdict. */
       const held = result.state === "held";
       block.append(el("strong", { className: held ? "plan-holds" : "plan-fails",
@@ -5372,7 +5372,7 @@
           continue;
         }
         /* The comparison the verdict turns on, across the width of the block
-           and coloured by which way it went. */
+           and colored by which way it went. */
         const settled = el("span", {
           className: `plan-decides ${entry.ok ? "plan-holds" : "plan-fails"}` });
         settled.append(el("span", { className: "plan-label", textContent: entry.label }),

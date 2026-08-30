@@ -1120,11 +1120,11 @@ def test_how_often_a_monster_shoots_is_one_of_five_figures(data):
         "FUNGUS", "FROST DWARF TOWER", "FIRE DWARF TOWER"}
 
 
-def test_only_the_creeping_fungus_recolours_its_shot(data):
-    """Twelve monsters carry the bit that turns the shot's recolour list on;
-    one of them has a list to apply, and it is the recoloured fungus."""
-    lists = {c["name"]: c["ranged"]["recolour"]
-             for c in data["enemies"] if c["ranged"] and c["ranged"]["recolour"]}
+def test_only_the_creeping_fungus_recolors_its_shot(data):
+    """Twelve monsters carry the bit that turns the shot's recolor list on;
+    one of them has a list to apply, and it is the recolored fungus."""
+    lists = {c["name"]: c["ranged"]["recolor"]
+             for c in data["enemies"] if c["ranged"] and c["ranged"]["recolor"]}
     assert lists == {"CREEPING FUNGUS": [{"from": 4, "to": 3}]}
 
 
@@ -1310,7 +1310,7 @@ def test_the_decoded_fields_are_no_longer_offered_as_unknown(data):
         assert not (gone & set(c["unknown"])), sorted(gone & set(c["unknown"]))
 
 
-def test_recolour_is_a_terminated_list_of_distinct_substitutions(data):
+def test_recolor_is_a_terminated_list_of_distinct_substitutions(data):
     """Six bytes, each a (color, replacement) pair, stopping at a zero byte.
 
     Neither property is guaranteed by the bytes being *something*: if these
@@ -1318,33 +1318,33 @@ def test_recolour_is_a_terminated_list_of_distinct_substitutions(data):
     replace the same color twice. Across every monster that carries one,
     neither happens, which is the evidence that they are substitutions.
     """
-    carrying = [c for c in data["enemies"] if c["recolour"]]
+    carrying = [c for c in data["enemies"] if c["recolor"]]
     assert len(carrying) == 32
     for c in carrying:
-        froms = [p["from"] for p in c["recolour"]]
+        froms = [p["from"] for p in c["recolor"]]
         assert len(set(froms)) == len(froms), c["name"]
-        assert all(0 <= p["to"] <= 15 for p in c["recolour"]), c["name"]
-        assert 1 <= len(c["recolour"]) <= 6
+        assert all(0 <= p["to"] <= 15 for p in c["recolor"]), c["name"]
+        assert 1 <= len(c["recolor"]) <= 6
 
 
-def test_recolour_needs_its_flag(data):
+def test_recolor_needs_its_flag(data):
     """Bit 2 of word 96 is what turns the substitution on."""
     for c in data["enemies"]:
-        if c["recolour"]:
+        if c["recolor"]:
             assert c["masks"]["w96"] & 4, c["name"]
 
 
-def test_a_shared_sprite_is_told_apart_by_its_recolouring(data):
+def test_a_shared_sprite_is_told_apart_by_its_recoloring(data):
     """Which is what the pair of fields is for: one drawing, several monsters."""
     by = {c["name"]: c for c in data["enemies"]}
     giants = ["FROST GIANT", "SNOW GIANT", "FIRE GIANT"]
     assert len({by[n]["sprite"] for n in giants}) == 1
-    assert by["FROST GIANT"]["recolour"] == []
-    assert by["SNOW GIANT"]["recolour"] != by["FIRE GIANT"]["recolour"]
+    assert by["FROST GIANT"]["recolor"] == []
+    assert by["SNOW GIANT"]["recolor"] != by["FIRE GIANT"]["recolor"]
 
     assert by["SLIME"]["sprite"] == by["PURPLE SLIME"]["sprite"]
-    assert by["SLIME"]["recolour"] == []
-    assert by["PURPLE SLIME"]["recolour"] == [{"from": 9, "to": 1}]
+    assert by["SLIME"]["recolor"] == []
+    assert by["PURPLE SLIME"]["recolor"] == [{"from": 9, "to": 1}]
 
 
 # --- when each class learns a spell -----------------------------------------

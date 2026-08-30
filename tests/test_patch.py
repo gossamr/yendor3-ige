@@ -224,7 +224,7 @@ def test_apply_refuses_when_the_original_byte_is_wrong(tmp_path):
 DEFAULTS = ["force-skip-intro", "no-attract", "keep-roll-on-class-change"]
 
 
-def test_verify_recognises_a_build_it_just_made(tmp_path):
+def test_verify_recognizes_a_build_it_just_made(tmp_path):
     out = tmp_path / "REGISTER.EXE"
     assert patch.verify(DEFAULTS, out) is False, "nothing there yet"
     patch.apply(DEFAULTS, patch.Path("game/REGISTER.EXE"), out)

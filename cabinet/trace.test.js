@@ -1,7 +1,7 @@
 // The filesystem tracer's hook, exercised against a stand-in FS.
 //
 // The hook logs into an array that gets JSON.stringify'd to disk on a timer,
-// and a failure to serialise is caught and swallowed, so a bad entry does not
+// and a failure to serialize is caught and swallowed, so a bad entry does not
 // crash anything, it just means no log is ever written, which reads exactly
 // like "the game touched no files". That cost a run to diagnose once; these
 // tests make sure it cannot happen quietly again.
@@ -87,7 +87,7 @@ test("a node argument is reduced to its path, not logged whole", () => {
   expect(() => JSON.stringify(t.ops())).not.toThrow();
 });
 
-test("every logged field stays serialisable whatever it is handed", () => {
+test("every logged field stays serializable whatever it is handed", () => {
   const fs = fakeFS();
   const t = hooked(fs);
   const cyclic = {};

@@ -880,7 +880,7 @@ Paladin, level 40, 510 points:
 
 The two damage columns to compare are the two headed *one target*: a swing hits
 one monster and so does one target's share of an area spell. The last column is
-the same cast totalled over the three monsters engaged, which is the spell's
+the same cast totaled over the three monsters engaged, which is the spell's
 real advantage and not a like-for-like number. The spell columns are what
 actually lands, so they carry the Black Dragon's halving of spell damage; the
 swing column does not, because nothing halves a swing.

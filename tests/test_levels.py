@@ -451,7 +451,7 @@ def test_shoot_and_attack_are_one_routine_in_two_modes():
     assert not [o for m, o in attack if m == "or"]
 
 
-def test_absorption_is_armour_class_and_compounds():
+def test_absorption_is_armor_class_and_compounds():
     """Absorption is subtracted from accuracy before the roll, so it cuts the
     hit chance and the damage together, roughly quadratic rather than linear.
     """
@@ -468,7 +468,7 @@ def data_by_name(data, name):
     return next(i for i in data["items"] if i["name"] == name)
 
 
-def test_items_supply_damage_and_defence_and_little_accuracy(data):
+def test_items_supply_damage_and_defense_and_little_accuracy(data):
     """The equipment assembly adds a weapon's word 0 to damage and a piece of
     armor's to absorption. Only nine items add anything to a character at all,
     and the largest combat skill among them is the 30 the three weapons of
@@ -774,7 +774,7 @@ def test_early_charisma_investment_enlarges_the_budget():
     assert simulate(45, 5) > simulate(60, 0)
 
 
-def test_armour_is_a_second_race_run_in_gold(data):
+def test_armor_is_a_second_race_run_in_gold(data):
     """Their accuracy is reduced by your absorption exactly as yours is by
     theirs, so defense is the same quadratic seen from the other side. Health
     only suffices while armor keeps pace.
@@ -796,7 +796,7 @@ def test_armour_is_a_second_race_run_in_gold(data):
 
     # The armor that closes it is cheap next to a career of training.
     armor = sorted((i["absorption"], i["value"]) for i in data["items"]
-                    if i["category"] == "ARMOR / RINGS" and i["absorption"])
+                   if i["category"] == "ARMOR / RINGS" and i["absorption"])
     best8 = armor[-8:]
     assert sum(a for a, _ in best8) > 150
     assert sum(v for _, v in best8) < sum(L.training_cost(lvl, 1)
@@ -1267,7 +1267,7 @@ def test_a_fighter_should_not_buy_stamina():
     assert safety(0, 173) > 4.5 * safety(12, 100)
 
 
-def test_armour_is_not_restricted_by_class(data):
+def test_armor_is_not_restricted_by_class(data):
     """Nothing in an item record keys off class. The only per-item flag that
     varies across armor is the container mask, which the decoder already
     exposes as "fits in", so a caster can wear anything a fighter can.
@@ -1297,14 +1297,14 @@ def test_armour_is_not_restricted_by_class(data):
     assert plain[12:18] == mage[12:18]
 
 
-def test_carrying_capacity_is_not_what_limits_armour(data):
+def test_carrying_capacity_is_not_what_limits_armor(data):
     """Carry capacity is ten times strength, but the eight-slot limit and the
     weightlessness of rings mean weight stops binding early. Money is the real
     constraint.
     """
     armor = [(i["absorption"], i["weight"]) for i in data["items"]
-              if i["category"] == "ARMOR / RINGS" and i["absorption"]
-              and i["weight"] is not None]
+             if i["category"] == "ARMOR / RINGS" and i["absorption"]
+             and i["weight"] is not None]
 
     def best(budget, slots=8):
         table = {(0, 0): 0}

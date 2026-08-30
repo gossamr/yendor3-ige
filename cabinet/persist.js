@@ -459,7 +459,7 @@ export const EXPORT_VERSION = 1;
 const FORMAT = "yendorian-tales-3-cabinet";
 const FORMATS = [FORMAT, "yendorian-tales-3-shim"];
 
-/** Everything this origin is holding, as a plain JSON-serialisable object. */
+/** Everything this origin is holding, as a plain JSON-serializable object. */
 export async function exportBundle() {
   const files = await loadFiles();
   const roster = await loadRoster();
