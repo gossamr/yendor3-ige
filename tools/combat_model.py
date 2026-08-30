@@ -407,8 +407,14 @@ def absorption(armor: int, dexterity: int) -> int:
 
 
 def shop_weapons(path: Path | None = None, melee: bool = True,
-                 two_handed: bool = False) -> list[tuple[int, int, str]]:
+                 two_handed: bool = False, items: list | None = None
+                 ) -> list[tuple[int, int, str]]:
     """(damage, price, name) for every buyable weapon and enchanted form.
+
+    `items` is the decoded records, for a caller that already holds them;
+    without it they are read from data/. `two_handed` includes the two-handers
+    rather than selecting them, so a caller that wants only those takes the
+    difference between the two lists.
 
     Two-handed weapons are excluded by default. They are the only ones that
     reach 40 damage, but carrying one costs the shield: the equip dispatch
@@ -416,7 +422,8 @@ def shop_weapons(path: Path | None = None, melee: bool = True,
     two-handed weapon while the shield slot is full, and the Gold Shield's
     30 absorption is worth more than the 10 extra damage in every build.
     """
-    items = json.loads((path or ROOT / "data" / "items.json").read_text())
+    if items is None:
+        items = json.loads((path or ROOT / "data" / "items.json").read_text())
     out = []
     for i in items:
         if i["category"] != "WEAPONS" or not i["value"]:

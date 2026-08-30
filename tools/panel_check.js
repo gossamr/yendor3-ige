@@ -40,6 +40,7 @@ const TABS = [
   ["f5", "Items", /Weapons/],
   // The Guides tab opens on the first document, which is the manual.
   ["gd", "Guides", /Yendorian Tales/],
+  ["pl", "Planner", /Career/],
 ];
 
 // The documents inside the Guides tab, and one string apiece that only appears
@@ -160,6 +161,136 @@ if (trainers !== 5) problems.push(`leveling: expected 5 trainers, found ${traine
 // claims that trainer covers the whole game.
 const lvText = await page.locator('section[data-key="gd"]').innerText();
 if (!/30 to 40/.test(lvText)) problems.push("leveling: the 30-to-40 trainer is missing");
+
+// --- the planner -------------------------------------------------------
+//
+// The tab computes rather than prints, so what is checked is the arithmetic:
+// that it spends no more than the game grants, that it measures against the
+// creature it says it does, and that the two thresholds the strategy guide
+// names come out of the decode rather than out of a constant someone typed.
+
+await page.click('nav button[data-key="pl"]');
+await page.waitForTimeout(300);
+const planner = page.locator('section[data-key="pl"]');
+
+// A row a level, from where the character stands to the cap.
+const careerRows = await planner.locator(".plan-career tbody tr[data-level]").count();
+if (careerRows !== 40) {
+  problems.push(`planner: ${careerRows} levels in the career, expected 40`);
+}
+
+// Levels can be banked and points cannot: the bonus screen does not close
+// with any in hand. So every level spends its whole grant and no more, and a
+// plan that saves up for a stop two levels ahead is one nobody can follow.
+const spend = await planner.locator(".plan-career tbody tr[data-level]").evaluateAll(
+  (rows) => rows.map((tr) => {
+    const cells = [...tr.querySelectorAll("td")];
+    const points = cells[cells.length - 2].textContent.trim();
+    const bought = [...cells[cells.length - 1].textContent.matchAll(/\+(\d+)/g)]
+      .reduce((n, m) => n + Number(m[1]), 0);
+    // The level the character stands at has no training in it and says so.
+    return { level: tr.dataset.level, grant: points === "\u2014" ? null : Number(points),
+             bought };
+  }));
+const misspent = spend.filter((r) => (r.grant === null ? r.bought !== 0
+                                                        : r.bought !== r.grant));
+if (misspent.length) {
+  const r = misspent[0];
+  problems.push(`planner: level ${r.level} is granted ${r.grant} points and `
+    + `spends ${r.bought}; a training screen closes with none in hand`);
+}
+const career = spend.reduce((n, r) => n + (r.grant || 0), 0);
+if (career < 400) {
+  problems.push(`planner: a whole career grants ${career} points, short of the `
+    + "450 a middling charisma roll pays out");
+}
+
+// The character the tab projects has to be the one the offline model builds.
+// A level-40 fighter at the roll cap holds 1162 health, which is what
+// tools/combat_model.py's health_pool gives; health is accumulated a level at
+// a time and reads no lever, so it is the figure that pins the projection.
+// Handing that accumulator the attribute as it stands instead of the roll it
+// grew from counts the climb twice and 1162 becomes 2094.
+await page.selectOption(".plan-class", "1");
+await page.waitForTimeout(300);
+await page.selectOption(".plan-add", { label: "Survive a round" });
+await page.click(".plan-add ~ button");
+await page.waitForTimeout(600);
+
+// The evidence is the tab's claim to be believed, so it has to name the
+// creature each number came off.
+await page.click(".plan-evidence");
+await page.waitForTimeout(600);
+const evidence = await planner.locator(".plan-evidence-row").count();
+if (!evidence) problems.push("planner: the evidence control showed no working");
+
+// The health the projection carries at the cap, out of the goal that reads it.
+const atForty = await planner
+  .locator('.plan-career tbody tr[data-level="40"] + tr .plan-evidence-block',
+           { hasText: "Survive a round" }).first()
+  .innerText().catch(() => "");
+if (!/Health\s*\n?1162\b/.test(atForty)) {
+  problems.push("planner: a level-40 character does not hold the 1162 health "
+    + `combat_model computes: ${JSON.stringify(atForty)}`);
+}
+
+// Absorption 186 shuts out freezing, paralysis and stoning, and the four
+// creatures behind it are named. That number is read off their own records by
+// tools/planner.py; if the decode moves and the number does not, this is the
+// check that says so. Asserted inside the goal's own block, so a 186 belonging
+// to some other goal cannot stand in for it.
+// The bar rises as the four arrive -- Wizard at 19, Purple Dragon at 26, Fire
+// Giant at 28, Ice Dwarf at 30 -- so a level-30 character answers all four at
+// 186 and a level-20 character answers the Wizard alone at 139. Those numbers
+// are read off the creatures' own records by tools/planner.py; if the decode
+// moves and they do not, this is the check that says so.
+const conditionsAt = async (level) => planner.locator(
+  `.plan-career tbody tr[data-level="${level}"] + tr .plan-evidence-block`,
+  { hasText: "Condition proof" }).first().innerText().catch(() => "");
+const late = await conditionsAt(30);
+if (!/needs 186\b/.test(late)) {
+  problems.push(`planner: level 30 does not answer all four at 186: ${JSON.stringify(late)}`);
+}
+for (const creature of ["Wizard", "Purple Dragon", "Fire Giant", "Ice Dwarf"]) {
+  if (!late.includes(creature)) {
+    problems.push(`planner: ${creature} is missing from the condition evidence`);
+  }
+}
+const early = await conditionsAt(20);
+if (!/needs 139\b/.test(early)) {
+  problems.push("planner: level 20 is not measured against the Wizard alone: "
+    + JSON.stringify(early));
+}
+if (/Ice Dwarf/.test(early)) {
+  problems.push("planner: level 20 is priced against a creature it cannot meet");
+}
+
+// With bosses counted, a character at the cap is measured against Paltivar,
+// which is the basis every endgame figure in STRATEGY.md is quoted against:
+// accuracy 240, absorption 170. It is level 45 and reaches a level-40 plan
+// only through the rule that a creature above the cap is one a character at
+// the cap meets.
+await page.click(".plan-evidence");
+await page.check("#plan-bosses");
+await page.waitForTimeout(300);
+await page.selectOption(".plan-archetype", "untouchable");
+await page.waitForTimeout(400);
+await page.click(".plan-evidence");
+await page.waitForTimeout(600);
+const last = planner.locator('.plan-career tbody tr[data-level="40"] + tr');
+const endgame = await last.innerText();
+for (const [what, expected] of [["Accuracy", "240"], ["Absorption", "170"]]) {
+  // The working is a comparison now: a label, its value, then the creature the
+  // value came off, each on its own line under the Them column.
+  const line = new RegExp(`${what}\\s*\\n${expected}\\s*\\nPaltivar`);
+  if (!line.test(endgame)) {
+    problems.push(`planner: level 40 is not measured against Paltivar's `
+      + `${what.toLowerCase()} of ${expected} with bosses counted`);
+  }
+}
+await page.screenshot({ path: `${outDir}/planner.png`, fullPage: false });
+await page.uncheck("#plan-bosses");
+await page.waitForTimeout(200);
 
 // Number keys select a tab, and must not fire while a field has focus.
 await page.click(`nav button[data-key="f2"]`);

@@ -76,10 +76,17 @@ const TOOLS = join(HERE, "..", "tools");
 // disassembler, and stays on the developer's machine.
 const DECODER_ENTRY = ["pack_maps", "extract", "world_map", "patch"];
 
-// `import x` / `from x import y` at the head of a line. Local modules only --
-// a name is a module of ours when tools/ holds a file called that, so the
-// standard library and anything conditional inside a function is ignored.
-const IMPORT = /^[ \t]*(?:import|from)[ \t]+([A-Za-z_]\w*)/gm;
+// `import x` / `from x import y` in the first column. Local modules only -- a
+// name is a module of ours when tools/ holds a file called that, so the
+// standard library is ignored.
+//
+// The column matters. An indented import is inside a function and runs only if
+// that function is called, which the decode may never do: combat_model imports
+// spell_curve inside `spell_options`, and nothing in the pipeline calls it. The
+// closure this walk produces is compared against the modules Python really
+// loads (tests/test_decoder.py), so publishing one that is never imported
+// fails as surely as missing one that is.
+const IMPORT = /^(?:import|from)[ \t]+([A-Za-z_]\w*)/gm;
 
 /**
  * The modules the browser is given, and nothing else in tools/.

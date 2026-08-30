@@ -251,6 +251,53 @@ else {
     const afterClear = (await frame.locator('section[data-key="tr"] .trainer-note').innerText()).trim();
     if (afterClear) problems.push(`clearing the map failed: ${afterClear}`);
 
+    // The planner watches the same party and plans whichever character it is
+    // given, from the level that character is at. A character out of the game
+    // is not editable here: its numbers are the game's, and the fields that
+    // would contradict them are disabled.
+    await frame.locator('nav button[data-key="pl"]').click();
+    // Nothing to press: the tab watches the party the way the trainer does,
+    // more slowly, and fills itself in.
+    const who = frame.locator('section[data-key="pl"] .plan-who');
+    await who.waitFor({ state: "visible", timeout: 30000 });
+    // The picker is keyed by party slot, and shows the name against it.
+    const planned = await who.evaluate((s) => s.selectedOptions[0].textContent);
+    console.log(`planner read: ${planned}`);
+    if (planned.toLowerCase() !== names[0].toLowerCase()) {
+      problems.push(`the planner loaded ${planned}, expected ${names[0]}`);
+    }
+    if (!(await frame.locator('section[data-key="pl"] .plan-class').isDisabled())) {
+      problems.push("the planner let a character read out of the game be re-classed");
+    }
+    const plannedLevel = (await frame.locator(
+      'section[data-key="pl"] .plan-level').innerText()).trim();
+    const firstRow = await frame.locator(
+      'section[data-key="pl"] .plan-career tbody tr[data-level]').first()
+      .getAttribute("data-level");
+    if (firstRow !== plannedLevel) {
+      problems.push(`the career starts at ${firstRow}, not the character's ${plannedLevel}`);
+    }
+    // The slot being planned survives a reload of the panel; without it the
+    // tab comes back on whoever the party lists first.
+    const slots = await who.locator("option").allTextContents();
+    if (slots.length > 1) {
+      await who.selectOption({ label: slots[1] });
+      await frame.waitForTimeout(800);
+      // The frame alone, not the page: reloading the page would end the game.
+      await frame.evaluate(() => location.reload());
+      const again = frame.locator('section[data-key="pl"] .plan-who');
+      await frame.locator('nav button[data-key="pl"]').click({ timeout: 30000 });
+      await again.waitFor({ state: "visible", timeout: 30000 });
+      const kept = await again.evaluate((s) => s.selectedOptions[0].textContent);
+      if (kept !== slots[1]) {
+        problems.push(`the planner came back on ${kept}, not the chosen ${slots[1]}`);
+      }
+      console.log(`planner kept the slot: ${kept}`);
+    }
+
+    await frame.locator('section[data-key="pl"]').screenshot({ path: `${outDir}/06-planner.png` });
+    await frame.locator('nav button[data-key="tr"]').click();
+
     await frame.locator('section[data-key="tr"]').screenshot({ path: `${outDir}/02-poked.png` });
     await frame.locator('section[data-key="tr"] .trainer-debug')
       .screenshot({ path: `${outDir}/05-debug.png` });

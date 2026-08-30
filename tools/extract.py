@@ -27,6 +27,7 @@ import labels as L
 import levels as LV
 import markers
 import pictures as P
+import planner as PL
 import pngutil
 import sections as S
 import tiles
@@ -122,9 +123,8 @@ ATTACK_BITS = {(96, 12): "PARTY ATTACK", (96, 9): "BREAK SHIELD"}
 #     test word [di+8], 0x8000 / "SICK, "   and so on down the bits
 #
 # So the mask lives in a twelve-byte table in the executable, keyed by the id.
-# That is why a decade of looking for it inside the 106-byte record failed:
-# ACOKNIGHT and FUNGUS really do share every masky-looking word, and differ
-# only in this id.
+# That is why looking for it inside the 106-byte record failed: pairs of
+# creatures really do share every masky-looking word and differ only in this id.
 ATTACK_TABLE = 0x96DA          # DS offset of the twelve-byte entries
 ATTACK_ENTRY = 12
 ATTACK_MASK_AT = 8             # the condition mask within an entry
@@ -1108,6 +1108,10 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
             "menu": L.RESTORATION_MENU,
         },
     }
+
+    # The Planner tab's model tables, which read the decoded items and
+    # creatures rather than the game's files: filled in once those are in hand.
+    payload["planner"] = PL.build(payload)
 
     payload["propers"] = proper_nouns(payload)
 

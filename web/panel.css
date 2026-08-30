@@ -649,3 +649,127 @@ body.embedded .guide-side { top: 3.2rem; }
 .watch-hits { display: flex; flex-wrap: wrap; gap: .3rem; }
 .watch-hits .note { width: 100%; margin: 0; }
 .watch-hits button { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* --- the planner -------------------------------------------------------- */
+
+/* The settings, one field each under its own name, rather than a row of
+   labels and controls that reads as a sentence. Columns are as wide as the
+   control in them and wrap when the panel is narrow. */
+.plan-fields { display: grid; gap: .5rem 1.2rem; margin: .2rem 0 .7rem;
+               grid-template-columns: repeat(auto-fit, minmax(8rem, max-content));
+               align-items: end; }
+.plan-field { display: flex; flex-direction: column; gap: .15rem; }
+.plan-field > span { color: var(--stone-700); font-size: 12px; }
+.plan-field .picker, .plan-field .trainer-num { width: 100%; }
+
+/* A checkbox reads as one thing with its label, so it stays on its line. */
+.plan-switches { display: flex; flex-wrap: wrap; gap: .2rem 1.2rem;
+                 margin: 0 0 .8rem; }
+.plan-switch { display: inline-flex; align-items: center; gap: .35rem;
+               color: var(--stone-700); font-size: 12px; }
+
+/* The character's own numbers: a readout, in the same grid the creature cards
+   use, so a value is always under the name of the thing it is. */
+.plan-sheet { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+              gap: .35rem 1.2rem; margin: 0 0 1rem; }
+.plan-sheet > div { display: flex; flex-direction: column; }
+/* The creature cards colour a value with the game's own blood red, which reads
+   there as a threat. These are the player's own numbers, so they take the same
+   gold every other figure in the panel uses. */
+.plan-sheet dd { margin: 0; color: var(--gold); }
+.plan-note { color: var(--amber-lit); }
+
+/* Every cell here is a control or the name of one, so the row reads left to
+   right rather than being pushed against the numbers column on the right. */
+.plan-goals { max-width: 52rem; }
+.plan-goals th, .plan-goals td { text-align: left; }
+.plan-goals td:first-child, .plan-goals th:first-child { width: 1.6rem; }
+.plan-goals .trainer-num { width: 4rem; }
+.plan-goals td.plan-buttons { white-space: nowrap; text-align: right; }
+.plan-goals td.plan-buttons button + button { margin-left: .3rem; }
+
+.plan-summary { max-width: 74ch; margin: .1rem 0; color: var(--ink); }
+
+/* One column per goal, and the whole row is a verdict: held is quiet, a break
+   is not.
+   Sized to its content rather than to the panel: stretched to the full width a
+   two-goal plan puts its headers a hand's width from the ticks underneath
+   them, and the wrapper scrolls when the goals outgrow the column. Headers sit
+   on the same edge as their cells for the same reason -- the page's own table
+   rule right-aligns a header over a left-aligned column. */
+.plan-career { width: auto; font-variant-numeric: tabular-nums; }
+.plan-career th, .plan-career td { text-align: left; padding-right: 1.1rem;
+                                   white-space: nowrap; }
+.plan-career th:last-child, .plan-career td:last-child { padding-right: 0; }
+.plan-career td.plan-held { color: var(--verdant); }
+.plan-career td.plan-short { color: var(--blood-lit); }
+.plan-career td.plan-unreachable { color: var(--amber-lit); }
+.plan-career td.plan-later { color: var(--stone-600); }
+.plan-career .note { margin: 0; }
+
+/* The working, under the row it belongs to. Each goal gets its own block so
+   that two of them side by side do not read as one list of numbers. */
+.plan-evidence-row td { background: var(--stone-200); padding: .5rem .5rem .6rem;
+                        white-space: normal; }
+/* Measured against the window rather than against its contents. A table is as
+   wide as its widest cell, so working that sized itself would drag the whole
+   schedule out past any window and leave the columns scrolling for no reason.
+   Equal columns, so a goal's block is the same shape wherever it appears. */
+.plan-working { display: grid; gap: .8rem 1.8rem; width: min(60rem, 86vw);
+                grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
+.plan-evidence-block { margin: 0; min-width: 0; }
+/* One label column for every block, so the values line up down the row and
+   across it. Left to itself the grid sizes each block's labels separately and
+   no two values start in the same place. */
+/* Yours against theirs: two label-and-value pairs a row, and the line that
+   settles the goal across the whole width beneath them. */
+.plan-versus { display: grid; gap: .1rem .5rem; align-items: baseline;
+               grid-template-columns: max-content minmax(2.5rem, 1fr)
+                                      max-content minmax(2.5rem, 1fr); }
+.plan-column { grid-column: span 2; color: var(--stone-600); font-size: 11px;
+               letter-spacing: .08em; text-transform: uppercase; }
+.plan-label { color: var(--stone-700); }
+.plan-mine-value, .plan-theirs-value { display: flex; flex-wrap: wrap;
+                                       gap: 0 .35rem; color: var(--gold); }
+.plan-mine-value .note, .plan-theirs-value .note { flex-basis: 100%; margin: 0; }
+/* The comparison the verdict turns on. It carries the colour, because it is
+   the one line that says which way the block went. */
+.plan-decides { grid-column: 1 / -1; display: flex; flex-wrap: wrap;
+                gap: 0 .4rem; align-items: baseline; margin-top: .25rem;
+                padding-top: .25rem; border-top: 1px solid var(--stone-400); }
+.plan-decides .plan-label { color: inherit; }
+.plan-decides strong { font-variant-numeric: tabular-nums; }
+.plan-needs { color: var(--stone-700); }
+.plan-decides .note { flex-basis: 100%; margin: 0; }
+
+/* One line a goal, above the table that details it: held, or the levels where
+   it is not. */
+.plan-summary { display: flex; flex-direction: column; gap: .1rem;
+                margin: 0 0 .7rem; font-size: 12px;
+                font-variant-numeric: tabular-nums; }
+.plan-holds { color: var(--verdant); }
+.plan-fails { color: var(--blood-lit); }
+/* The key to the table under it: what the numbered columns are, and what a
+   cross carries beside it. Its own line, because it explains the table rather
+   than sitting alongside the control that opens the working. */
+.plan-legend { display: flex; flex-wrap: wrap; gap: .2rem 1.4rem;
+               margin: .1rem 0 .7rem; color: var(--stone-700); font-size: 12px; }
+.plan-legend-name { color: var(--stone-600); letter-spacing: .08em;
+                    text-transform: uppercase; }
+
+/* The goal columns are numbered, and the summary above is the key. */
+.plan-career th.plan-goal-col { color: var(--stone-600); }
+.plan-key { display: inline-block; min-width: 1.2rem; color: var(--stone-600); }
+
+/* The pool comparison: the row the plan is on is the one to read against. */
+.plan-pool-table { max-width: 30rem; }
+.plan-pool-table tr.plan-here th, .plan-pool-table tr.plan-here td { color: var(--amber-lit); }
+
+/* A policy the planner chose, rather than one the player pinned. */
+.plan-auto { margin-left: .35rem; color: var(--amber-dim); }
+
+/* The section's own heading row: what it is, and the controls that say which
+   character it is about. */
+.plan-heading { display: flex; align-items: baseline; flex-wrap: wrap;
+                gap: .5rem; margin-bottom: .3rem; }
+.plan-heading .curve-sub { margin: 0; }

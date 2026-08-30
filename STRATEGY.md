@@ -127,22 +127,31 @@ Level 16 is after the window closes. Bring a monk or an alchemist.
 Bonus points are 13% of your charisma, rounded, capped at 15. Charisma also
 rises 2 a level on its own, so a point spent early raises every later payout.
 
-**Put everything into charisma until it reads 100, then stop.**
+**Put everything into charisma until it reads 98, then stop.**
 
 | Roll | Spend through | Then top up | Spent | Never buy | Free after | Net gain | Return |
 |---|---|---|---|---|---|---|---|
-| 45 | level 5 | 4 at level 6 | 45 | 419 | 497 | **+78** | 1.7x |
-| 50 | level 4 | 8 at level 5 | 42 | 443 | 508 | +65 | 1.5x |
-| 52 | level 4 | 5 at level 5 | 40 | 451 | 511 | +60 | 1.5x |
-| 55 | level 4 | 1 at level 5 | 37 | 462 | 516 | +54 | 1.5x |
-| 60 | level 3 | 6 at level 4 | 34 | 482 | 525 | **+43** | 1.3x |
+| 45 | level 6 | none | 41 | 419 | 497 | **+78** | 1.9x |
+| 50 | level 5 | 4 at level 6 | 38 | 443 | 508 | +65 | 1.7x |
+| 52 | level 5 | 1 at level 6 | 36 | 451 | 511 | +60 | 1.7x |
+| 55 | level 4 | 10 at level 5 | 35 | 462 | 516 | +54 | 1.5x |
+| 60 | level 4 | 2 at level 5 | 30 | 482 | 525 | **+43** | 1.4x |
 
 Net gain is measured after paying for the charisma, and on every roll it is
-larger than the bill. Spend 45 points on a 45 roll and you finish with 78 more
+larger than the bill. Spend 41 points on a 45 roll and you finish with 78 more
 free points than if you had spent nothing. That is the whole case for buying.
 
-100 is not a delicate number. Anything from 95 to 103 costs the same within a
-point or two.
+Every even value from 98 to 104 ends the career on exactly the same budget, so
+where you stop above 98 does not matter. Where you stop below it does: 96 costs
+a point on every roll but 45. What that point buys is a place in the queue for
+the next step of the staircase.
+
+Charisma climbs 2 a level and the climb lands before the payout is read, so a
+roll of 60 that stops at 96 reaches 104 at level 9. Two points more, taken at
+level 5, put it on 98 and bring 104 forward to level 8, which is one training at
+13 points instead of 12. That is the whole of the difference, and it is why 98
+beats 96 by a point on every roll but 45, where the climb arrives on 96 already
+and the two points buy nothing.
 
 The worse your roll, the more it returns, so the gap between rolls shrinks from
 63 points to 28. A 45 that buys beats a 60 that does not.
