@@ -3430,6 +3430,34 @@
   const facedAt = (e) => Math.min(e.level, CAP);
 
   const ADVERSARY = ["absorption", "accuracy", "dexterity", "damage", "health"];
+  // Absorption, dexterity and health are the monster's. Accuracy and damage
+  // are an attack's, and a shooter has two attacks.
+  const OF_ATTACK = new Set(["accuracy", "damage"]);
+
+  /**
+   * A monster's attacks, each kept whole.
+   *
+   * Accuracy and damage come twice in the record: 34 and 40 for the blow, 50
+   * and 52 for the shot. Which one a monster uses is settled by distance
+   * rather than chosen: it shoots only while it has not closed, in a phase of
+   * its own that walks the spawn slots, and once it is engaged it swings. The
+   * two never land in the same round. So the pairs come back whole -- melee
+   * damage behind ranged accuracy is a blow the game cannot throw.
+   *
+   * The two pairs are close on eleven of the thirteen shooters, at most five
+   * points of accuracy and twenty-five of damage apart.
+   * The exceptions are the dwarf towers, which cannot close: the Fire Dwarf
+   * Tower shoots at 160 for 115 and carries 10 and 10 in the melee rows it
+   * never reaches.
+   */
+  function attacksOf(e) {
+    const blow = { accuracy: e.accuracy, damage: e.damage, shot: false };
+    return e.ranged
+      ? [blow, { accuracy: e.ranged_accuracy, damage: e.ranged_damage,
+                 shot: true }]
+      : [blow];
+  }
+
   const worstCache = new Map();
 
   /** Per stat, the most of it anything met by this level carries. */
@@ -3446,7 +3474,14 @@
                   attacks: { value: 0.25, monster: null } };
     for (const e of rows) {
       for (const f of ADVERSARY) {
-        if (!out[f] || e[f] > out[f].value) out[f] = { value: e[f], monster: e };
+        /* A threshold is priced against one stat at a time, so each attack's
+           own figure counts: the tower's 160 is an accuracy a character of 16
+           meets, whatever the tower swings for. */
+        for (const a of (OF_ATTACK.has(f) ? attacksOf(e) : [e])) {
+          if (!out[f] || a[f] > out[f].value) {
+            out[f] = { value: a[f], monster: e, shot: !!a.shot };
+          }
+        }
       }
       const size = groupSize(e);
       if (size > out.group.value) out.group = { value: size, monster: e };
@@ -3845,7 +3880,8 @@
      the verdict marked as such. `mine` or `theirs` may be absent where a row
      has only one side to it. */
   const versus = (mine, theirs) => ({ mine, theirs });
-  const decides = (label, value, needs, ok) => ({ label, value, needs, ok });
+  const decides = (label, value, needs, ok, monster) =>
+    ({ label, value, needs, ok, monster });
 
   /**
    * The monsters that can take a turn away by this level, and the absorption
@@ -3932,7 +3968,8 @@
       holds: (plan, me, at) => at.accuracy.value - me.absorption < 0,
       rows: (plan, me, at) => [
         versus(["Armor", me.armour],
-               ["Accuracy", at.accuracy.value, at.accuracy.monster]),
+               ["Accuracy", at.accuracy.value, at.accuracy.monster,
+                at.accuracy.shot && "shot"]),
         versus(["They hit", percentTarget(rollOdds(at.accuracy.value - me.absorption))],
                null),
         decides("Absorption", me.absorption, at.accuracy.value + 1,
@@ -3951,9 +3988,11 @@
         const margin = at.accuracy.value - me.absorption;
         return [
           versus(["Absorption", me.absorption],
-                 ["Accuracy", at.accuracy.value, at.accuracy.monster]),
+                 ["Accuracy", at.accuracy.value, at.accuracy.monster,
+                  at.accuracy.shot && "shot"]),
           versus(["Armor", me.armour],
-                 ["Per hit", perHit(at.damage.value, margin), at.damage.monster]),
+                 ["Per hit", perHit(at.damage.value, margin), at.damage.monster,
+                  at.damage.shot && "shot"]),
           decides("They hit", percentTarget(rollOdds(margin)),
                   percentTarget(target), rollOdds(margin) <= target + 1e-9),
         ];
@@ -4013,8 +4052,10 @@
       holds: (plan, me, at) => me.health > worstRound(me, at),
       rows: (plan, me, at) => [
         versus(["Absorption", me.absorption],
-               ["Accuracy", at.accuracy.value, at.accuracy.monster]),
-        versus(null, ["Damage", at.damage.value, at.damage.monster]),
+               ["Accuracy", at.accuracy.value, at.accuracy.monster,
+                at.accuracy.shot && "shot"]),
+        versus(null, ["Damage", at.damage.value, at.damage.monster,
+                      at.damage.shot && "shot"]),
         versus(null, [`Engaged`, at.group.value, at.group.monster]),
         decides("Health", me.health, Math.round(worstRound(me, at)),
                 me.health > worstRound(me, at)),
@@ -4191,10 +4232,16 @@
     return [...seen.values()];
   }
 
+  /* A rate is a fight repeated, so it is measured against attacks that exist:
+     each of the monster's own, whole, and the one that costs the most. For a
+     shooter that is the worst round of the fight rather than every round of
+     it, since which attack it has is the distance's to say. */
   function takenPerRound(me, foe) {
-    const margin = foe.accuracy - me.absorption;
-    return groupSize(foe) * attacksEach(foe)
-      * rollOdds(margin) * perHit(foe.damage, margin);
+    return Math.max(...attacksOf(foe).map((a) => {
+      const margin = a.accuracy - me.absorption;
+      return groupSize(foe) * attacksEach(foe)
+        * rollOdds(margin) * perHit(a.damage, margin);
+    }));
   }
 
   /** Kills before a rest, against one monster. */

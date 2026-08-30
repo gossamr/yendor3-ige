@@ -333,6 +333,23 @@ if (/Ice Dwarf/.test(early)) {
   problems.push("planner: level 20 is priced against a monster it cannot meet");
 }
 
+// A monster's shot is an attack of its own, and the two dwarf towers never
+// close, so their melee rows are not what a character answers. The Fire Dwarf
+// Tower arrives at 16 and shoots at 160; reading its blow instead puts the bar
+// at the Dwarf Scout's 119 and prices a fight the tower does not have. The
+// working has to say the shot set it, or an attribution to a monster whose own
+// card reads 10 is a contradiction.
+const takeHitAt = async (level) => planner.locator(
+  `.plan-career tbody tr[data-level="${level}"] + tr .plan-evidence-block`,
+  { hasText: "Take hit" }).first().innerText().catch(() => "");
+const tower = await takeHitAt(16);
+if (!/Accuracy\s*\n?160\b/.test(tower) || !tower.includes("Fire Dwarf Tower")) {
+  problems.push("planner: level 16 is not measured against the Fire Dwarf "
+    + `Tower's shot: ${JSON.stringify(tower)}`);
+} else if (!/shot/i.test(tower)) {
+  problems.push("planner: the bar the tower's shot set is not marked as a shot");
+}
+
 // With bosses counted, a character at the cap is measured against Paltivar,
 // which is the basis every endgame figure in STRATEGY.md is quoted against:
 // accuracy 240, absorption 170. It is level 45 and reaches a level-40 plan
