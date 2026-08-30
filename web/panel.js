@@ -78,7 +78,7 @@
 
   /* --- remembered selections -------------------------------------------- */
   //
-  // Which tab, which creature, which map. The panel is rebuilt and reloaded
+  // Which tab, which monster, which map. The panel is rebuilt and reloaded
   // while it sits open beside the game, and losing your place on every rebuild
   // costs more than the storage does. One object behind a Proxy, so an
   // ordinary assignment anywhere in the file persists and no tab has to
@@ -131,18 +131,70 @@
     return frag;
   }
 
+  /* --- the monster census ---------------------------------------------- */
+  //
+  // `data/spawns.json` is per map, holding which monsters stand on it and how
+  // many. Both directions of that are wanted. A monster's card asks where it
+  // is and a map asks what is on it, so the inverse is built once here rather
+  // than shipped twice. See docs/encounters.md.
+
+  const SPAWNS = D.spawns || {};
+  const BY_NAME = new Map(D.enemies.map((m) => [m.name, m]));
+
+  /** Monster name -> [{ map, count }], commonest first. */
+  const WHERE = (() => {
+    const out = {};
+    for (const [map, page] of Object.entries(SPAWNS)) {
+      for (const [name, count] of Object.entries(page.monsters)) {
+        (out[name] = out[name] || []).push({ map, count });
+      }
+    }
+    for (const list of Object.values(out)) {
+      list.sort((a, b) => b.count - a.count || (a.map < b.map ? -1 : 1));
+    }
+    return out;
+  })();
+
+  /**
+   * Move to another tab and land on a named thing.
+   *
+   * The search box filters every tab, so a query that hides the target would
+   * send the jump somewhere else. The maps tab falls back to the first page
+   * that still matches. Following a link is a request for one particular
+   * thing, so the filter is cleared out of its way.
+   */
+  function goTo(tab, apply) {
+    const search = $("#search");
+    if (search) search.value = "";
+    query = "";
+    apply();
+    ui.active = tab;
+    draw();
+  }
+
+  /** A chip that carries you to a map or a monster, with how many there are. */
+  function censusChip(label, count, onGo, hint) {
+    const b = el("button", { type: "button", className: "chip census",
+                             title: hint });
+    b.append(highlight(titleCase(label)),
+             el("span", { className: "census-n",
+                          textContent: `×${count}` }));
+    b.onclick = onGo;
+    return b;
+  }
+
   /* --- F2 monsters ------------------------------------------------------ */
 
   // The five the game's own Combat block prints. The two ranged rows it prints
   // beneath them go with the rest of the ranged attack instead, where the
-  // reader can see what the creature actually throws.
+  // reader can see what the monster actually throws.
   const STATS = ["health", "accuracy", "dexterity", "absorption", "damage"];
 
-  // Creatures with the same code at offset 28 share a kind. The field takes
-  // eleven values across the creatures the game lists, and the game names two
+  // Monsters with the same code at offset 28 share a kind. The field takes
+  // eleven values across the monsters the game lists, and the game names two
   // of them itself: INSECT and UNDEAD, from the enumeration its spells target.
   // What the other nine group by is not decoded, and a bare number is not
-  // something a reader can do anything with, so those creatures say nothing
+  // something a reader can do anything with, so those monsters say nothing
   // here. Any one of the nine goes in this slot the day it is named.
   const FAMILIES = { 9: "insect", 13: "undead" };
 
@@ -152,7 +204,7 @@
     const dl = el("dl", { className: "stats" });
     for (const f of fields) {
       const v = m[f];
-      // Ranged rows are blank on the game's own screen for melee creatures.
+      // Ranged rows are blank on the game's own screen for melee monsters.
       if (v === null || v === undefined) continue;
       dl.append(el("dt", { textContent: titleCase(f.replace(/_/g, " ")) }),
                 el("dd", { className: "num", textContent: (v || 0).toLocaleString() }));
@@ -162,8 +214,8 @@
 
   /**
    * The twelve effects, laid out the way the game lays them out: every effect
-   * on its own row whether or not the creature has it, so the shape of a
-   * creature's defenses reads at a glance and rows line up between creatures.
+   * on its own row whether or not the monster has it, so the shape of a
+   * monster's defenses reads at a glance and rows line up between monsters.
    */
   function effectTable(m) {
     const immune = new Set(m.immune);
@@ -188,9 +240,9 @@
   function monsterDetail(m) {
     const card = el("div", { className: "card" });
 
-    // The creature's own picture, at the size the game stores it, beside its
-    // name. It is the first thing that says which creature this is, so it goes
-    // above everything the creature does.
+    // The monster's own picture, at the size the game stores it, beside its
+    // name. It is the first thing that says which monster this is, so it goes
+    // above everything the monster does.
     const title = el("div", {}, [
       el("h3", { textContent: titleCase(m.name) }),
       el("p", { className: "note",
@@ -242,7 +294,7 @@
           width: art.width, height: art.height, loading: "lazy",
         }));
       }
-      // The chance is how often the creature shoots rather than closing to
+      // The chance is how often the monster shoots rather than closing to
       // melee, so it belongs beside the two numbers that say what the shot
       // does when it lands.
       const rows = [["Fires on", `${m.ranged.chance}% of turns`],
@@ -276,19 +328,48 @@
       }
     }
 
+    // Where the monster stands. Each one is placed on a cell of the world
+    // grid and killed once, so this is the whole of what the game holds: the
+    // maps, the count on each, and the experience all of them together pay.
+    const where = WHERE[m.name] || [];
+    if (where.length) {
+      const total = where.reduce((n, w) => n + w.count, 0);
+      card.append(el("h5", { textContent: "Locations",
+                             style: "margin-top:1.1rem" }));
+      const chips = el("div", { className: "chips" });
+      for (const w of where) {
+        chips.append(censusChip(w.map, w.count,
+          () => goTo("f1", () => { ui.mapPick = w.map; }),
+          `${w.count} on ${titleCase(w.map)}. Open the map.`));
+      }
+      card.append(chips);
+      // A monster placed once needs no line. The chip above already names its
+      // one map, and multiplying its experience by one only repeats the
+      // Rewards block. That a kill is permanent holds for every monster, so it
+      // is said once, in the manual's own section on earning experience,
+      // rather than on all 71 cards.
+      if (total > 1) {
+        const worth = total * (m.experience || 0);
+        card.append(el("p", { className: "note", style: "margin:.5rem 0 0",
+          textContent: `${total} in the game, on ${where.length} `
+            + `${where.length === 1 ? "map" : "maps"}, worth `
+            + `${worth.toLocaleString()} experience in all.` }));
+      }
+    }
+
     // The rest of the record (the flag words, the attack ids, the sound
     // numbers, where a hit graphic lands) is in data/enemies.json and
-    // docs/combat.md. Everything a creature does with it is already on this
+    // docs/combat.md. Everything a monster does with it is already on this
     // card, and the numbers themselves are not something a player can act on.
     return card;
   }
 
   // The 72nd record is the game's own placeholder, named NOT USED: every field
   // zero, no screen of its own to check against, and a sprite field of 0 that
-  // points at the tree the creature artwork happens to start after. The decode
+  // points at the tree the monster artwork happens to start after. The decode
   // keeps it, because it is what the record says; the clue book does not list
   // it and neither does this.
-  const CREATURES = D.enemies.filter((m) => m.listed);
+  const MONSTERS = D.enemies.filter((m) => m.listed);
 
   // Level first, because that is the order the table itself is built in: every
   // other statistic is grown from it, so walking the list by level walks it
@@ -297,12 +378,12 @@
 
   function renderMonsters(root) {
     root.textContent = "";
-    const hits = CREATURES.filter((m) => matches(m.name)).sort(byLevel);
-    if (!hits.length) return root.append(el("p", { className: "empty", textContent: "No creature matches." }));
+    const hits = MONSTERS.filter((m) => matches(m.name)).sort(byLevel);
+    if (!hits.length) return root.append(el("p", { className: "empty", textContent: "No monster matches." }));
     if (!hits.some((m) => m.name === ui.monsterPick)) ui.monsterPick = hits[0].name;
 
     const pick = el("select", { className: "picker" });
-    pick.setAttribute("aria-label", "Creature");
+    pick.setAttribute("aria-label", "Monster");
     for (const m of hits) {
       pick.append(el("option", {
         value: m.name, selected: m.name === ui.monsterPick,
@@ -323,7 +404,7 @@
     root.append(el("div", { className: "picker-row" }, [
       pick,
       el("span", { className: "note",
-                   textContent: `${hits.length} creature${hits.length === 1 ? "" : "s"}` }),
+                   textContent: `${hits.length} monster${hits.length === 1 ? "" : "s"}` }),
     ]));
     root.append(detail);
   }
@@ -351,26 +432,26 @@
     roster: 0xCEDD,       // the ten 500-byte slots, header first
     characters: 0xD0D1,   // slot 1, the first character record
     character: 0x1F4,     // 500 bytes each
-    // The fight. One word names whichever engaged creature is selected and the
-    // three buffers follow it; the eighty spawn slots hold every creature out
-    // on the map. Both are the 156-byte creature struct.
+    // The fight. One word names whichever engaged monster is selected and the
+    // three buffers follow it; the eighty spawn slots hold every monster out
+    // on the map. Both are the 156-byte monster struct.
     selected: 0x54B6,
     engaged: 0x54B8,
     engagedSlots: 3,
     spawn: 0x122C,
     spawnSlots: 80,
-    creature: 0x9C,
+    monster: 0x9C,
   };
 
-  // The creature struct: a 50-byte header holding what the creature is doing
+  // The monster struct: a 50-byte header holding what the monster is doing
   // now, then the 106-byte record copied out of WORLD.DAT, so a record offset
   // is read at +0x32. Health now is the header's own word: the record's is
-  // what the creature started with, and never moves. See docs/combat.md.
+  // what the monster started with, and never moves. See docs/combat.md.
   const MOB = {
     id: 0,               // the object's number; zero means the slot is free
     impaired: 0x0C,      // & 0x3010 keeps it out of the turn list (image 0x115b)
     health: 0x10,        // at or below zero is dead (image 0x1298)
-    record: 0x32,        // where the creature's own 106 bytes begin
+    record: 0x32,        // where the monster's own 106 bytes begin
     name: 0x32, nameField: 13,
     full: 0x32 + 30, level: 0x32 + 32,
   };
@@ -393,7 +474,7 @@
   // cells across, and a map is one (area, level) block of it.
   const BANDS = 24, CELLS = 40;
   const MOB_RECORD = 106;   // the enemy record, docs/monsters.md
-  // The nine conditions a creature can inflict, plus the bit set when health
+  // The nine conditions a monster can inflict, plus the bit set when health
   // reaches zero. `docs/combat.md` has what each costs the character.
   const CONDITIONS = [
     [0x8000, "sick"], [0x4000, "poisoned"], [0x2000, "diseased"],
@@ -498,7 +579,7 @@
 
   const u16 = (b, at) => b[at] | (b[at + 1] << 8);
   // Four bytes, most significant pair first, two decimal digits a byte, so the
-  // same packing the creature rewards use.
+  // same packing the monster rewards use.
   const bcd = (b, at) => [0, 1, 2, 3].reduce(
     (v, i) => v * 100 + (b[at + i] >> 4) * 10 + (b[at + i] & 0xF), 0);
   const bcdBytes = (v) => {
@@ -675,7 +756,7 @@
                                 id: "trainer-onmap" });
     body.append(el("p", { className: "note" }, [
       onMap, el("label", { htmlFor: "trainer-onmap",
-                           textContent: " Creatures out on the map as well" })]));
+                           textContent: " Monsters out on the map as well" })]));
     trainerMobs = { table: mobTable, onMap };
 
     // Handing over an item needs somewhere to put it: the character panel's
@@ -829,7 +910,7 @@
         await applyFrozen(base);
         updateTrainer(party);
         updateHeader(await readHeader(base));
-        updateCreatures(await readCreatures(base, trainerMobs.onMap.checked));
+        updateMonsters(await readMonsters(base, trainerMobs.onMap.checked));
         await tickWatch(base);
         setLive(true);
       } catch (e) {
@@ -1131,31 +1212,31 @@
   /* --- the fight -------------------------------------------------------- */
 
   /** What is engaged, and what else is out on the map if that was asked for. */
-  async function readCreatures(base, includeMap) {
-    // The selected-creature pointer and the three buffers behind it are
+  async function readMonsters(base, includeMap) {
+    // The selected-monster pointer and the three buffers behind it are
     // contiguous, so they are one read.
     const buf = await emulator.peek(base + DS.selected,
-                                    2 + DS.engagedSlots * DS.creature);
+                                    2 + DS.engagedSlots * DS.monster);
     const selected = u16(buf, 0);
     const out = [];
     for (let i = 0; i < DS.engagedSlots; i += 1) {
-      const off = 2 + i * DS.creature;
+      const off = 2 + i * DS.monster;
       if (!u16(buf, off + MOB.id)) continue;
-      const where = DS.engaged + i * DS.creature;
-      out.push(creature(buf, off, base + where, `Engaged ${i + 1}`, where === selected));
+      const where = DS.engaged + i * DS.monster;
+      out.push(monster(buf, off, base + where, `Engaged ${i + 1}`, where === selected));
     }
     if (includeMap) {
-      const slots = await emulator.peek(base + DS.spawn, DS.spawnSlots * DS.creature);
+      const slots = await emulator.peek(base + DS.spawn, DS.spawnSlots * DS.monster);
       for (let i = 0; i < DS.spawnSlots; i += 1) {
-        const off = i * DS.creature;
+        const off = i * DS.monster;
         if (!u16(slots, off + MOB.id)) continue;
-        out.push(creature(slots, off, base + DS.spawn + off, `Slot ${i}`, false));
+        out.push(monster(slots, off, base + DS.spawn + off, `Slot ${i}`, false));
       }
     }
     return out;
   }
 
-  function creature(b, off, at, where, selected) {
+  function monster(b, off, at, where, selected) {
     const field = (k) => asText(b.slice(off + MOB.name + k * MOB.nameField,
                                         off + MOB.name + (k + 1) * MOB.nameField));
     return {
@@ -1170,7 +1251,7 @@
     };
   }
 
-  function updateCreatures(mobs) {
+  function updateMonsters(mobs) {
     const { table } = trainerMobs;
     const body = table.querySelector("tbody");
     mobNote.textContent = mobs.length ? "" : "Nothing in the fight.";
@@ -1216,7 +1297,7 @@
   // on its own. It is one collapsed block at the foot of the tab so that the
   // controls above it, the ones that play the game, are what the tab is.
 
-  // The creature record's combat fields, as record offsets; `docs/monsters.md`
+  // The monster record's combat fields, as record offsets; `docs/monsters.md`
   // has the rest. Split because the four flag words are read and written in
   // hex and the rest in decimal.
   const MOB_FIELDS = [
@@ -1226,7 +1307,7 @@
   const MOB_FLAGS = [
     [96, "Word 96"], [98, "Word 98"], [100, "Immunity"], [102, "Resistance"],
   ];
-  // The turn-list builder leaves out a creature with any of these; setting them
+  // The turn-list builder leaves out a monster with any of these; setting them
   // holds a fight still while it is read (image 0x115b).
   const IMPAIRED = 0x3010;
 
@@ -1289,17 +1370,17 @@
     sent(posCell);
   }
 
-  /* Creatures: the record itself, live. `tools/fight_probe.js` does the same
+  /* Monsters: the record itself, live. `tools/fight_probe.js` does the same
      thing by patching WORLD.DAT before boot and paying for a boot per reading;
-     this changes a creature that is already standing there. A shot resolves
+     this changes a monster that is already standing there. A shot resolves
      against the map slot and a swing against the engaged buffer, so an
      experiment on a volley edits the slot; tick the map box above to reach
      one. */
   function renderMobEdit(root) {
-    root.append(el("h4", { className: "curve-sub", textContent: "Creatures" }));
+    root.append(el("h4", { className: "curve-sub", textContent: "Monsters" }));
     const row = el("div", { className: "picker-row" });
     mobPick = el("select", { className: "picker debug-mob" });
-    mobPick.setAttribute("aria-label", "Which creature");
+    mobPick.setAttribute("aria-label", "Which monster");
     mobPick.onchange = () => updateMobEdit(trainerMobList);
     const pacify = el("button", { type: "button", className: "toggle debug-pacify",
                                   textContent: "Pacify" });
@@ -1328,7 +1409,7 @@
     if (dsBase === null) return;
     button.textContent = "\u2026";
     for (let i = 0; i < DS.spawnSlots; i += 1) {
-      await write(dsBase + DS.spawn + i * DS.creature + MOB.id, bytes16(0));
+      await write(dsBase + DS.spawn + i * DS.monster + MOB.id, bytes16(0));
     }
     button.textContent = "Clear the map";
   }
@@ -1403,8 +1484,8 @@
     ["Character 1", DS.characters, 128],
     ["Combat flags", 0x5370, 32],
     ["Turn list", 0x5696, 112],
-    ["Engaged 1", DS.engaged, DS.creature],
-    ["Spawn slot 0", DS.spawn, DS.creature],
+    ["Engaged 1", DS.engaged, DS.monster],
+    ["Spawn slot 0", DS.spawn, DS.monster],
     ["Attack table", 0x96DA, 96],
     ["Attack readouts", 0x0F4A, 80],
   ];
@@ -1788,7 +1869,7 @@
     if (!s.target) return null;
     const bits = [];
     if (s.target.includes("visible")) bits.push("Visible");
-    // A spell restricted to one kind of creature is named by that kind: the
+    // A spell restricted to one kind of monster is named by that kind: the
     // restriction is the whole point, so the word carries it on its own.
     if (s.target.includes("undead")) bits.push("Undead");
     if (s.target.includes("insect")) bits.push("Insect");
@@ -2334,6 +2415,29 @@
     // Keep the chosen area visible when the selection moves under a search.
     const current = list.querySelector('[aria-current="true"]');
     if (current) current.scrollIntoView({ block: "nearest" });
+
+    // What stands on this map, before the legend, because a player reaching
+    // for a map wants to know what is on it first. Seven of the 54 slots hold
+    // nothing: the Athaneum, the two orders, Elfin City, Delia's Island, the
+    // Gold Mine and the first level of Vishan's Stronghold.
+    const here = SPAWNS[shown.title];
+    if (here) {
+      root.append(el("h3", { className: "curve-head",
+        textContent: `Monsters (${here.total})` }));
+      const mobs = el("div", { className: "chips" });
+      for (const [name, count] of Object.entries(here.monsters)) {
+        const m = BY_NAME.get(name);
+        mobs.append(censusChip(name, count,
+          () => goTo("f2", () => { ui.monsterPick = name; }),
+          m ? `Level ${m.level}, ${m.experience.toLocaleString()} experience `
+              + `each. Open its page.`
+            : "Open its page."));
+      }
+      root.append(mobs);
+      root.append(el("p", { className: "note", style: "margin:.5rem 0 0",
+        textContent: `${here.experience.toLocaleString()} experience and `
+          + `${here.gold.toLocaleString()} gold.` }));
+    }
 
     // The legend, numbered to match the badges on the map. Both come from the
     // marker records, which carry each line's own square and page, so the
@@ -3238,15 +3342,15 @@
   // hit less than a quarter of the time, act before what it is fighting -- and
   // the planner walks every level from where the character stands to the cap
   // saying where each goal holds, where it breaks, what it costs to hold, and
-  // which creature set the bar.
+  // which monster set the bar.
   //
   // What it measures against is the worst the level can put in front of you:
-  // per stat, the highest value among every creature met by that level. That
-  // is deliberately not one creature. A character that lands every swing on
-  // the level's hardest creature and misses the one wearing the most armor has
-  // not met the goal, so each stat comes from whichever creature carries the
+  // per stat, the highest value among every monster met by that level. That
+  // is deliberately not one monster. A character that lands every swing on
+  // the level's hardest monster and misses the one wearing the most armor has
+  // not met the goal, so each stat comes from whichever monster carries the
   // most of it and the evidence rows name them. Bosses are left out until
-  // asked for; a creature above the cap is one a character at the cap meets,
+  // asked for; a monster above the cap is one a character at the cap meets,
   // which is how Paltivar enters a level-40 plan.
   //
   // The trainer is not needed. With it on, the character is read out of the
@@ -3313,7 +3417,7 @@
   // floor of a dungeon: they are the fights a party plans for rather than the
   // ones it budgets a career around.
   /* Attacks one of these lands on one character in a round. An ordinary
-     creature draws its target from the four party slots, so it averages a
+     monster draws its target from the four party slots, so it averages a
      quarter; one carrying PARTY ATTACK swings at every character, so it lands
      a whole one on each. */
   const PARTY_ATTACK_BIT = 0x1000;
@@ -3333,22 +3437,22 @@
     const key = `${level}:${bosses}`;
     if (worstCache.has(key)) return worstCache.get(key);
     const counted = D.enemies.filter((e) => e.listed && (bosses || !isBoss(e)));
-    // Below the first creature in the game there is nothing to measure
+    // Below the first monster in the game there is nothing to measure
     // against, so the lowest level that has one stands in for it.
     const met = counted.filter((e) => facedAt(e) <= level);
     const rows = met.length ? met
       : counted.filter((e) => facedAt(e) === Math.min(...counted.map(facedAt)));
-    const out = { group: { value: 1, creature: null },
-                  attacks: { value: 0.25, creature: null } };
+    const out = { group: { value: 1, monster: null },
+                  attacks: { value: 0.25, monster: null } };
     for (const e of rows) {
       for (const f of ADVERSARY) {
-        if (!out[f] || e[f] > out[f].value) out[f] = { value: e[f], creature: e };
+        if (!out[f] || e[f] > out[f].value) out[f] = { value: e[f], monster: e };
       }
       const size = groupSize(e);
-      if (size > out.group.value) out.group = { value: size, creature: e };
+      if (size > out.group.value) out.group = { value: size, monster: e };
       const rate = attacksEach(e);
       if (!out.attacks || rate > out.attacks.value) {
-        out.attacks = { value: rate, creature: e };
+        out.attacks = { value: rate, monster: e };
       }
     }
     worstCache.set(key, out);
@@ -3744,7 +3848,7 @@
   const decides = (label, value, needs, ok) => ({ label, value, needs, ok });
 
   /**
-   * The creatures that can take a turn away by this level, and the absorption
+   * The monsters that can take a turn away by this level, and the absorption
    * that shuts those out.
    *
    * Measured against what a character of this level meets, like every other
@@ -3754,13 +3858,13 @@
    * and stops at 186 for good.
    */
   function incapacitatorsBy(level) {
-    const met = PLAN.incapacitating.creatures
+    const met = PLAN.incapacitating.monsters
       .filter((c) => Math.min(c.level, CAP) <= level);
     return { met,
              needs: met.length ? Math.max(...met.map((c) => c.accuracy)) + 1 : 0 };
   }
 
-  /** One round with every engaged creature landing on the same character. */
+  /** One round with every engaged monster landing on the same character. */
   const worstRound = (me, at) =>
     at.group.value * perHit(at.damage.value, at.accuracy.value - me.absorption);
 
@@ -3773,7 +3877,7 @@
       holds: (plan, me, at) => me.dexterity >= at.dexterity.value,
       rows: (plan, me, at) => [
         decides("Dexterity", me.dexterity, at.dexterity.value,
-                me.dexterity >= at.dexterity.value, at.dexterity.creature),
+                me.dexterity >= at.dexterity.value, at.dexterity.monster),
       ],
     },
 
@@ -3789,7 +3893,7 @@
         const margin = me.attack - at.absorption.value;
         return [
           versus([attackName(plan), me.attack],
-                 ["Absorption", at.absorption.value, at.absorption.creature]),
+                 ["Absorption", at.absorption.value, at.absorption.monster]),
           versus(["Hit", percentTarget(rollOdds(margin))], null),
           decides("Margin", margin, K.attack_roll, margin >= K.attack_roll),
         ];
@@ -3809,7 +3913,7 @@
         const blow = blowOf(plan, me, at);
         return [
           versus([attackName(plan), me.attack],
-                 ["Absorption", at.absorption.value, at.absorption.creature]),
+                 ["Absorption", at.absorption.value, at.absorption.monster]),
           versus([blow.name, blow.damage], null),
           versus(["Per hit", perHit(blow.damage, margin)], null),
           decides("Margin", margin, FULL_DAMAGE, margin >= FULL_DAMAGE),
@@ -3828,7 +3932,7 @@
       holds: (plan, me, at) => at.accuracy.value - me.absorption < 0,
       rows: (plan, me, at) => [
         versus(["Armor", me.armour],
-               ["Accuracy", at.accuracy.value, at.accuracy.creature]),
+               ["Accuracy", at.accuracy.value, at.accuracy.monster]),
         versus(["They hit", percentTarget(rollOdds(at.accuracy.value - me.absorption))],
                null),
         decides("Absorption", me.absorption, at.accuracy.value + 1,
@@ -3847,9 +3951,9 @@
         const margin = at.accuracy.value - me.absorption;
         return [
           versus(["Absorption", me.absorption],
-                 ["Accuracy", at.accuracy.value, at.accuracy.creature]),
+                 ["Accuracy", at.accuracy.value, at.accuracy.monster]),
           versus(["Armor", me.armour],
-                 ["Per hit", perHit(at.damage.value, margin), at.damage.creature]),
+                 ["Per hit", perHit(at.damage.value, margin), at.damage.monster]),
           decides("They hit", percentTarget(rollOdds(margin)),
                   percentTarget(target), rollOdds(margin) <= target + 1e-9),
         ];
@@ -3868,11 +3972,11 @@
         const blow = blowOf(plan, me, at);
         return [
           versus([blow.name, blow.damage],
-                 ["Absorption", at.absorption.value, at.absorption.creature]),
+                 ["Absorption", at.absorption.value, at.absorption.monster]),
           versus(["Output", Math.round(one)], null),
           decides(`Output × ${target}`, Math.round(one * target),
                   at.health.value, one * target >= at.health.value,
-                  at.health.creature),
+                  at.health.monster),
         ];
       },
     },
@@ -3890,7 +3994,7 @@
         const { met, needs } = incapacitatorsBy(me.level);
         const rows = [versus(["Armor", me.armour], null)];
         for (const c of met) {
-          /* The label is the creature's name, so tagging the value with it
+          /* The label is the monster's name, so tagging the value with it
              again would say it twice. */
           rows.push(versus(null, [titleCase(c.name), c.accuracy, null,
                                   c.condition.toLowerCase()]));
@@ -3909,9 +4013,9 @@
       holds: (plan, me, at) => me.health > worstRound(me, at),
       rows: (plan, me, at) => [
         versus(["Absorption", me.absorption],
-               ["Accuracy", at.accuracy.value, at.accuracy.creature]),
-        versus(null, ["Damage", at.damage.value, at.damage.creature]),
-        versus(null, [`Engaged`, at.group.value, at.group.creature]),
+               ["Accuracy", at.accuracy.value, at.accuracy.monster]),
+        versus(null, ["Damage", at.damage.value, at.damage.monster]),
+        versus(null, [`Engaged`, at.group.value, at.group.monster]),
         decides("Health", me.health, Math.round(worstRound(me, at)),
                 me.health > worstRound(me, at)),
       ],
@@ -3930,20 +4034,20 @@
         const cast = bestCast(plan, me, at);
         if (!cast) {
           return [decides("Spell", "\u2014", at.health.value, false,
-                          at.health.creature)];
+                          at.health.monster)];
         }
         const rows = [
           versus(["Casting", me.casting],
-                 ["Absorption", at.absorption.value, at.absorption.creature]),
+                 ["Absorption", at.absorption.value, at.absorption.monster]),
           versus(["Spell", titleCase(cast.spell.name)], null),
           versus(["Damage", cast.spell.damage], null),
           versus(["Cost", cast.spell.mp], null),
         ];
         if (cast.halved) {
-          rows.push(versus(null, ["Resisted", "\u00d70.5", at.health.creature]));
+          rows.push(versus(null, ["Resisted", "\u00d70.5", at.health.monster]));
         }
         rows.push(decides("Lands", Math.round(cast.landed), at.health.value,
-                          cast.landed >= at.health.value, at.health.creature));
+                          cast.landed >= at.health.value, at.health.monster));
         return rows;
       },
     },
@@ -3960,7 +4064,7 @@
         const cast = plan.character.casts ? castAgainst(plan, me, foe) : null;
         const output = cast ? cast.landed
           : swing(me.damage, me.attack, foe.absorption);
-        /* The fight is one creature's, so it is named once, on the first row
+        /* The fight is one monster's, so it is named once, on the first row
            it appears in rather than against every number it carries. */
         const rows = [
           versus(["Output", Math.round(output)], ["Health", foe.health, foe]),
@@ -4030,7 +4134,7 @@
    *
    * A caster's blow is its best spell rather than the weapon it is not
    * swinging, so the damage behind the tempo and full-damage goals is read off
-   * the spell -- and a spell the creature resists or is immune to is picked
+   * the spell -- and a spell the monster resists or is immune to is picked
    * around by bestCast rather than counted at full value.
    */
   function blowOf(plan, me, at) {
@@ -4046,7 +4150,7 @@
    * Two currencies bound a stretch of play. Magic runs out, and a caster's
    * pool divided by what it throws is how many times it throws it. Health runs
    * out, and what refills it is the same rest, so the damage taken killing one
-   * creature says how many can be killed before that rest is due. A weapon
+   * monster says how many can be killed before that rest is due. A weapon
    * costs nothing to swing, so a martial is bounded by the second alone; a
    * caster is bounded by whichever runs out first.
    *
@@ -4062,26 +4166,26 @@
   }
 
   /**
-   * A rate is priced against one real creature, not against the worst of every
+   * A rate is priced against one real monster, not against the worst of every
    * stat at once.
    *
-   * Taking each stat from whichever creature carries the most of it is right
+   * Taking each stat from whichever monster carries the most of it is right
    * for a threshold: landing every swing on the best-armoured thing of the
    * level and being untouchable by the fastest are separate promises, and each
    * has to hold. A rate is not a promise, it is a fight repeated, and the
-   * chimera describes a fight nobody has: at level 30 it puts three creatures
+   * chimera describes a fight nobody has: at level 30 it puts three monsters
    * in front of you, each with the Ice Dwarf's damage, the Ghoul's accuracy,
    * the Wisp's health and party attack, and every character in the game
    * manages one kill against it.
    *
-   * So the rate is measured against each creature that is extreme in something
+   * So the rate is measured against each monster that is extreme in something
    * -- five or six of them a level -- and the worst answer wins. That is still
    * the worst case, and it is a fight that exists.
    */
   function restFoes(at) {
     const seen = new Map();
     for (const field of ADVERSARY.concat(["group", "attacks"])) {
-      const found = at[field] && at[field].creature;
+      const found = at[field] && at[field].monster;
       if (found) seen.set(found.name, found);
     }
     return [...seen.values()];
@@ -4093,7 +4197,7 @@
       * rollOdds(margin) * perHit(foe.damage, margin);
   }
 
-  /** Kills before a rest, against one creature. */
+  /** Kills before a rest, against one monster. */
   function killsAgainst(plan, me, foe) {
     const cast = plan.character.casts ? castAgainst(plan, me, foe) : null;
     const output = plan.character.casts
@@ -4116,7 +4220,7 @@
     return Math.floor(Math.min(...foes.map((foe) => killsAgainst(plan, me, foe))));
   }
 
-  /** The creature a rate is worst against, for the evidence to name. */
+  /** The monster a rate is worst against, for the evidence to name. */
   function worstRestFoe(plan, me, at) {
     let worst = null, least = Infinity;
     for (const foe of restFoes(at)) {
@@ -4136,18 +4240,18 @@
   }
 
   // A spell's blow carries bit 13 when it is the kind a spell-resistant
-  // creature halves, which is 59 of the 70 damage spells.
+  // monster halves, which is 59 of the 70 damage spells.
   const BLOW_SPELL = 0x2000;
 
   /** The best spell the character knows here, and what it delivers.
    *
    * Immunity removes a spell from the list rather than reducing it, and
-   * resistance halves what lands. Both are read off the creature whose health
+   * resistance halves what lands. Both are read off the monster whose health
    * the cast has to clear, which is the one the goal is about. */
   const bestCast = (plan, me, at) =>
-    castAgainst(plan, me, at.health.creature, at.absorption.value);
+    castAgainst(plan, me, at.health.monster, at.absorption.value);
 
-  /** The same, against one creature and its own armor. */
+  /** The same, against one monster and its own armor. */
   function castAgainst(plan, me, foe, absorption) {
     const cls = classAt(plan.character.code);
     if (!cls.magic_blend.length) return null;
@@ -4161,7 +4265,7 @@
       const learned = (s.classes || []).filter((c) => c.class === name)
         .map((c) => c.level);
       if (!learned.length || Math.min(...learned) > me.level) continue;
-      // A creature immune to the spell's element takes nothing at all from it,
+      // A monster immune to the spell's element takes nothing at all from it,
       // so the spell is not an option rather than a halved one. The 39 damage
       // spells that carry no element cannot be shut out this way.
       if ((s.element || []).some((e) => immune.has(e.toUpperCase()))) continue;
@@ -4896,7 +5000,7 @@
    * The two ends of section 7 of the strategy guide, computed rather than
    * quoted: buying the pool longer widens it, and every level spent buying it
    * is a level not spent on casting, which is what makes the spell land. A
-   * dead level is one where nothing the character knows kills a creature of
+   * dead level is one where nothing the character knows kills a monster of
    * its own level in one cast, and the fallback there is a level-1 spell and
    * twenty casts.
    *
@@ -4913,7 +5017,7 @@
       const rows = walk(trial);
       const last = rows[rows.length - 1];
       /* Counted from level 12, where a caster first has a spell worth the
-         question. Below it nothing kills a creature of its level in one cast
+         question. Below it nothing kills a monster of its level in one cast
          whatever the pool, so counting those levels would say the same thing
          about every policy. */
       let dead = 0, cost = 0;
@@ -5196,18 +5300,18 @@
                                   textContent: `${held ? "\u2713" : "\u2717"} ${goal.describe(g.target)}` }));
 
       /* Yours on the left, what you are up against on the right, and the line
-         that settles it across the bottom. A creature's name goes under the
+         that settles it across the bottom. A monster's name goes under the
          number it carries rather than beside it, where it would set the
          column's width. */
       const grid = el("div", { className: "plan-versus" });
       const side = (cell, which) => {
         if (!cell) return [el("span", {}), el("span", {})];
-        const [label, value, creature, aside] = cell;
+        const [label, value, monster, aside] = cell;
         const box = el("span", { className: `plan-${which}-value` },
                        [document.createTextNode(String(value))]);
-        if (creature && creature.name) {
+        if (monster && monster.name) {
           box.append(el("span", { className: "note", textContent:
-            `${titleCase(creature.name)} ${creature.level}` }));
+            `${titleCase(monster.name)} ${monster.level}` }));
         }
         if (aside) box.append(el("span", { className: "note", textContent: aside }));
         return [el("span", { className: "plan-label", textContent: label }), box];
@@ -5228,9 +5332,9 @@
                        el("strong", { textContent: String(entry.value) }),
                        el("span", { className: "plan-needs",
                                     textContent: `needs ${entry.needs}` }));
-        if (entry.creature && entry.creature.name) {
+        if (entry.monster && entry.monster.name) {
           settled.append(el("span", { className: "note", textContent:
-            `${titleCase(entry.creature.name)} ${entry.creature.level}` }));
+            `${titleCase(entry.monster.name)} ${entry.monster.level}` }));
         }
         grid.append(settled);
       }
@@ -5339,7 +5443,7 @@
     }
     search.oninput = () => { query = search.value.trim().toLowerCase(); draw(); };
 
-    // Nothing here fires while a field has focus, so typing a creature's name
+    // Nothing here fires while a field has focus, so typing a monster's name
     // into the search box never navigates. Modified keys are the browser's.
     addEventListener("keydown", (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;

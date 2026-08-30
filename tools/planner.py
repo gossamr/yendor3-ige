@@ -11,13 +11,13 @@ where the model lives; this is the shape it travels in. Two things follow from
 that:
 
 - Every number is computed, none is typed. The absorption that shuts out the
-  four incapacitating creatures is read off their records rather than quoted
+  four incapacitating monsters is read off their records rather than quoted
   from `STRATEGY.md`, so a re-decode moves both together.
 - What the panel does with the tables -- which goals it offers, which
   archetypes group them -- is not here. That is ours rather than the game's,
   and it lives in `web/panel.js` beside the rest of the panel's own content.
 
-What the panel derives for itself, and so is absent here: the worst creature at
+What the panel derives for itself, and so is absent here: the worst monster at
 each level, which is a scan of `enemies` it already holds; the experience
 ladder and the bonus-point staircase, which are in `leveling`; and the odds
 curve, `pct` and the attribute bonus, which are four lines of arithmetic
@@ -42,7 +42,7 @@ import skills as S
 INCAPACITATING = ("FROZEN", "PARALYZE", "STONING")
 
 # Attack skills a character fights with. The six non-combat skills are measured
-# against fixed rungs rather than against a creature, so no goal reads them.
+# against fixed rungs rather than against a monster, so no goal reads them.
 ATTACK_SKILLS = ("projectile", "slashing", "bashing", "polearm")
 
 
@@ -146,7 +146,7 @@ def weapons(items: list[dict] | None = None) -> dict:
 
 
 def incapacitating(enemies: list[dict]) -> dict:
-    """The creatures that end a character's fight, and the absorption that
+    """The monsters that end a character's fight, and the absorption that
     shuts them all out.
 
     Freezing, paralysis and stoning take the character out entirely, where the
@@ -160,7 +160,7 @@ def incapacitating(enemies: list[dict]) -> dict:
     rows.sort(key=lambda e: e["accuracy"])
     return {
         "absorption": max((e["accuracy"] for e in rows), default=0) + 1,
-        "creatures": [{"name": e["name"], "level": e["level"],
+        "monsters": [{"name": e["name"], "level": e["level"],
                        "accuracy": e["accuracy"],
                        "condition": next(a for a in e["attacks"]
                                          if a in INCAPACITATING)}
@@ -191,4 +191,4 @@ if __name__ == "__main__":
     inc = block["incapacitating"]
     print(f'absorption {inc["absorption"]} shuts out '
           + ", ".join(f'{c["name"].title()} ({c["condition"].lower()}, '
-                      f'level {c["level"]})' for c in inc["creatures"]))
+                      f'level {c["level"]})' for c in inc["monsters"]))

@@ -69,6 +69,74 @@ for (const [key, label, expect] of TABS) {
   await page.screenshot({ path: `${outDir}/${key}.png`, fullPage: false });
 }
 
+// --- the monster census ------------------------------------------------
+//
+// Every monster in the game stands on a cell of one map and is killed once,
+// so a map's list and a monster's list are two readings of the same table
+// (docs/encounters.md). What is checked is that both are drawn, that each
+// carries you to the other, and that the two agree on the count. A chip pair
+// that disagrees means one side is reading the census the wrong way round.
+
+const chipCount = async (scope, name) => {
+  const chip = page.locator(`${scope} .chip.census`, { hasText: name }).first();
+  if (!(await chip.count())) return null;
+  const text = await chip.innerText();
+  const m = text.match(/×(\d+)/);
+  return m ? Number(m[1]) : null;
+};
+
+await page.click('nav button[data-key="f1"]');
+await page.waitForTimeout(150);
+// Acoknight's Cave Level 1 is the first page in the picker, and the census
+// gives it three kinds. The names and the counts are decoded, so this is the
+// data; the heading over them is copy and is not checked.
+const mapChips = await page.locator('section[data-key="f1"] .chip.census').count();
+if (mapChips !== 3) {
+  problems.push(`maps: ${mapChips} monsters on Acoknight's Cave Level 1, expected 3`);
+}
+const onMap = await chipCount('section[data-key="f1"]', "Fighter");
+if (onMap !== 27) {
+  problems.push(`maps: Acoknight's Cave Level 1 lists ${onMap} Fighters, expected 27`);
+}
+
+await page.locator('section[data-key="f1"] .chip.census', { hasText: "Fighter" })
+  .first().click();
+await page.waitForTimeout(200);
+if (await page.getAttribute('nav button[data-key="f2"]', "aria-selected") !== "true") {
+  problems.push("census: a monster chip did not open the Monsters tab");
+}
+const shown = await page.inputValue("select.picker");
+if (shown !== "FIGHTER") {
+  problems.push(`census: the monster chip landed on ${shown}, expected FIGHTER`);
+}
+
+// And back the other way, on the same pair, with the same count.
+const onMonster = await chipCount('section[data-key="f2"]', "Acoknight's Cave Level 1");
+if (onMonster !== onMap) {
+  problems.push(`census: the map says ${onMap} Fighters and the monster says `
+    + `${onMonster}`);
+}
+await page.screenshot({ path: `${outDir}/census.png` });
+
+// A search filters every tab, so following a link has to clear it. "fighter"
+// leaves the monster's own card standing and matches no map title, so
+// without the clearing the jump lands on whichever page is first instead.
+await page.fill("#search", "fighter");
+await page.waitForTimeout(150);
+await page.locator('section[data-key="f2"] .chip.census',
+                   { hasText: "Acoknight's Cave Level 1" }).first().click();
+await page.waitForTimeout(200);
+if (await page.getAttribute('nav button[data-key="f1"]', "aria-selected") !== "true") {
+  problems.push("census: a map chip did not open the Maps tab");
+}
+if (await page.inputValue("#search") !== "") {
+  problems.push("census: following a link left the search filtering the target");
+}
+const landed = await page.locator('.maps-list [aria-current="true"]').innerText();
+if (!/Acoknight's Cave Level 1/i.test(landed)) {
+  problems.push(`census: the map chip landed on ${landed}`);
+}
+
 // Each document in the Guides tab renders on its own.
 await page.click(`nav button[data-key="gd"]`);
 await page.waitForTimeout(150);
@@ -166,7 +234,7 @@ if (!/30 to 40/.test(lvText)) problems.push("leveling: the 30-to-40 trainer is m
 //
 // The tab computes rather than prints, so what is checked is the arithmetic:
 // that it spends no more than the game grants, that it measures against the
-// creature it says it does, and that the two thresholds the strategy guide
+// monster it says it does, and that the two thresholds the strategy guide
 // names come out of the decode rather than out of a constant someone typed.
 
 await page.click('nav button[data-key="pl"]');
@@ -218,7 +286,7 @@ await page.click(".plan-add ~ button");
 await page.waitForTimeout(600);
 
 // The evidence is the tab's claim to be believed, so it has to name the
-// creature each number came off.
+// monster each number came off.
 await page.click(".plan-evidence");
 await page.waitForTimeout(600);
 const evidence = await planner.locator(".plan-evidence-row").count();
@@ -235,14 +303,14 @@ if (!/Health\s*\n?1162\b/.test(atForty)) {
 }
 
 // Absorption 186 shuts out freezing, paralysis and stoning, and the four
-// creatures behind it are named. That number is read off their own records by
+// monsters behind it are named. That number is read off their own records by
 // tools/planner.py; if the decode moves and the number does not, this is the
 // check that says so. Asserted inside the goal's own block, so a 186 belonging
 // to some other goal cannot stand in for it.
 // The bar rises as the four arrive -- Wizard at 19, Purple Dragon at 26, Fire
 // Giant at 28, Ice Dwarf at 30 -- so a level-30 character answers all four at
 // 186 and a level-20 character answers the Wizard alone at 139. Those numbers
-// are read off the creatures' own records by tools/planner.py; if the decode
+// are read off the monsters' own records by tools/planner.py; if the decode
 // moves and they do not, this is the check that says so.
 const conditionsAt = async (level) => planner.locator(
   `.plan-career tbody tr[data-level="${level}"] + tr .plan-evidence-block`,
@@ -251,9 +319,9 @@ const late = await conditionsAt(30);
 if (!/needs 186\b/.test(late)) {
   problems.push(`planner: level 30 does not answer all four at 186: ${JSON.stringify(late)}`);
 }
-for (const creature of ["Wizard", "Purple Dragon", "Fire Giant", "Ice Dwarf"]) {
-  if (!late.includes(creature)) {
-    problems.push(`planner: ${creature} is missing from the condition evidence`);
+for (const monster of ["Wizard", "Purple Dragon", "Fire Giant", "Ice Dwarf"]) {
+  if (!late.includes(monster)) {
+    problems.push(`planner: ${monster} is missing from the condition evidence`);
   }
 }
 const early = await conditionsAt(20);
@@ -262,13 +330,13 @@ if (!/needs 139\b/.test(early)) {
     + JSON.stringify(early));
 }
 if (/Ice Dwarf/.test(early)) {
-  problems.push("planner: level 20 is priced against a creature it cannot meet");
+  problems.push("planner: level 20 is priced against a monster it cannot meet");
 }
 
 // With bosses counted, a character at the cap is measured against Paltivar,
 // which is the basis every endgame figure in STRATEGY.md is quoted against:
 // accuracy 240, absorption 170. It is level 45 and reaches a level-40 plan
-// only through the rule that a creature above the cap is one a character at
+// only through the rule that a monster above the cap is one a character at
 // the cap meets.
 await page.click(".plan-evidence");
 await page.check("#plan-bosses");
@@ -280,7 +348,7 @@ await page.waitForTimeout(600);
 const last = planner.locator('.plan-career tbody tr[data-level="40"] + tr');
 const endgame = await last.innerText();
 for (const [what, expected] of [["Accuracy", "240"], ["Absorption", "170"]]) {
-  // The working is a comparison now: a label, its value, then the creature the
+  // The working is a comparison now: a label, its value, then the monster the
   // value came off, each on its own line under the Them column.
   const line = new RegExp(`${what}\\s*\\n${expected}\\s*\\nPaltivar`);
   if (!line.test(endgame)) {
@@ -346,7 +414,7 @@ await page.click(`nav button[data-key="f2"]`);
 await page.fill("#search", "skeleton");
 await page.waitForTimeout(200);
 const filtered = await page.locator('section[data-key="f2"] .picker option').count();
-if (filtered === 0 || filtered > 6) problems.push(`search 'skeleton' matched ${filtered} creatures`);
+if (filtered === 0 || filtered > 6) problems.push(`search 'skeleton' matched ${filtered} monsters`);
 await page.screenshot({ path: `${outDir}/search.png` });
 
 await page.fill("#search", "zzzznotathing");
@@ -354,7 +422,7 @@ await page.waitForTimeout(200);
 const empty = await page.locator('section[data-key="f2"] .empty').count();
 if (!empty) problems.push("empty search state not shown");
 
-// Every creature the game lists is drawn from its own record, so a card must
+// Every monster the game lists is drawn from its own record, so a card must
 // carry a picture that actually decoded: an <img> whose source failed to
 // parse still has a box, and only naturalWidth tells the two apart.
 await page.fill("#search", "titan lord");
@@ -370,12 +438,12 @@ else if (art.w !== art.attr[0] || art.h !== art.attr[1]) {
 }
 await page.screenshot({ path: `${outDir}/monster-art.png` });
 
-// The thirteen creatures that shoot get a block showing what they shoot.
+// The thirteen monsters that shoot get a block showing what they shoot.
 await page.fill("#search", "elf assassin");
 await page.waitForTimeout(200);
 const shot = await page.locator('section[data-key="f2"] .shot-art').evaluate(
   (img) => img.naturalWidth).catch(() => 0);
-if (!shot) problems.push("monsters: no projectile picture on a ranged creature");
+if (!shot) problems.push("monsters: no projectile picture on a ranged monster");
 // The section headings are uppercased in CSS, so innerText comes back shouting.
 const rangedText = (await page.locator('section[data-key="f2"] .card')
   .innerText()).toLowerCase();
@@ -387,21 +455,21 @@ for (const expected of ["ranged attack", "% of turns", "fires on"]) {
 await page.screenshot({ path: `${outDir}/monster-ranged.png` });
 
 // The 72nd record is the game's own placeholder. It decodes, but it is not a
-// creature and the clue book does not list it.
+// monster and the clue book does not list it.
 await page.fill("#search", "");
 await page.waitForTimeout(200);
-const creatures = await page.locator('section[data-key="f2"] .picker option').count();
-if (creatures !== 71) problems.push(`monsters: ${creatures} listed, expected 71`);
-// Sorted by level: the list opens on a level-1 creature and ends on the
+const monsters = await page.locator('section[data-key="f2"] .picker option').count();
+if (monsters !== 71) problems.push(`monsters: ${monsters} listed, expected 71`);
+// Sorted by level: the list opens on a level-1 monster and ends on the
 // level-45 one. The option itself does not say, so the card is what is read.
 const picker = page.locator('section[data-key="f2"] .picker');
 const cardNote = page.locator('section[data-key="f2"] .card .note').first();
-for (const [index, level] of [[0, 1], [creatures - 1, 45]]) {
+for (const [index, level] of [[0, 1], [monsters - 1, 45]]) {
   await picker.selectOption({ index });
   await page.waitForTimeout(150);
   const note = (await cardNote.innerText()).trim();
   if (note !== `Level ${level}` && !note.startsWith(`Level ${level} `)) {
-    problems.push(`monsters: option ${index} of ${creatures} is "${note}", `
+    problems.push(`monsters: option ${index} of ${monsters} is "${note}", `
       + `expected level ${level}`);
   }
 }
@@ -533,7 +601,7 @@ if (contrast < 4.5) {
   problems.push(`spells: untyped damage sits at ${contrast.toFixed(2)}:1 on the ground`);
 }
 
-// A creature-restricted spell is named by the creature, not by "<kind> only".
+// A monster-restricted spell is named by the monster, not by "<kind> only".
 for (const stale of ["undead only", "insect only"]) {
   if (spellText.toLowerCase().includes(stale)) {
     problems.push(`spells: target qualifier still reads "${stale}"`);

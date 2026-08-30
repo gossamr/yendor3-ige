@@ -152,7 +152,7 @@ h2 { font-size: 15px; letter-spacing: .06em; color: var(--ink-bright);
 .card h3 { margin: 0 0 .8rem; font-size: 16px; letter-spacing: .04em;
            color: var(--amber-lit); }
 
-/* The creature's picture beside its name. The game stores it at 140x155 or
+/* The monster's picture beside its name. The game stores it at 140x155 or
    190x110, and it is shown at that size: scaling eight-bit artwork up blurs
    it and scaling it down loses pixels the artist placed one at a time. It
    shrinks only when the panel is too narrow to hold it. */
@@ -179,6 +179,15 @@ h2 { font-size: 15px; letter-spacing: .06em; color: var(--ink-bright);
         font-size: 11px; letter-spacing: .08em; color: var(--moss); }
 .chip.raw { color: var(--stone-600); }
 .chip.attack { color: var(--arcane); }
+
+/* A census chip carries you to the map or the monster it names, so it is a
+   control rather than a label: same shape, and the count set apart in gold so
+   the eye can read the numbers down a row without reading the names. */
+.chip.census { background: none; font: inherit; font-size: 11px;
+               letter-spacing: .08em; color: var(--amber); cursor: pointer; }
+.chip.census:hover, .chip.census:focus-visible { color: var(--amber-lit); }
+.census-n { margin-left: .35rem; color: var(--gold);
+            font-variant-numeric: tabular-nums; }
 
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: right; padding: .22rem .5rem; border-bottom: 1px solid var(--stone-300); }
@@ -605,7 +614,7 @@ body.embedded .guide-side { top: 3.2rem; }
 .trainer-sheet:hover, .trainer-sheet.on { color: var(--amber-lit); }
 .trainer-sheet:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
 .trainer-sheet-table td { padding-right: .7rem; }
-/* Whichever engaged creature the game has selected. */
+/* Whichever engaged monster the game has selected. */
 .trainer-mobs tr.on th[scope="row"] { color: var(--amber-lit); }
 .trainer-mobs .trainer-num { width: 5rem; }
 .trainer-mobs th[scope="row"] .note { margin: 0; }
@@ -620,7 +629,7 @@ body.embedded .guide-side { top: 3.2rem; }
 .trainer-debug > .note { margin-top: .6rem; }
 .trainer-debug .curve-sub { margin-top: 1.1rem; }
 .debug-band, .debug-cell { width: 4.2rem; }
-/* The creature record: a label and its field, two pairs to a line where there
+/* The monster record: a label and its field, two pairs to a line where there
    is room for two. */
 .debug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
               gap: .3rem 1rem; margin-bottom: .8rem; }
@@ -668,12 +677,12 @@ body.embedded .guide-side { top: 3.2rem; }
 .plan-switch { display: inline-flex; align-items: center; gap: .35rem;
                color: var(--stone-700); font-size: 12px; }
 
-/* The character's own numbers: a readout, in the same grid the creature cards
+/* The character's own numbers: a readout, in the same grid the monster cards
    use, so a value is always under the name of the thing it is. */
 .plan-sheet { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
               gap: .35rem 1.2rem; margin: 0 0 1rem; }
 .plan-sheet > div { display: flex; flex-direction: column; }
-/* The creature cards colour a value with the game's own blood red, which reads
+/* The monster cards colour a value with the game's own blood red, which reads
    there as a threat. These are the player's own numbers, so they take the same
    gold every other figure in the panel uses. */
 .plan-sheet dd { margin: 0; color: var(--gold); }
