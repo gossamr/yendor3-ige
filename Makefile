@@ -38,9 +38,10 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data maps panel panel-shell test-py test-js cabinet-deps serve \
-        trainer test-trainer serve-stock session clean patched patched-debug \
-        characters
+.PHONY: all data maps panel panel-shell test-py test-js test-panel \
+        test-cabinet test-persist cabinet-deps serve trainer test-trainer \
+        serve-stock session clean patched patched-debug characters \
+        serve-headless
 
 all: data panel
 
@@ -86,6 +87,28 @@ test-py:
 
 test-js:
 	cd cabinet && $(BUN) test
+
+## Render the panel in headless Chromium and assert each section populates
+test-panel: panel
+	$(BUN) tools/panel_check.js
+
+## Boot the game in a browser and assert it paints and exposes its filesystem.
+## Starts and stops its own server.
+test-cabinet: patched panel
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(PORT) & echo $$! > tmp/serve.pid; \
+	sleep 2; \
+	$(BUN) tools/cabinet_check.js --url=http://localhost:$(PORT)/; \
+	status=$$?; kill `cat tmp/serve.pid` 2>/dev/null; rm -f tmp/serve.pid; \
+	exit $$status
+
+## Prove the browser's storage is on disk: write, quit the browser, start a new
+## one against the same profile, read back. Also round-trips an export.
+test-persist: patched
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(PERSIST_PORT) & echo $$! > tmp/persist.pid; \
+	sleep 2; \
+	$(BUN) tools/persist_check.js --url=http://localhost:$(PERSIST_PORT)/; \
+	status=$$?; kill `cat tmp/persist.pid` 2>/dev/null; rm -f tmp/persist.pid; \
+	exit $$status
 
 ## js-dos and pyodide, in cabinet/. Only when they are not there already: this
 ## is a prerequisite of targets that need them, not a step to run every time.
@@ -170,3 +193,7 @@ FROM ?= game/CURGAME
 characters: patched
 	$(PY) tools/keep_characters.py --from $(FROM) --game tmp/game-patched \
 	  --out tmp/game-chars
+
+## Same as serve, but silent as well: for automated runs, not for playing
+serve-headless: patched panel
+	YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(PORT)
