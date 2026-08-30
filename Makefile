@@ -39,9 +39,9 @@ BROWSERS ?= chromium firefox webkit
 TEST_ARGS ?= /NOM /NOS
 
 .PHONY: all data maps panel panel-shell test-py test-js test-panel \
-        test-cabinet test-persist cabinet-deps serve trainer test-trainer \
-        serve-stock session clean patched patched-debug characters \
-        serve-headless
+        test-cabinet test-persist test-decode test-hosted-trainer cabinet-deps \
+        serve trainer test-trainer serve-stock session clean patched \
+        patched-debug characters serve-headless
 
 all: data panel
 
@@ -108,6 +108,36 @@ test-persist: patched
 	sleep 2; \
 	$(BUN) tools/persist_check.js --url=http://localhost:$(PERSIST_PORT)/; \
 	status=$$?; kill `cat tmp/persist.pid` 2>/dev/null; rm -f tmp/persist.pid; \
+	exit $$status
+
+## Drive the bring-your-own path: zip the game, drop it in a real browser,
+## decode it there with pyodide, and assert the panel fills in from the result.
+## Also asserts nothing is uploaded and that a second visit is served from
+## storage. Starts and stops its own server.
+##
+## A port of its own for the same reason test-persist has one.
+DECODE_PORT ?= 8082
+test-decode: patched panel-shell
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(DECODE_PORT) & echo $$! > tmp/decode.pid; \
+	sleep 2; \
+	status=0; \
+	for browser in $(BROWSERS); do \
+	  $(BUN) tools/decode_check.js --url=http://localhost:$(DECODE_PORT)/ \
+	    --browser=$$browser || status=1; \
+	done; \
+	kill `cat tmp/decode.pid` 2>/dev/null; rm -f tmp/decode.pid; \
+	exit $$status
+
+## The same path with the trainer on: boot the dropped copy, walk to a party
+## and read it out of the running game's memory. Separate from test-decode
+## because it boots the game, which the rest of that check does not need --
+## and because the hooked emulator has to have been published by whatever is
+## serving, which is the part nothing else covers.
+test-hosted-trainer: patched panel-shell trainer
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(DECODE_PORT) & echo $$! > tmp/ht.pid; \
+	sleep 2; \
+	$(BUN) tools/decode_check.js --url=http://localhost:$(DECODE_PORT)/ --trainer; \
+	status=$$?; kill `cat tmp/ht.pid` 2>/dev/null; rm -f tmp/ht.pid; \
 	exit $$status
 
 ## js-dos and pyodide, in cabinet/. Only when they are not there already: this
