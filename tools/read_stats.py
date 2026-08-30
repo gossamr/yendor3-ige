@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import labels as L
 import pngutil
 
 ROW0_Y = 94
@@ -23,7 +24,8 @@ ROW_HEIGHT = 5
 VALUE_X = 230
 RESISTANT_MIN_WIDTH = 45
 
-NONE, IMMUNE, RESISTANT = "-", "IMMUNE", "RESISTANT"
+NONE = "-"
+IMMUNE, RESISTANT = L.EFFECT_VALUES  # the only two, and both are in the EXE
 
 
 def _green(r: int, g: int, b: int) -> bool:

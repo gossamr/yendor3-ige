@@ -2,11 +2,13 @@
 
 How the game stores its maps: the grid, the object layer, the tile artwork, the maps the clue book leaves out, the legend markers, and where each door leads. Settled findings only.
 
+The grid and the object layer are **observed**: a tracer records which bytes the game reads, and blanking a range shows what stops being drawn. The id-to-tile rule and the tile bank are **rendered**, by drawing every page from the files and diffing it against the game's own. The cell events, the door destinations and the walkability rule are **code**, and the destinations are **measured** as well: [tools/map_links_probe.js](../tools/map_links_probe.js) reads section 28 out of the guest's memory and walks a door to see where it lands. [README.md](README.md) defines the classifiers.
+
 ## Where the map data lives
 
 Searching for a wall bitmask the size of the map region finds nothing, which is why this was first reached by tracing rather than by looking. There *is* one -- see the per-area table below, but it is a twentieth of the size searched for, because it is indexed by level inside a band rather than laid out per map.
 
-The data is reached by tracing. `dosboxNode` runs the emulator in-process, and js-dos takes the path of its wasm shim from `emulators.wdosboxJs`, so a copy of that shim with one hook in `FS.read` ([tools/trace_fs.js](../tools/trace_fs.js)) records every byte range the game touches, timestamped. [tools/trace_map_load.js](../tools/trace_map_load.js) opens map pages with that tracer running and reports what each load read. Observed, not inferred:
+The data is reached by tracing. `dosboxNode` runs the emulator in-process, and js-dos takes the path of its wasm shim from `emulators.wdosboxJs`, so a copy of that shim with one hook in `FS.read` ([tools/trace_fs.js](../tools/trace_fs.js)) records every byte range the game touches, timestamped. [tools/trace_map_load.js](../tools/trace_map_load.js) opens map pages with that tracer running and reports what each load read.
 
 Opening one clue-book map reads, every time:
 
@@ -56,11 +58,11 @@ Tracing showed which bytes are read, and changing them showed what those bytes d
 
 Ids are few to a page: Acoknight's Cave Level 1 uses four (6 = wall, 322/323 = a floor dither pair, 327 = one feature). A page reads the artwork it needs from `PICTURES.VGA` a tile at a time.
 
-Rebuilt from the grid and the two files, **30,048 of 30,057 cells match the game's own rendering** across the 37 pages the clue book prints, 34 of them exactly.
+Rebuilt from the grid and the two files, **30,042 of 30,050 cells match the game's own rendering** across the 37 pages the clue book prints, 34 of them exactly. The eight that differ are four cells on CASTLE OF EURON and two each on CASTLE OF SLATOR LEVEL 2 and CAVE OF FIRE. `fidelity` in [tools/pack_maps.py](../tools/pack_maps.py) measures this against the captures in `tmp/maps4`, and [tests/test_extract.py](../tests/test_extract.py) asserts it.
 
 [tools/pack_maps.py](../tools/pack_maps.py) writes each page to `data/map_pages.json` as its grid plus the 8x8 tiles it uses.
 
-The residual on a correct page is the **markers**, meaning the yellow squares and NPC dots that the game draws on top. Those come from the other table found here. The 2,000 bytes before the legend labels at `0x3D3CCD` are **250 marker records of 8 bytes, one record per label**. Blanking them moves only marker pixels, and that is the shape that attributes a legend label to its map.
+The residual on a correct page is the **markers**, meaning the yellow squares and NPC dots that the game draws on top. Those come from the other table found here. The 2,000 bytes before the legend labels at `0x3D3CCD` hold **eight-byte marker records, 207 of which decode**, and each names a caption. Blanking them moves marker pixels and nothing else, which is what attributes a legend label to its map. Record 208's fields no longer read as coordinates, and the label strings begin at the next byte.
 
 A marker cell never matches its id's artwork, because the marker is drawn over it. Which cells those are is in the marker records: each carries an area, level, row and column.
 
@@ -103,7 +105,7 @@ A read that the tracer reports as 1,087 bytes is **1,088 bytes, which is 17 tile
 
 The order is settled by where the objects land. Reading the object as the word *before* the terrain draws each object one cell to the right of where the game puts it, and the object flag then agrees with the test "this cell's picture differs from its terrain's" on 76.6% of cells. Reading the object as the word *after* the terrain raises that agreement to 85.6%.
 
-Compositing both out of the files reproduces **30,048 of 30,057 cells exactly** (marker cells excluded), and **34 of the 37 pages entirely**.
+Compositing both out of the files reproduces **30,042 of 30,050 cells exactly** (marker cells excluded), and **34 of the 37 pages entirely**.
 
 - **The palette is in `WORLD.DAT`.** Section 12 is 5,376 bytes: seven 768-byte VGA palettes of 6-bit DAC values, and the map screen draws with the first. [tools/tiles.py](../tools/tiles.py) reads it.
 - **Indices 220-223 are a fire ramp the game rotates.** The four colors are `(207,93,0)`, `(223,146,36)`, `(239,195,73)` and `(255,243,69)`, and they cycle through those four indices: all four rotations appear across the clue-book captures, one phase to a page. The palette as stored holds `(255,243,109)` at index 223, which is the ramp at rest and not one of the four. So a tile drawn with these indices matches a still frame only under the phase that frame caught, and 224-231 is a blue ramp of the same shape.
@@ -131,7 +133,7 @@ An index past its family's last falls back to the first record of the first fami
 
 The routines are at image `0x0BC98` for terrain and `0x0BCDB` for object. The map renderer calls them at `0x194F5`, one after the other, taking `[si]` as the cell's terrain and `[si+2]` as its object.
 
-Read straight from the file, the rule reproduces **341 of 341 terrain ids** and **123 of the 128 object ids** that an earlier pixel probe had recovered. The five it differs on are ones the probe reported incorrectly, because the probe had attributed a legend marker's tile to them.
+Two checks. Against the tile cache below, the rule predicts exactly the tiles the game loads for a page carrying every id from 0 to 340, in the same order, with the sweep run both ways. Against an earlier pixel probe, the rule agrees on **335 of the 340 terrain ids** and **123 of the 128 object ids** that probe recovered. The same five ids account for both, and on each of them the probe read tile 20, which belongs to the map screen and to no id.
 
 ## How a page is loaded, and what the game caches
 
@@ -178,20 +180,21 @@ A second per-slot table is located immediately after the name tables, at `0x83dd
 
 Each clue-book map draws gold squares and prints a legend beside it, and nothing on the page states which square belongs to which line. The marker table does.
 
-The square itself is **bank tile 268523**, a gold bevel with no transparent pixel, so it replaces the cell it lands on rather than sitting over it. It belongs to the map screen and not to any id: it is loaded on every page, including pages where no cell draws it, which is why a marker cell never matches its id's artwork however right the grid is. `0x3D34FD` holds **207 eight-byte records**, one per legend line, and two of its four fields are positions in exactly the coordinate system the map data uses:
+The square itself is **bank tile 268523**, a gold bevel with no transparent pixel, so it replaces the cell it lands on rather than sitting over it. It belongs to the map screen and not to any id: it is loaded on every page, including pages where no cell draws it, which is why a marker cell never matches its id's artwork however right the grid is. `0x3D34FD` holds **207 eight-byte records**, and two of its four words are positions in exactly the coordinate system the map data uses:
 
-    field 1 = level * 40 + cell     a level's row is 40 cells wide
-    field 2 = area  * 24 + row      an area is 24 bands
-    field 3 = the caption's index in the label table
+    +0  uint16  slot number, area * 20 + level + 1
+    +2  uint16  level * 40 + cell     a level's row is 40 cells wide
+    +4  uint16  area  * 24 + row      an area is 24 bands
+    +6  uint16  the caption's index in the label table
 
 So a record names its own page *and* its own square. [tools/markers.py](../tools/markers.py) decodes it, and `data/map_marks.json` carries the result. The panel draws each line's number on its square, and numbers the legend to match.
 
-The record's fourth field is the **slot number**, `area*20 + level + 1`. It duplicates what fields 1 and 2 already state. It matters mainly because it resembles a place id and is not one, since it names no map.
+The word at `+0` duplicates what `+2` and `+4` already state, and the two agree on all 207. It matters mainly because it resembles a place id and is not one, since it names no map.
 
 The reading depends on two facts.
 
 - **The labels are packed NUL-terminated strings**, not the fixed 25-byte fields they resemble for the first hundred. The terminator drifts one byte right every few entries after that, so a fixed-stride reading returns text that is subtly wrong and then garbage. `markers.read_labels` walks the NULs.
-- **The caption is field 3, not the record's own position in the table.** Field 3 runs 1..137, and markers share captions: a place like KINGDOM OF BARIAG is a marker on several maps.
+- **The caption is the word at `+6`, not the record's own position in the table.** It runs 1 to 137 across the 207 records, so a caption is named by several of them: a place like KINGDOM OF BARIAG is a marker on several maps.
 - **QUARTZ CHAMBER's records put its legend on block 3 slot 8**, which the registry names THAINE MAP 9. Quartz Chamber itself is area 5 level 16.
 
 Every marker the records place has a caption. A large minority of the legend lines belong to slots the book does not print.

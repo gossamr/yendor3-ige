@@ -2,6 +2,8 @@
 
 Every drawing in the game is in this one file. It holds the map's tiles, the creatures, the spell effects, the scenery behind a fight, and the interface. This document records settled findings only.
 
+The run table and the ten runs are **shape**. Every run divides exactly and the last ends at the end of the file. Which fields draw a creature is **code**, at the image addresses given. The whole is **rendered**. Each creature is drawn from its record and diffed against a capture of the game's own F2 page. [README.md](README.md) defines the classifiers.
+
 ## Ten runs of fixed-size pictures
 
 The file has no header and no per-picture record. It is ten runs laid end to end, each a flat array of pictures of one size, and a table in the executable states where each run starts and what shape its pictures are.
@@ -70,10 +72,10 @@ Within the ten pictures, the draw loop cycles 0 to 5 while the creature stands a
 
 Every creature the game lists carries exactly one of bits 4 and 5, with 23 that bounce and 48 that loop, and no creature carries bit 6.
 
-**Records 54 and 56 place an effect on the creature.** When the creature is struck, the draw loop picks a base position from the type of effect, adds these two values, and draws a picture from run 6 at that place (image `0x10443`). The two values belong to the artwork rather than to the creature. Everything that shares a picture shares them, and most of the creatures drawn tall share 35, 45.
+**Records 54 and 56 place an effect on the creature.** When the creature is struck, the draw loop picks a base position from the type of effect, adds these two values, and draws a picture from run 6 at that place (image `0x10443`). The two values mostly belong to the artwork rather than to the creature. 37 of the 39 pictures a creature uses carry one pair across every creature that draws them, and 29 of the 45 creatures drawn tall share 35, 45. The two exceptions are run 3's picture 140, where BLACK DRAGON reads 70, 30 against 75, 40 for EMERALD and PURPLE DRAGON, and run 2's picture 80, where SORCERER reads 35, 45 against WIZARD's 40, 45.
 
 Twenty five of the twenty seven ten-picture blocks in run 2 are creatures. The first block is scenery (trees, trunks, stalactites), and so is the block at 250. The placeholder record named `NOT USED` carries sprite 0, so it points at the trees.
 
-Three creatures carry the gray bit: `GHOST`, `SPECTRE` and `PHASE TITAN`. The last shares `TITAN`'s artwork and its record differs in nothing else, so the bit is the only field that distinguishes them.
+Three creatures carry the gray bit: `GHOST`, `SPECTRE` and `PHASE TITAN`. The last shares `TITAN`'s picture and recolor list, so the two are one drawing shown in two color groups. Their records are not otherwise the same: PHASE TITAN is a level higher and carries more of every combat statistic.
 
 **The check.** The clue book's own F2 page draws the creature at a fixed place, `(8, 7)` for run 2 and `(6, 33)` for run 3. Rendering a record's picture and comparing it against a capture of that page therefore tests the run, the picture number, the palette, the recolor list and the gray bit at the same time. Of the 71 creatures the game lists, **64 match pixel for pixel**. The other seven match no single picture, because the page animates and the capture caught it partway through a refresh. On `ACOKNIGHT`, rows 15 to 105 match one step of the walk cycle and rows 106 to 148 match the next step. [tools/verify_monsters.py](../tools/verify_monsters.py) measures this.

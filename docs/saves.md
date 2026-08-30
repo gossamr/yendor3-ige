@@ -2,6 +2,8 @@
 
 `CURGAME` and every `SAVGAMEn` are 81,037 bytes and share one format. Settled findings only.
 
+The Evidence column uses the classifiers [README.md](README.md) defines. **measured** here means [tools/save_probe.js](../tools/save_probe.js) played a scripted session and copied `CURGAME` after every step, and [tools/save_map.py](../tools/save_map.py) named the offsets that moved between two copies. **screens** means a save was put back on the emulated disk and read off the game's own F1 to F5 pages.
+
 **Saving is a file copy.** SAVE writes the roster and the creature block into `CURGAME` first, reads it back from 5,000 to 68,557, and writes all 81,037 bytes to `SAVGAMEn`. The two files then compare equal byte for byte.
 
 **`CURGAME` is a random access record store, not a memory dump.** The game seeks into it and writes single records as they change, which is a hundred bytes when the party crosses a row of the world, or one byte when a door opens. The file can therefore be read while the game is being played, and most of a fresh file is zeros.
@@ -57,24 +59,24 @@ Ten 500-byte slots. Slot 0 is a header, slots 1–5 are the created characters a
 
 The first bytes ship holding `PRE-CREATED PARTY`, and the name typed at a save slot is written over them.
 
-| Offset | Field |
-|---|---|
-| 150 | facing: `0x8000` north, `0x4000` south, `0x2000` west, `0x1000` east |
-| 152 | the party's x, in cells across the whole world grid |
-| 154 | the party's y |
-| 156 | the day, advanced by clock wrapping |
-| 162 | the clock, in minutes, 0 to 1,439 |
-| 180 | gold, packed BCD, four bytes |
-| 184 | food, the same |
-| 188 | nuore, the same |
-| 310 | the sky ramp: 32 colors of three six-bit components |
-| 492 | the roster slots that are playing, four words, 0 for an empty place |
+| Offset | Field | Evidence |
+|---|---|---|
+| 150 | facing: `0x8000` north, `0x4000` south, `0x2000` west, `0x1000` east | code, `0x112D6`; measured, one turn a step |
+| 152 | the party's x, in cells across the whole world grid | measured; the trainer writes it and the party arrives there |
+| 154 | the party's y | measured, the same way |
+| 156 | the day, advanced by clock wrapping | measured, across a wrap |
+| 162 | the clock, in minutes, 0 to 1,439 | measured, one step at a time |
+| 180 | gold, packed BCD, four bytes | screens: the F5 purse |
+| 184 | food, the same | screens: the F5 purse |
+| 188 | nuore, the same | screens: the F5 purse |
+| 310 | the sky ramp: 32 colors of three six-bit components | measured; shape: 96 bytes, every component 63 or below |
+| 492 | the roster slots that are playing, four words, 0 for an empty place | measured, against the party assembled |
 
 The facing values are the ones the look-ahead dispatch at image `0x112D6` tests, where `0x8000` steps `y` back and `0x4000` steps it on, `0x1000` steps `x` on and anything else steps it back.
 
 The world is one grid, seven areas of 24 bands down by twenty levels of 40 cells across, so `x = level * 40 + cell` and `y = area * 24 + band`, and a map is one `(area, level)` block of that grid. The cabinet's trainer writes those two words to put a party on a named map. It takes the cell from `arrive` in `data/map_pages.json`, which is the drawn cell nearest the middle of that map, because a cell whose bit at `0x3C4F02` is clear is not part of the map at all.
 
-The template's own fields state where a new game starts: x 460, y 46, facing north, clock 540. That is area 1 level 11, which `data/map_slots.json` names `ATHANEUM`, and 09:00.
+The template's own fields state where a new game starts: x 460, y 46, facing north, clock 540. That is area 1 level 11, which the map registry names `ATHANEUM` ([map.md](map.md)), and 09:00.
 
 **Gold, food and nuore are party-wide**, and are what the game's F5 panel prints. All three are **packed BCD, most significant byte first**: 3,557 gold reads `00 00 35 57`. It is the encoding [items.md](items.md) records on the item table's BASE VALUE. A new game starts with none of the three.
 
@@ -84,19 +86,19 @@ A step costs the clock 2 or 3 minutes and a rest about 483. The clock wraps at 1
 
 500 bytes, at the same displacements the code uses. The roster sits at `DS:0xCEDD` in the running game, so slot 1 begins at `DS:0xD0D1`, which is where [monsters.md](monsters.md) puts a character struct: record offset N is `[si+N]`.
 
-| Offset | Field |
-|---|---|
-| 0 | name, NUL terminated |
-| 14 | class |
-| 16 | sex, 1 or 2 |
-| 22 | level |
-| 24 | experience, packed BCD, four bytes |
-| 28 | conditions, the word the cure prices are read from |
-| 60–110 | the live block, 26 words, below |
-| 124–174 | the same 26 words again, holding the maximum |
-| 280 | weight carried, in tenths |
-| 282–313 | the eight panel slots, four bytes each |
-| 314, 318, 322, 326, 330, 334, 338 | missile, container, hand, shield, two rings, worn |
+| Offset | Field | Evidence |
+|---|---|---|
+| 0 | name, NUL terminated | screens: F1 |
+| 14 | class | screens: F1; code, `0x04CC3` |
+| 16 | sex, 1 or 2 | screens: F1 |
+| 22 | level | screens: F1 |
+| 24 | experience, packed BCD, four bytes | screens: F1 |
+| 28 | conditions, the word the cure prices are read from | code, `0x092B1`; screens: F1 |
+| 60–110 | the live block, 26 words, below | screens: F1, every field |
+| 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
+| 280 | weight carried, in tenths | code, `0x05C44`; shape: `10 x` strength |
+| 282–313 | the eight panel slots, four bytes each | code, `0x0437E`, see [items.md](items.md) |
+| 314, 318, 322, 326, 330, 334, 338 | missile, container, hand, shield, two rings, worn | code, `0x04237`, see [items.md](items.md) |
 
 The live block, in the order the F1 sheet prints it:
 

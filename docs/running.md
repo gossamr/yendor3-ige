@@ -2,6 +2,8 @@
 
 The game runs under an emulator, and it can be driven with no person at the keyboard. Settled findings only. The byte changes are in [patching.md](patching.md), and everything described here is implemented in [cabinet/](../cabinet).
 
+Everything here is **measured**. Each configuration below was booted and the result read off the running game, and the tables say which backend and which switches produced it. [README.md](README.md) defines the word. The timings are wall-clock on one machine.
+
 ## The backend
 
 `emulators` runs under **bun** in Node mode (`dosboxNode`), so the game boots, runs and produces screenshots with no browser. Under npm the bundle's internal `require` fails to resolve `wdosbox.js`. Under bun it resolves.

@@ -104,6 +104,11 @@ CLASS_TIERS = [
 
 SKILL_RATINGS = ["POOR", "AVERAGE", "GOOD", "GREAT"]
 
+# The only two words an F2 effect row can hold. They sit consecutively in the
+# label run at 0x2AAB0, so the column's whole vocabulary comes out of the file
+# and tools/read_stats.py only has to say which of the two a row holds.
+EFFECT_VALUES = ["IMMUNE", "RESISTANT"]
+
 SPELL_AFFECTS = [
     "ALL", "ONE", "MONSTER", "CHARACTER",
     "VISIBLE MONSTERS", "VISIBLE UNDEADS", "INSECT", "UNDEAD", "CREATION",
@@ -125,8 +130,8 @@ RESTORATION_MENU = [
 
 # Every string above must actually be present in the EXE; verify() proves it.
 _ALL = (EFFECTS + MONSTER_STATS + SPECIAL_ATTACKS + ITEM_CATEGORIES
-        + CONTAINERS + SKILL_RATINGS + SPELL_WHEN + RESTORATION_MENU
-        + [t for tier in CLASS_TIERS for t in tier])
+        + CONTAINERS + SKILL_RATINGS + EFFECT_VALUES + SPELL_WHEN
+        + RESTORATION_MENU + [t for tier in CLASS_TIERS for t in tier])
 
 
 def verify(exe: bytes) -> list[str]:

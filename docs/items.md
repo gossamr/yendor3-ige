@@ -30,26 +30,26 @@ A name is a stored string, so it uses the game's character set. The game has no 
 
 `lcall 0x0f44c` is the loader, and it fixes the whole shape: given a **1-based** item id in `ax` it copies the record to `0xe4c`, the effects entry to `0xe3c` and the properties entry to `0xe30`. Every page renderer reads only those three buffers, and `[0x5426]` holds the id.
 
-| Offset | Field |
-|---|---|
-| 0 | uint16, byte offset into this item's properties table |
-| 2 | uint16, a byte offset into the effects table, and 0 for no effects |
-| 5 | BASE VALUE, packed BCD, three bytes |
-| 8 | uint16, the item's artwork |
-| 10 | WEIGHT, uint16, tenths |
-| 12 | category: the properties-table selector and the equip slot |
-| 14 | FITS IN, a container mask |
-| 16 | a group, **not decoded**, see below |
+| Offset | Field | Evidence |
+|---|---|---|
+| 0 | uint16, byte offset into this item's properties table | code, `0x0F44C`; screens, below |
+| 2 | uint16, a byte offset into the effects table, and 0 for no effects | code, `0x0F44C`; screens, below |
+| 5 | BASE VALUE, packed BCD, three bytes | screens: F5, 148/148 |
+| 8 | uint16, the item's artwork | code, `0x0F44C` |
+| 10 | WEIGHT, uint16, tenths | screens: F5, 169/169 |
+| 12 | category: the properties-table selector and the equip slot | code, `0x04237` and `0x0F4CC`; shape |
+| 14 | FITS IN, a container mask | screens: F5, 170/170 |
+| 16 | a group, **undecoded**, see below | |
 
-Bytes 4, 9 and 18 are zero on all 631.
+Bytes 4 and 18 are zero on all 631. Byte 9 is the high byte of the artwork word at 8, and 234 records carry artwork above 255, so it is not spare.
 
-**Verified** against the game's own F5 pages, on every figure they print:
+The Evidence column uses the classifiers [README.md](README.md) defines. Three of the fields were read off the game's own F5 pages, on every figure they print:
 
-- **BASE VALUE** is packed BCD at offset 5, in *three* bytes, which is five digits, because the SCEPTER OF BARIAG costs 10,000. It is exact on all 148 observed values.
+- **BASE VALUE** is packed BCD at offset 5, in *three* bytes, which is five digits, because the SCEPTER OF BARIAG costs 10,000. It is exact on all 148 values the pages print.
 - **WEIGHT** is a uint16 at offset 10 in tenths. It has to be a word, not a byte: the ANVIL OF LIGHT weighs 50.0 and would overflow. Exact on all 169.
 - **ABSORPTION** is not in the record. Bytes 0 and 1 are a byte offset into a properties table, and the first byte of that table entry is the absorption. It is exact on all 38 armor pieces. The largest pointer plus 12 is 2,652, which is exactly the size of that section.
 
-**FITS IN is the word at 14**, or three bits of it, and `0x071d3` prints them in order: `0x8000` is BACKPACK, `0x4000` is BOX and `0x2000` is BAG. With none of the three set, the line reads CHARACTER PANEL when the record's category word carries `0x2000`, and ANY PANEL otherwise. The reading is exact on all 170 captured pages. Over the 631 records the totals are 221 BACKPACK, 193 BACKPACK BOX, 201 BACKPACK BOX BAG, and 15 ANY PANEL. The 15 are the three currencies and twelve items too bulky to stow, among them the weapons of Light and the ANVIL OF LIGHT. CHARACTER PANEL is left for the BACKPACK alone, which is the one thing no container holds. Bit `0x0001` of the same word is set on 46 items, and nothing prints it.
+**FITS IN is the word at 14**, or three bits of it, and `0x071d3` prints them in order: `0x8000` is BACKPACK, `0x4000` is BOX and `0x2000` is BAG. With none of the three set, the line reads CHARACTER PANEL when the record's category word carries `0x2000`, and ANY PANEL otherwise. The reading is exact on all 170 captured pages. Over the 631 records the totals are 221 BACKPACK, 193 BACKPACK BOX, 201 BACKPACK BOX BAG, 15 ANY PANEL and one CHARACTER PANEL. The 15 are the three currencies and twelve items too bulky to stow, among them the weapons of Light and the ANVIL OF LIGHT. The one is the BACKPACK, which is the one thing no container holds. Bit `0x0001` of the same word is set on 46 items, and nothing prints it.
 
 **The word at 16 is a group, and the code that reads it has not been found.** It partitions the records cleanly. `0x8000` is on all 420 armor and weapon records, `0x4000` is on the twelve potions, and `0x2000` is on the lockpick, the hourglass, the torch and the three containers. One bit each then covers the twelve gems and bars, the five dwarf artifacts, the five elf artifacts, the four treasures of the Order, and the four ores. Zero is left on the remaining 163 records, which are the currencies, the keys, the parchments and the quest loot. That is the shape a shop's stock list would have.
 
@@ -69,7 +69,7 @@ Bytes 4, 9 and 18 are zero on all 631.
 
 Enhancement runs to **+10**, and nine items reach it, among them CROSSBOW, GOLD SHIELD, 2-HANDED SWORD, WAR HAMMER, HALBERD and ROYAL PLATE ARMOR. Each +N step adds N to the **first byte of the properties block**, and byte 6 of that block counts N itself. ROYAL PLATE ARMOR runs 22, 23, 24, 25 with byte 6 at 0, 1, 2, 3.
 
-**The rule is the same for both kinds of item. +N adds N to the item's primary combat number**, which is absorption for a piece of armor and damage for a weapon. That was observed in play rather than decoded.
+**The rule is the same for both kinds of item. +N adds N to the item's primary combat number**, which is absorption for a piece of armor and damage for a weapon. That one is **measured**: it was read off the game in play rather than out of the code.
 
 **Weapon damage is byte 0 of the weapon entry**, which is the same position that absorption occupies in the armor entry. It is exact on all 33 weapons whose page prints a DAMAGE line. `0x06558` reads `[bx]` and adds it to the character's two damage fields, which fixes the field from the code as well as from the data.
 
@@ -145,7 +145,7 @@ Of the four shipped characters, DIANA and YENDOR start with MAGIC GRAPES in the 
 
 Dropping the shield for a two-handed weapon costs 20 plain, 30 enchanted, and takes the ceiling to 91 or 131.
 
-[tools/combat_model.py](../tools/combat_model.py) carries the figures, and [tests/test_combat_model.py](../tests/test_combat_model.py) rebuilds them from `WORLD.DAT` rather than trusting the constants. **Both still hold the old 123 and 177**, and the test still doubles the best single ring. Both need updating, along with everything the manual derives from them.
+[tools/combat_model.py](../tools/combat_model.py) carries the figures. [tests/test_combat_model.py](../tests/test_combat_model.py) reads the best purchasable item for each slot back out of `WORLD.DAT`, sums them, and asserts the sum against the constants.
 
 ## The effects table, 148 entries of 16 bytes at `0x08CDDE`
 

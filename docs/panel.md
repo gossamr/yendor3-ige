@@ -8,8 +8,10 @@ One CSS file and one JavaScript file produce both builds.
 
 | | Size | Tables | Distributable |
 |---|---|---|---|
-| `web/restoration.html` | 1.6 MB | inlined | no, because it holds the game's content |
-| `web/panel.html` | 269 kB | fetched at run time | yes |
+| `web/restoration.html` | 1.7 MB | inlined | no, because it holds the game's content |
+| `web/panel.html` | 330 kB | fetched at run time | yes |
+
+Both sizes are what `make panel` last wrote, and both move as the panel does. [tools/build_panel.py](../tools/build_panel.py) prints the byte count.
 
 Most of `restoration.html` is the packed map pages, and it opens from disk with no server. `panel.html` is the build that the cabinet loads into its iframe, both from [cabinet/serve.js](../cabinet/serve.js) and from the static `build/pages` site. A host page that sets `window.RESTORATION` before the panel runs suppresses the fetch.
 

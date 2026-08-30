@@ -2,6 +2,8 @@
 
 Four byte changes to `REGISTER.EXE`, what each does and how each was checked. Settled findings only. [tools/patch.py](../tools/patch.py) applies them to a copy of the game directory, leaving `game/` untouched, and [tests/test_patch.py](../tests/test_patch.py) holds every claim below to the file.
 
+Each patch is **code** for what it changes and **measured** for what that does, the paragraph marked **Measured** under it saying what was booted and what happened. [README.md](README.md) defines the classifiers.
+
 ## What the format allows
 
 The file is not packed, has no overlays, and its length matches the MZ header exactly, so a same-length patch needs no other fixup. `e_csum` is zero and DOS ignores the field.
@@ -29,7 +31,7 @@ so `/P` can never take effect as shipped. Widening that mask makes the AND a no-
 
     file 0x004037:  0x7f -> 0xff
 
-**Verified.** With the patch applied and `SW.BAT /P`, the main menu appears in about 2 seconds instead of 12. The menu, party assembly and the clue book all render, which shows that the skipped calls only draw. Without `/P` the patched build behaves as the original does.
+**Measured.** With the patch applied and `SW.BAT /P`, the main menu appears in about 2 seconds instead of 12. The menu, party assembly and the clue book all render, which shows that the skipped calls only draw. Without `/P` the patched build behaves as the original does.
 
 `/P` is the developers' **debug mode**, not an intro skip. It has twelve readers: under it walls stop clipping, and one of them bypasses `YOUR SKILL IS NOT HIGH ENOUGH!` on training.
 
@@ -57,7 +59,7 @@ Making that `jg` unconditional never takes the expiry path:
 
     0x7f -> 0xeb        at file 0xff5b
 
-**Verified.** The menu holds indefinitely, measured over one minute, and the Introduction menu item still plays.
+**Measured.** The menu holds indefinitely, measured over one minute, and the Introduction menu item still plays.
 
 The same loop dispatches the menu's hotkeys, `cmp byte [0xe9a], 0x43` for C and `0x41` for A. `[0xe9a]` is the last-key byte.
 
@@ -91,7 +93,7 @@ The call is therefore **retargeted rather than removed**, entering the same rout
 
 Three bytes for three, only the displacement changing. `SI` holds across it: the routine called immediately before it loads it from the same global, and this compiler treats SI as callee-saved.
 
-**Verified against the game's own arithmetic.** A fighter rolled 48/55/59/60/53/58. Switching to mage kept all six attributes and produced survival 57, projectile 44, slashing 47, bashing 41, polearm 45, casting 70, mapping 64, navigation 55, bartering 40, repair 56, thievery 50, linguistics 61, 15 health and 15 magic. All fourteen figures are exactly what [tools/skills.py](../tools/skills.py) predicts for a mage rolled with those attributes. Switching back to fighter sets casting and magic to zero again, ROLL ATTRIBUTES still rerolls, and a new character is still rolled during creation. The other two callers of `0x14e20` are untouched, and the `[0x5370]` gate means that a first choice of class never reached this path.
+**Measured against the game's own arithmetic.** A fighter rolled 48/55/59/60/53/58. Switching to mage kept all six attributes and produced survival 57, projectile 44, slashing 47, bashing 41, polearm 45, casting 70, mapping 64, navigation 55, bartering 40, repair 56, thievery 50, linguistics 61, 15 health and 15 magic. All fourteen figures are exactly what [tools/skills.py](../tools/skills.py) predicts for a mage rolled with those attributes. Switching back to fighter sets casting and magic to zero again, ROLL ATTRIBUTES still rerolls, and a new character is still rolled during creation. The other two callers of `0x14e20` are untouched, and the `[0x5370]` gate means that a first choice of class never reached this path.
 
 ## The builds
 

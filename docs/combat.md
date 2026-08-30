@@ -2,7 +2,7 @@
 
 A fight is resolved one turn list at a time, and every swing is resolved by a single attack resolver in `REGISTER.EXE`. [tools/levels.py](../tools/levels.py) mirrors the formulas, and [tools/combat_model.py](../tools/combat_model.py) builds on them. [tests/test_levels.py](../tests/test_levels.py) and [tests/test_combat_model.py](../tests/test_combat_model.py) check them.
 
-Everything here is **inferred**: read off the disassembly, not off the running game. Coordinates are image offsets (file offset minus 0x4000), and `DS:` offsets are what the code uses directly, DGROUP being at image `0x1ddb0`.
+Everything here is **code**, read off the disassembly rather than off the running game. One claim below is **measured** as well, and says so. [README.md](README.md) defines the classifiers. Coordinates are image offsets, which is the file offset minus `0x4000`, and `DS:` offsets are what the code uses directly, DGROUP being at image `0x1ddb0`.
 
 ## Where it lives
 
@@ -251,7 +251,7 @@ Casting charges the caster's current magic points by the spell's record 24 and t
 1. If the spell is family-restricted (record 76 bit `0x0100`) and the creature's family at record 28 does not match, nothing happens.
 2. The damage resolves through the attack resolver, with casting against absorption, unless `[0x5370]` bit `0x80` is set. When that bit is set, the record's damage lands in full with no roll.
 3. **Immunity sets the damage to zero.** Record 74 is the spell's element and record 100 is the creature's immunity word. They share a bit layout, and a match sets the damage to zero (`0x1d6f0`).
-4. **Resistance halves it.** The upper bits of record 76 are the spell's damage type. They are matched against the creature's resistance word at record 102, and a match shifts the damage right once (`0x1d72f`, and `0x1d8af` is the same test written as a loop). Record 76 only ever holds 0, `0x200` or `0x2000` in those bits, so of a creature's three resistance bits only `0x2000` is ever answered by a spell. See [monsters.md](monsters.md).
+4. **Resistance halves it.** Record 76 masked with `0xFE00` is the spell's damage type. It is matched against the creature's resistance word at record 102, and a match shifts the damage right once (`0x1d72f`, and `0x1d8af` is the same test written as a loop). That mask only ever holds 0, `0x200` or `0x2000`, so of a creature's three resistance bits only `0x2000` is ever answered by a spell. This one is **measured**: [tools/fight_probe.js](../tools/fight_probe.js) sets a creature's resistance word before boot and reads its health between blows, and [monsters.md](monsters.md) has the readings.
 5. Each condition bit the spell carries is tested against the same immunity word and OR'd into the creature's flags if the creature is not immune (`0x1d649`). The condition then deals record 52's damage per turn for record 66 turns.
 
 Healing does not go through any of this: a heal spell carries damage 0, which the resolver refuses at its first test, and restores a fixed amount instead.

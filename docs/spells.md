@@ -6,21 +6,23 @@ The spell record is 80 bytes, and there are one hundred and seven of them at `WO
 
 A 21-byte name, then little-endian uint16 fields from offset 22.
 
-| Offset | Field |
-|---|---|
-| `0` | name, 21 bytes, space padded |
-| `22` | level, the lowest of the spell's class levels |
-| `24` | magic points |
-| `26` | nuore |
-| `30` | what the spell singles out: 9 insects, 13 undead, read with 76 bit 8 |
-| `32` | 18 marks the restorative family |
-| `34` | amount, whose meaning follows the effect |
-| `46` | damage |
-| `68` | scroll mask, six bits |
-| `70` | bit 10 is the out-of-melee restriction |
-| `72` | scope, what the spell acts on, and how far it reaches |
-| `74` | element |
-| `76` | blow word |
+The Evidence column uses the classifiers [README.md](README.md) defines. All 98 F3 pages were captured.
+
+| Offset | Field | Evidence |
+|---|---|---|
+| `0` | name, 21 bytes, space padded | screens: every page's title |
+| `22` | level, the lowest of the spell's class levels | screens: F3, 95/98, below |
+| `24` | magic points | screens: F3, 98/98 |
+| `26` | nuore | screens: F3, 98/98 |
+| `30` | what the spell singles out: 9 insects, 13 undead, read with 76 bit 8 | screens: F3 AFFECTS, 98/98 |
+| `32` | 18 marks the restorative family | shape: 18 on 19 spells, none of which does damage |
+| `34` | amount, whose meaning follows the effect | shape: the six heal amounts, below |
+| `46` | damage | screens: the prose quotes it on 64 of 65 |
+| `68` | scroll mask, six bits | screens: F3 class rows, 224/224 |
+| `70` | bit 10 is the out-of-melee restriction | screens: F3 WHEN, 98/98 |
+| `72` | scope, what the spell acts on, and how far it reaches | screens: F3 AFFECTS and WHEN, 98/98 |
+| `74` | element | screens: the prose, bit by bit; four bits **undecoded**, below |
+| `76` | blow word | code, `0x1D72F`; screens: F3 AFFECTS, 98/98 |
 
 **MP and nuore** are exact on all 98 spells the clue book lists, against the game's own F3 SPELL INFORMATION screen.
 
@@ -93,7 +95,9 @@ Offset 74 uses the **same bit layout as the enemy immunity word** at enemy offse
 | 4 | magic damage | 15 | poison |
 | 10 | cursing | | |
 
-This was confirmed bit by bit against the game's prose. The field is never set on a spell that does no damage, and the four condition spells (HEX MONSTER, PARALYZE, FREEZE and CURSE MONSTER) all do damage as well. Zero means untyped damage, which no immunity stops, and 67 of the 98 listed spells are untyped.
+This was confirmed bit by bit against the game's prose. The field is never set on a spell that does no damage, and the four condition spells (HEX MONSTER, PARALYZE, FREEZE and CURSE MONSTER) all do damage as well. Zero means untyped damage, which no immunity stops, and **63 of the 98 listed spells hold zero**.
+
+**Bits 5 to 8 are undecoded.** Four spells set one of them and nothing else: DWINDLING DAMAGE `0x0020`, THIN SKIN `0x0040`, FEET OF LEAD `0x0080` and BLIND `0x0100`. No creature's immunity word carries any of the four, so nothing in the game stops these four spells either, and they behave as untyped. Counting them that way makes 67 of the 98 untyped in play, which is the figure the panel uses. What the bits are *for* is not established.
 
 Offset 76 is also the spell's blow word, and a spell-resistant creature halves the damage on its bit 13. See [combat.md](combat.md). The AFFECTS row reads the low bits of that word, and the resolver reads the upper bits.
 
@@ -118,9 +122,11 @@ The two words are an enumeration in the label run at `0x2ADA4`, immediately afte
 
 Eight spells are training for one class and scroll for another. ACID RAIN, for example, is a scroll for the Monk and the Alchemist and training for the Paladin. A further 15 spells are scroll only for every class that can cast them. Scroll levels run lower than training levels, with a median of 13 against 18.
 
-**The item table matches, spell for spell.** A magic scroll carries its spell's id in its misc properties entry, which [items.md](items.md) describes. The link is therefore a field rather than a naming convention. `SCROLL OF BLINDING` teaches BLIND, and it is the one scroll named for its effect rather than for its spell.
+**A magic scroll names its spell by id**, in its misc properties entry, which [items.md](items.md) describes. The link is therefore a field rather than a naming convention. `SCROLL OF BLINDING` teaches BLIND, and it is the one scroll named for its effect rather than for its spell.
 
 The 26 scrolls teach 26 distinct spells. All 23 spells with a SCROLL row have one. The other three (ARMS OF GIANTS, FIREBALL, JUMP OVER) have a scroll and no SCROLL row: every class that can cast them also trains them, so the book prints the training route.
+
+**The item table and the scroll mask at 68 name different sets**, and they differ on four spells. ARMS OF GIANTS and FIREBALL have a scroll item and a mask of zero. CURE PARALYSIS and MINER'S LIGHT II carry a mask that no item answers. On both, every class the mask names also trains the spell, so the mask never reaches a page. The mask decides what the book prints, and the item decides what can be learned. Read the 26 items' spell ids against all 107 masks to see the four.
 
 ## Where the game's own data contradicts itself
 

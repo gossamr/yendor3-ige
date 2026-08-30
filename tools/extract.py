@@ -106,10 +106,10 @@ FIELD_CONFIDENCE = {
 
 # Special attacks. Two are pinned to single bits of the word at 96; the rest --
 # the condition-inflicting ones, match no bit, byte or pair of bits anywhere
-# in the record, so they are not a bitmask and are left undecoded. Creatures
-# with identical words at 96 and 98 are shown different attack lists by the
-# game (ACOKNIGHT and FUNGUS, BANDIT and CREEPING FUNGUS), which rules those
-# words out as the sole source.
+# in the record, so they are not a bitmask and are left undecoded. Twenty pairs
+# of creatures hold identical words at 96 and 98 and are still shown different
+# attack lists by the game (SNOW GIANT and FIRE GIANT, DWARF SCOUT and ICE
+# DWARF), which rules those words out as the sole source.
 ATTACK_BITS = {(96, 12): "PARTY ATTACK", (96, 9): "BREAK SHIELD"}
 
 # The condition-inflicting attacks, which are not a mask in the record at all.

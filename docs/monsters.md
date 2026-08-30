@@ -2,6 +2,8 @@
 
 The enemy record is 106 bytes, and there are seventy three of them at `WORLD.DAT 0x417075`, which is section 29 of the directory. Record 0 is a zero-filled sentinel, and record 62 is a placeholder named `NOT USED`, so the game lists 71 creatures. This document records settled findings only. What a creature *does* with these fields is in [combat.md](combat.md), and how it is drawn is in [pictures.md](pictures.md).
 
+The Evidence column says how each field was confirmed, in the classifiers [README.md](README.md) defines. F2 is the clue book's MONSTER STATISTICS page, captured for every creature the book lists.
+
 ## Reading it
 
 The record is copied into a 156-byte creature struct that carries a 50-byte header, so **record offset N is `[si+N+50]` in the code**. There are 80 of those structs, each one an active spawn, at `DS:0x122C` (image `0x1234E`). Three further copies, holding the creatures currently engaged, are at `DS:0x54B8`, `0x5554` and `0x55F0`.
@@ -12,41 +14,43 @@ A character is a separate 500-byte struct at `DS:0xD0D1`, and its fields land on
 
 Every field is a uint16 unless the size column states otherwise.
 
-| Offset | Field | Notes |
-|---|---|---|
-| 0–25 | name | two 13-byte fields, space-padded |
-| 26 | picture | the first of ten consecutive pictures, see [pictures.md](pictures.md) |
-| 28 | family | *inferred*, see below |
-| 30 | health | |
-| 32 | level | 1 (WASP) to 45 (PALTIVAR) |
-| 34 | accuracy | |
-| 36 | dexterity | sets turn order, see [combat.md](combat.md) |
-| 38 | absorption | |
-| 40 | damage | |
-| 42 | sound on a hit | index into the executable's 141-entry VOC table |
-| 44 | sound on a miss | |
-| 46 | shot picture | in `PICTURES.VGA` run 1 |
-| 48 | shot sound | played where the shot lands |
-| 50 | ranged accuracy | |
-| 52 | ranged damage | |
-| 54, 56 | effect offset | where a hit graphic is drawn on the creature |
-| 58 | ordinary attack id | into the twelve-byte table at `DS:0x96DA` |
-| 60 | special attack id | the same table |
-| 62 | shot attack id | the same table, and 2 for all thirteen shooters |
-| 64–69 | recolor | up to six `from << 4 \| to` pairs, stopping at a zero byte |
-| 70–75 | shot recolor | the same, for the projectile |
-| 76–79 | gold | packed BCD, most significant byte first |
-| 80–83 | nuore | packed BCD |
-| 84–87 | food | packed BCD |
-| 88–91 | experience | packed BCD |
-| 92–95 | steal | packed BCD: what a STEAL GOLD attack takes |
-| 96 | flags | below |
-| 98 | flags | below |
-| 100 | immunity mask | below |
-| 102 | resistance | below |
-| 104 | | zero in all 73 records |
+| Offset | Field | Notes | Evidence |
+|---|---|---|---|
+| 0–25 | name | two 13-byte fields, 12 characters and a NUL | screens: every page's title |
+| 26 | picture | the first of ten consecutive pictures, see [pictures.md](pictures.md) | rendered, 64/71 |
+| 28 | family | a kind code, eleven values, see below | shape: groups only |
+| 30 | health | | screens: F2, 71/71 |
+| 32 | level | 1 (WASP) to 45 (PALTIVAR) | code, `0x17882` |
+| 34 | accuracy | | screens: F2, 71/71 |
+| 36 | dexterity | sets turn order, see [combat.md](combat.md) | screens: F2, 71/71 |
+| 38 | absorption | | screens: F2, 71/71 |
+| 40 | damage | | screens: F2, 71/71 |
+| 42 | sound on a hit | index into the executable's 141-entry VOC table | code, `0x01053` |
+| 44 | sound on a miss | | code, `0x0109E` |
+| 46 | shot picture | in `PICTURES.VGA` run 1 | code, `0x12579` |
+| 48 | shot sound | played where the shot lands | code, `0x123B8` |
+| 50 | ranged accuracy | | screens: F2, 13/13 |
+| 52 | ranged damage | | screens: F2, 13/13 |
+| 54, 56 | effect offset | where a hit graphic is drawn on the creature | code, `0x10443` |
+| 58 | ordinary attack id | into the twelve-byte table at `DS:0x96DA` | code, `0x014E8` |
+| 60 | special attack id | the same table | screens: F2, 30/30 attack rows |
+| 62 | shot attack id | the same table, and 2 for all thirteen shooters | code, `0x12579` |
+| 64–69 | recolor | up to six `from << 4 \| to` pairs, stopping at a zero byte | rendered; shape, see [pictures.md](pictures.md) |
+| 70–75 | shot recolor | the same, for the projectile | code, `0x125A2` |
+| 76–79 | gold | packed BCD, most significant byte first | screens: F2, 69/69 |
+| 80–83 | nuore | packed BCD | screens: F2, 67/67 |
+| 84–87 | food | packed BCD | screens: F2, 10/10 |
+| 88–91 | experience | packed BCD | screens: F2, 71/71 |
+| 92–95 | steal | packed BCD: what a STEAL GOLD attack takes | shape: three creatures, see below |
+| 96 | flags | below | per bit, below |
+| 98 | flags | below | per bit, below |
+| 100 | immunity mask | below | screens: F2, ten rows, below |
+| 102 | resistance | below | screens: F2, two rows, below; measured |
+| 104 | | **undecoded**; zero in all 73 records | |
 
-The five combat statistics, the four rewards and the twelve immunity and resistance rows were each checked against the game's own F2 page, for every creature the game lists. The result is 355 of 355 statistic readings, 71 of 71 on each reward, and 71 of 71 on every effect row. [tools/capture_monsters.js](../tools/capture_monsters.js) walks the pages and [tools/ocr.py](../tools/ocr.py) reads the values off the frames.
+**The F2 readings.** The five combat statistics agree on **355 of 355** readings. A reward row is blank where the reward is zero, so the four rewards print fewer than 71 figures each: experience 71, gold 69, nuore 67 and food 10, and all **217** agree. The two ranged rows are blank on the 58 creatures that do not shoot, and the 13 that do agree on both.
+
+Below the figures the page prints twelve rows, `labels.EFFECTS` in order, each blank or carrying one word. Ten are single bits of the immunity word and two are the resistance word, under the masks *Resistance, offset 102* gives below. All **852** rows agree, 234 of them carrying a word and every row of the twelve carrying one on some creature. [tools/verify_effects.py](../tools/verify_effects.py) measures this, reading a row with [tools/read_stats.py](../tools/read_stats.py). `IMMUNE` and `RESISTANT` sit consecutively in the label run at `0x2AAB0` and are the only two words the column holds, so the width of the green run says which.
 
 ## Rewards are packed BCD
 
@@ -88,7 +92,7 @@ Which gives the vocabulary its shape:
 | 11 | magic | the weapon behind the shot is enchanted (`0x0C752`) | 0 |
 | 9 | magic | the spell is one of the 7 anti-undead spells | 0 |
 
-An enchanted weapon is filed under *magic*, which is the grouping explaining itself. The blow is partly magical, so magic resistance halves it. A shot's word is built at image `0x0C746` from the weapon's own properties, so a plain LONG BOW gives `0x8000` and a LONG BOW +3 gives `0x8800`, which is physical and magical together. A spell's word is the upper bits of its record 76, which across all 107 spells take three values: 0, `0x200` and `0x2000`.
+An enchanted weapon is filed under *magic*, which is the grouping explaining itself. The blow is partly magical, so magic resistance halves it. A shot's word is built at image `0x0C746` from the weapon's own properties, so a plain LONG BOW gives `0x8000` and a LONG BOW +3 gives `0x8800`, which is physical and magical together. A spell's word is record 76 masked with `0xFE00`, bit 8 being the family restriction rather than a damage type. Across all 107 spells that mask takes three values: 0, `0x200` and `0x2000`.
 
 **Measured.** [tools/fight_probe.js](../tools/fight_probe.js) sets a centipede's resistance word before boot, walks a party out to it and reads its health out of the emulator between blows. With the party's accuracy at the resolver's maximum margin every swing lands for the same number, so one blow shows a halving:
 
@@ -106,25 +110,27 @@ Bit 13 halves the spell. Bit 14 changes nothing. Bit 15 changes nothing against 
 
 **Bits 15 and 14 print on the same row.** ACOKNIGHT carries bit 15 and KING BARIAG carries bit 14, and both show `RESISTANT` on PHYSICAL DAMAGE. BLAZIOS carries 14 and 13, and shows it on both rows.
 
-Magic resistance has a second source, which is bit 4 of the immunity word, tested at image `0x07E6D` immediately after the magic row's own mask. Four creatures carry only that bit: BLAZIOS, CHAMELEON MAN, FIRE DWARF and SORCERER.
+Magic resistance has a second source, which is bit 4 of the immunity word, tested at image `0x07E6D` immediately after the magic row's own mask. Four creatures carry it: BLAZIOS, CHAMELEON MAN, FIRE DWARF and SORCERER. All four read `0x001B` there, which is power, electric, fire and magic together. On three of them bit 4 is the whole of the magic row, because their resistance word holds nothing the row's `0x3A00` mask tests. BLAZIOS carries bit 13 as well, so its magic row has both sources.
 
 ## Word 96
 
-| Bit | Creatures | What |
-|---|---|---|
-| 0 | 26 | the picture is in run 3, the 190x110 one. Clear: run 2 (image `0x1035E`) |
-| 1 | 12 | the shot's recolor list at 70 applies (image `0x125A2`) |
-| 2 | 38 | the recolor list at 64 applies (image `0x10337`) |
-| 4 | 23 | the walk cycle runs up and back down (image `0x153B1`) |
-| 5 | 48 | the walk cycle runs up and snaps back (image `0x153A8`) |
-| 6 | 0 | the creature does not animate (image `0x15398`) |
-| 9 | 1 | BREAK SHIELD |
-| 10 | | a DESTROY names the hand weapon at character `+0x142` (image `0x1457`) |
-| 11 | | a DESTROY names the missile weapon at `+0x13A` (image `0x144C`) |
-| 12 | 14 | PARTY ATTACK: the creature swings at all four characters in its turn |
-| 13, 14, 15 | | how many of this creature can engage at once |
+| Bit | Creatures | What | Evidence |
+|---|---|---|---|
+| 0 | 26 | the picture is in run 3, the 190x110 one. Clear: run 2 | code, `0x1035E`; rendered |
+| 1 | 12 | the shot's recolor list at 70 applies | code, `0x125A2` |
+| 2 | 38 | the recolor list at 64 applies | code, `0x10337`; rendered |
+| 4 | 23 | the walk cycle runs up and back down | code, `0x153B1` |
+| 5 | 48 | the walk cycle runs up and snaps back | code, `0x153A8` |
+| 6 | 0 | the creature does not animate | code, `0x15398` |
+| 9 | 1 | BREAK SHIELD | screens: F2 attack rows, 30/30 |
+| 10 | | a DESTROY names the hand weapon at character `+0x142` | code, `0x01457` |
+| 11 | | a DESTROY names the missile weapon at `+0x13A` | code, `0x0144C` |
+| 12 | 14 | PARTY ATTACK: the creature swings at all four characters in its turn | screens: F2 attack rows, 30/30 |
+| 13, 14, 15 | | how many of this creature can engage at once | code, `0x12B9C`, below |
 
 Every creature the game lists carries exactly one of bits 4 and 5. Bits 10 and 11 are read only when the attack is a BREAK or DESTROY, so the creature counts above would not mean anything for them.
+
+Six of the 38 creatures carrying bit 2 hold nothing at 64 to 69. Eleven of the twelve carrying bit 1 hold nothing at 70.
 
 **Bits 13, 14 and 15 govern the group.** Only three of the eight combinations appear:
 
@@ -138,12 +144,12 @@ There is no encounter table and no count field. The group is assembled one creat
 
 ## Word 98
 
-| Bit | Creatures | What |
-|---|---|---|
-| 1, 2, 3 | 3, 12, 6 | not decoded, see below |
-| 5 | 1 | MIMIC. The creature never sets its own active flag (image `0x12F94`) |
-| 9, 10, 11, 12 | 10, 0, 0, 3 | how often it shoots: 25, 50, 75, 90 (image `0x129F8`) |
-| 15 | 3 | drawn in color group 0, the gray one (image `0x10378`) |
+| Bit | Creatures | What | Evidence |
+|---|---|---|---|
+| 1, 2, 3 | 3, 12, 6 | **undecoded**, see below | |
+| 5 | 1 | MIMIC. The creature never sets its own active flag | code, `0x12F94` |
+| 9, 10, 11, 12 | 10, 0, 0, 3 | how often it shoots: 25, 50, 75, 90 | code, `0x129F8` |
+| 15 | 3 | drawn in color group 0, the gray one | code, `0x10378`; rendered |
 
 Exactly the thirteen creatures with a ranged attack carry one of bits 9 to 12, and the three of those that cannot move (FUNGUS and the two dwarf towers) carry the 90. Image `0x12F85` runs when a creature spawns. It uses the distance band the creature appeared at to decide whether to set bit 0 of the creature's state word. Bits 6, 7 and 8 would move that threshold, and no creature carries them.
 
@@ -160,6 +166,6 @@ The other nine codes do not read as a classification of species. Code 12 holds f
 
 ## What the record does not hold
 
-**The conditions an attack inflicts.** Offsets 58, 60 and 62 hold ids, and the mask lives in a twelve-byte entry at `DS:0x96DA` keyed by the id. That is why looking for the mask inside the record fails. ACOKNIGHT and FUNGUS share every word of the record and differ only in the id. The layout of the entry is in [combat.md](combat.md).
+**The conditions an attack inflicts.** Offsets 58, 60 and 62 hold ids, and the mask lives in a twelve-byte entry at `DS:0x96DA` keyed by the id. That is why looking for the mask inside the record fails. Twenty pairs of creatures hold the same words at 96 and 98 and are still shown different attack lists, SNOW GIANT and FIRE GIANT among them. The printer at image `0x07EE4` resolves the id through `0x0357:0x0E` before it tests any bit. The layout of the entry is in [combat.md](combat.md).
 
 **A counter-attack.** The resolver at image `0x1586F` has five call sites and only two are in the melee loop: the player's swing at `0x00E73` and the creature's turn at `0x01353`. The swing resolves one attack, tests `[0xF36]` and returns without resolving anything back. A creature attacks more than once in a round only by being more than one creature, or by carrying PARTY ATTACK.

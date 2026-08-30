@@ -16,7 +16,7 @@ This project runs *Yendorian Tales: The Tyrants of Thaine* (1997, Spectrum Pacif
 
 ## Reverse engineering
 
-The list below records how far the decode of the game's own file formats has progressed. [docs/](docs/) holds the offsets, the record layouts and the evidence for every item marked as settled.
+The list below records how far the decode of the game's own file formats has progressed. [docs/](docs/) holds the offsets, the record layouts and the evidence for every item marked as settled. [docs/README.md](docs/README.md) says how each field records the way it was confirmed.
 
 - [x] Section directory
 - [x] Map grid and object layer ([docs/map.md](docs/map.md))
@@ -56,7 +56,7 @@ Put your copy of the game in `game/`, then run:
 
     make serve PORT=8090   # serve on another port
     make serve-stock       # the game exactly as it shipped, including the introduction
-    make test              # 332 python, 54 javascript, panel, persistence, boot
+    make test              # 354 python, 69 javascript, panel, persistence, boot
 
 ## The trainer
 
@@ -88,10 +88,10 @@ There are two files rather than one file and an override. Compose merges volume 
 | [cabinet/](cabinet/) | The page, the emulator host, and the development server |
 | [web/](web/) | The panel's CSS and JavaScript, and the two builds of the page |
 | [tools/](tools/) | The decoders, the disassembler, and the capture drivers |
-| [docs/](docs/) | What has been decoded, and how the game is run. Start at [world-dat.md](docs/world-dat.md) |
+| [docs/](docs/) | What has been decoded, how it was confirmed, and how the game is run. Start at [README.md](docs/README.md) |
 | [game/](game/) | Your copy of the game. Not in this repository |
 
-[docs/world-dat.md](docs/world-dat.md) indexes the rest. [map.md](docs/map.md), [items.md](docs/items.md), [monsters.md](docs/monsters.md), [spells.md](docs/spells.md), [saves.md](docs/saves.md), [shops.md](docs/shops.md) and [pictures.md](docs/pictures.md) describe the file formats. [combat.md](docs/combat.md) and [leveling.md](docs/leveling.md) describe the rules those formats encode. [running.md](docs/running.md), [patching.md](docs/patching.md) and [panel.md](docs/panel.md) describe the harness around them.
+[docs/README.md](docs/README.md) says how to read them and [docs/world-dat.md](docs/world-dat.md) indexes the rest. [map.md](docs/map.md), [items.md](docs/items.md), [monsters.md](docs/monsters.md), [spells.md](docs/spells.md), [saves.md](docs/saves.md), [shops.md](docs/shops.md) and [pictures.md](docs/pictures.md) describe the file formats. [combat.md](docs/combat.md) and [leveling.md](docs/leveling.md) describe the rules those formats encode. [running.md](docs/running.md), [patching.md](docs/patching.md) and [panel.md](docs/panel.md) describe the harness around them.
 
 [MANUAL.md](MANUAL.md) is a player's manual written from the decoded tables.
 

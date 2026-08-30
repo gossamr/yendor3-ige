@@ -30,13 +30,15 @@ The map grid sits **before** section 0. Seven areas of 76,800 bytes fill `0x0000
 
 Three of these tables are split across section boundaries, and each is one table. [shops.md](shops.md) shows the arithmetic.
 
+**Evidence for the directory itself is shape.** The last of the 36 dwords equals the length of `WORLD.DAT`, entries 5 and 6 hold the same offset, and the run never decreases. Every section named above divides by its record size with no remainder. What each section *holds* is confirmed in the document the row names.
+
 ## The Restoration corpora
 
 | # | Offset | Size | Content |
 |---|---|---|---|
 | 0 | `0x03c90a2` | 42,075 | the walkthrough, 33 × 1,275 |
 | 1 | `0x03d34fd` | 2,000 | the legend marker table, 207 × 8 ([map.md](map.md)) |
-| 2 | `0x03d3ccd` | 6,500 | legend labels, 250 × 26 ([map.md](map.md)) |
+| 2 | `0x03d3ccd` | 6,500 | legend labels, 139 of them ([map.md](map.md)) |
 | 3 | `0x03d5631` | 432 | the spell description index ([spells.md](spells.md)) |
 | 4 | `0x03d57e1` | 14,040 | spell descriptions, 360 × 39 ([spells.md](spells.md)) |
 
@@ -45,7 +47,7 @@ Three of these tables are split across section boundaries, and each is one table
 ## Text formats
 
 - **The walkthrough** is 33 pages of 1,275 bytes, which is 25 rows of 51 columns. The last row of each page is its footer, `"n OF 33"`. The section headings are the rows matching `NN. LOCATION`, and there are 50 of them.
-- **Legend labels** are 26-byte records, holding 25 visible characters and a NUL. Slot 0 is a column ruler, `1234567890123456789012345`. Past about record 130 the run is packed rather than fixed width. [map.md](map.md) describes how it is read.
+- **Legend labels** are NUL-terminated strings, the first 139 of which are 25 visible characters and a NUL. Slot 0 is a column ruler, `1234567890123456789012345`. Record 139 is where a fixed 26-byte stride first returns something a walk of the NULs does not, so every reading past it has to walk. The run holds **139 non-empty labels**, and the section's remaining 2,902 bytes are not text. The marker records index captions 1 to 137, so every caption a marker names sits inside the fixed-width part. [map.md](map.md) describes how the run is read.
 
 **The character set.** The font has no apostrophe, so `~` stands for one. `\` is the fraction slash, so `1\2` is one half. A run of four or more `e` is a horizontal rule glyph rather than text. Every string is upper case. `labels.text()` applies these substitutions, and a raw read is not a name. The file stores `MAGE~S CHAIN MAIL ARMOR`, and `MAGE'S CHAIN MAIL ARMOR` is what it means.
 
@@ -53,7 +55,7 @@ Three of these tables are split across section boundaries, and each is one table
 
 `REGISTER.EXE:0x2A780` to `0x2B300` is a contiguous run of NUL-separated strings. It holds every caption the Restoration screens print: the monster statistic names, the twelve effect names *in bit order*, the seventeen special attack names, the eight item categories, the spell field names, the AFFECTS and WHEN vocabularies, and the six magic user class triads (`MONK/CLERIC/PRIEST`, `ALCHEMIST/TRANSMUTER/HEALER`, `PALADIN/CAVALIER/HERO`, `MAGE/WIZARD/SORCERER`, `DRUID/ENCHANTER/SAGE`, `MARKSMAN/RANGER/KNIGHT`).
 
-[tools/labels.py](../tools/labels.py) reads these strings from the file, and asserts that all 84 strings it declares are present.
+[tools/labels.py](../tools/labels.py) reads these strings from the file, and asserts that all 86 strings it declares are present.
 
 ## The executable
 

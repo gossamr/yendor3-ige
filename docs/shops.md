@@ -2,6 +2,8 @@
 
 Decoded NPC records, conversation topics and prose. Settled findings only.
 
+The clue book has no NPC page, so every field below was read off the disassembly. Two things check a reading: the shape of the tables, which a wrong one breaks, and the prose the reading makes an NPC speak. The Evidence column names which. [README.md](README.md) defines the classifiers.
+
 ## Three tables, two of them split across section boundaries
 
 The section directory lists these as five sections. They are three tables:
@@ -18,15 +20,15 @@ Indices are 1-based, the same convention the item loader uses. `0x08f7e` address
 
 ## The NPC record, 141 records of 40 bytes
 
-| Offset | Field |
-|---|---|
-| `+4` | how many conversation topics this NPC has |
-| `+6` | how many prose lines |
-| `+8` | index of its first topic |
-| `+10` | index of its first prose line |
-| `+0x12` | service bit index |
-| `+0x14`, `+0x16` | service parameters, read differently per service |
-| `+0x18` | price factor |
+| Offset | Field | Evidence |
+|---|---|---|
+| `+4` | how many conversation topics this NPC has | shape: a running total, below |
+| `+6` | how many prose lines | shape: a running total, below |
+| `+8` | index of its first topic | shape: 139 of 140 pairs, below |
+| `+10` | index of its first prose line | shape: 139 of 140 pairs; the prose it reaches reads as one speaker |
+| `+0x12` | service bit index | code, `0x08D45` into the tester at `0x17AC4` |
+| `+0x14`, `+0x16` | service parameters, read differently per service | code, `0x08DD0` and `0x062D1`; **undecoded** for services with no reader found |
+| `+0x18` | price factor | code, `0x091EB` and the scaler at `0x0AA1D` |
 
 `+8` and `+10` are running totals of `+4` and `+6`: `+8[i+1] = +8[i] + +4[i]` and `+10[i+1] = +10[i] + +6[i]` hold on 139 of the 140 consecutive pairs.
 
@@ -42,13 +44,13 @@ The record in play sits at `DS:0x0ec8`.
 
 13 bytes of keyword, then:
 
-| Offset | Field |
-|---|---|
-| `+14` | action word |
-| `+16` | a gold amount |
-| `+18` | depends on the mode, see below |
-| `+20` | byte offset into this NPC's prose block |
-| `+22` | how many prose lines the response runs to |
+| Offset | Field | Evidence |
+|---|---|---|
+| `+14` | action word | code: the dispatch at `0x02B26`, one handler a bit |
+| `+16` | a gold amount | shape: the topic "PAY 3,000" holds 3000 |
+| `+18` | depends on the mode, see below | code, `0x02AC9` and `0x09338`; **not one field**, below |
+| `+20` | byte offset into this NPC's prose block | shape: the blocks tile exactly, below |
+| `+22` | how many prose lines the response runs to | shape: the blocks tile exactly, below |
 
 The action word at `+14` names the service. `0x8000` is buy, `0x4000` is sell, `0x0100` is enhance, `0x0040` is repair, `0x0080` is buy a commodity, `0x2000` is take gold, and `0x0200` is raise an attribute. A topic carries the bit for its service together with flags. BUY ARMOR reads `0x8020`, of which `0x8000` is the buy. The five services that open a screen are set out under *The five services* below.
 

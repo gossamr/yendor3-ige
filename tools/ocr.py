@@ -26,7 +26,10 @@ STAT_ROWS = {
     "health": 46, "accuracy": 52, "dexterity": 58, "absorption": 64,
     "damage": 70, "ranged_accuracy": 76, "ranged_damage": 82,
 }
+# The effect rows hold one of two words rather than a figure, so
+# tools/read_stats.py reads them by the width of the green run instead.
 EFFECT_ROW0, EFFECT_PITCH = 94, 6
+EFFECT_ROWS = 12          # labels.EFFECTS, top to bottom
 SPECIAL_ATTACK_ROW = 169
 
 # Values are drawn in the right-hand column; the creature portrait fills the
