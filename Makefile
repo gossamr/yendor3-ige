@@ -38,11 +38,11 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data maps pages panel panel-shell test-py test-js test-panel \
-        test-cabinet test-away test-persist test-decode test-hosted-trainer \
-        test hosted hosted-dev cabinet-deps serve trainer test-trainer \
-        serve-byo serve-stock session clean patched patched-debug characters \
-        serve-headless
+.PHONY: all data panel test test-py test-js test-panel test-persist test-cabinet \
+        serve serve-byo serve-stock serve-headless session clean patched patched-debug \
+        pages panel-shell trainer test-trainer test-decode test-away \
+        hosted hosted-dev cabinet-deps test-hosted-trainer \
+        characters
 
 all: data panel
 
