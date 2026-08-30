@@ -23,15 +23,33 @@ body {
 /* The cap is in pixels, not rem: rem scales with browser zoom, so a rem cap
    quietly hands the panel more and more of the window the further the user
    zooms in, which is the opposite of giving the game priority. */
+/* The width is a variable so that the grip between the two can set it, and the
+   clamp is the default it starts at rather than the only value it takes. A
+   player who wants the clue book wide enough for a plan's whole table can have
+   it; the game keeps whatever is left. */
 #app { display: grid;
-       grid-template-columns: minmax(0, 1fr) clamp(280px, 38%, 560px);
+       grid-template-columns: minmax(0, 1fr) 6px var(--panel, clamp(280px, 38%, 560px));
        min-height: 0; }
-#app.panel-hidden { grid-template-columns: 1fr 0; }
-#app.panel-hidden #panel { display: none; }
+#app.panel-hidden { grid-template-columns: 1fr 0 0; }
+#app.panel-hidden #panel, #app.panel-hidden #grip { display: none; }
 @media (max-width: 900px) {
+  /* Stacked, so there is no vertical edge to drag. */
   #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   #app.panel-hidden { grid-template-rows: 1fr; }
+  #grip { display: none; }
 }
+
+/* The edge between the two panes. It is the width of a scrollbar rather than a
+   hairline, because it is a target for a pointer; the line the eye reads is
+   still the stage's own border beside it. */
+#grip { cursor: col-resize; background: transparent; }
+#grip:hover { background: var(--stone-600); }
+#grip:focus-visible, #app.dragging #grip { background: var(--amber); }
+#grip:focus-visible { outline: none; }
+/* Mid-drag the pointer crosses the iframe, which would otherwise take the move
+   events into the panel document and strand the drag. */
+#app.dragging #panel { pointer-events: none; }
+#app.dragging { user-select: none; }
 
 
 #stage { display: flex; flex-direction: column; min-width: 0; min-height: 0;

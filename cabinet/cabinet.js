@@ -958,6 +958,133 @@ if (patchBox) {
   });
 }
 
+// The width of the clue book, dragged by the edge between the two panes.
+//
+// The game keeps whatever is left, so the limits are about it rather than about
+// the panel: never less than a readable column of text, never so much that the
+// screen has nowhere to draw. The default is the CSS clamp, which is what the
+// variable falls back to while nothing has been dragged.
+const PANEL_KEY = "cabinet.panel-width";
+const PANEL_MIN = 280;
+const GAME_MIN = 320;
+const grip = $("#grip");
+// The grip sits between them, so it comes out of the window before either
+// pane's share of it.
+const panelMax = () =>
+  Math.max(PANEL_MIN, window.innerWidth - GAME_MIN - grip.offsetWidth);
+const setPanelWidth = (px) => {
+  const width = Math.round(Math.min(Math.max(px, PANEL_MIN), panelMax()));
+  app.style.setProperty("--panel", `${width}px`);
+  grip.setAttribute("aria-valuenow", String(width));
+  return width;
+};
+const clearPanelWidth = () => {
+  app.style.removeProperty("--panel");
+  grip.removeAttribute("aria-valuenow");
+  localStorage.removeItem(PANEL_KEY);
+};
+{
+  const kept = Number(localStorage.getItem(PANEL_KEY));
+  if (kept > 0) setPanelWidth(kept);
+}
+// A window that has been made narrower can leave a kept width with no room for
+// the game; the clamp is re-applied rather than the width being forgotten, so
+// widening the window brings it back.
+window.addEventListener("resize", () => {
+  const kept = Number(localStorage.getItem(PANEL_KEY));
+  if (kept > 0) setPanelWidth(kept);
+});
+
+// The drag is held in a flag rather than read back off the pointer capture.
+// Capture is released by the browser as well as by us -- implicitly after a
+// pointerup, and whenever the window stops being the one receiving events --
+// and a drag whose end was only ever noticed on the grip's own pointerup left
+// `dragging` set when the release happened somewhere else. That class puts
+// `pointer-events: none` on the panel, so the whole clue book went dead until
+// something else pressed the grip. Every way a drag can end ends it.
+let dragging = false;
+const endDrag = () => {
+  if (!dragging) return;
+  dragging = false;
+  app.classList.remove("dragging");
+  const width = app.style.getPropertyValue("--panel");
+  if (width) localStorage.setItem(PANEL_KEY, parseInt(width, 10));
+  canvas.focus();
+};
+grip.addEventListener("pointerdown", (e) => {
+  if (getComputedStyle(grip).display === "none") return;
+  e.preventDefault();
+  dragging = true;
+  app.classList.add("dragging");
+  try {
+    grip.setPointerCapture(e.pointerId);
+  } catch (err) {
+    // A pointer the browser will not let us capture still drags: the moves
+    // arrive while the button is down, and the release ends it below.
+  }
+});
+grip.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  // From the right edge of the window, so the pointer stays on the grip.
+  setPanelWidth(window.innerWidth - e.clientX - grip.offsetWidth / 2);
+});
+grip.addEventListener("pointerup", endDrag);
+grip.addEventListener("pointercancel", endDrag);
+grip.addEventListener("lostpointercapture", endDrag);
+// Released outside the window, or the window taken away mid-drag.
+document.addEventListener("pointerup", endDrag);
+window.addEventListener("blur", endDrag);
+// Back to the width the stylesheet chooses, for a drag that went somewhere
+// unhelpful.
+grip.addEventListener("dblclick", clearPanelWidth);
+// A separator is operable from the keyboard, and dragging a six-pixel strip is
+// not something every pointer can do well.
+grip.addEventListener("keydown", (e) => {
+  const step = e.key === "ArrowLeft" ? 16 : e.key === "ArrowRight" ? -16 : 0;
+  if (!step) return;
+  e.preventDefault();
+  const now = parseInt(app.style.getPropertyValue("--panel"), 10)
+    || document.querySelector("#panel").getBoundingClientRect().width;
+  localStorage.setItem(PANEL_KEY, setPanelWidth(now + step));
+});
+
+// Full screen, on the document rather than on the game alone: the bar goes
+// with it, which is what keeps this button reachable to press again, and the
+// player who wants nothing but the game hides the panel beside it. What the
+// game gains is the browser's own chrome.
+//
+// Hidden where the browser has no such thing rather than shown and dead: on an
+// iPhone no element can be made full screen, and a control that does nothing is
+// worse than one that is not there.
+const full = $("#toggle-full");
+const fullscreenElement = () =>
+  document.fullscreenElement || document.webkitFullscreenElement || null;
+const enterFullscreen = document.documentElement.requestFullscreen
+  || document.documentElement.webkitRequestFullscreen;
+const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+if (enterFullscreen && exitFullscreen) {
+  full.hidden = false;
+  full.addEventListener("click", async () => {
+    try {
+      if (fullscreenElement()) await exitFullscreen.call(document);
+      else await enterFullscreen.call(document.documentElement);
+    } catch (err) {
+      // A refusal is the browser's to make: a window that is already the
+      // system's full screen, or a policy that wants a fresh gesture.
+      status.textContent = `full screen refused: ${err.message}`;
+    }
+    canvas.focus();
+  });
+  // The state is the document's, not the button's: Escape and the browser's own
+  // controls leave full screen without this button being pressed.
+  for (const event of ["fullscreenchange", "webkitfullscreenchange"]) {
+    document.addEventListener(event, () => {
+      full.setAttribute("aria-pressed", String(!!fullscreenElement()));
+      canvas.focus();
+    });
+  }
+}
+
 const toggle = $("#toggle-panel");
 // A toggle names what it controls; whether it is on is carried by its pressed
 // state, not by rewriting the label to a verb.

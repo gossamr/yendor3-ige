@@ -71,6 +71,94 @@ if (await toggleX() !== xCollapsed) problems.push("the panel toggle moves with t
 const pressed = await page.getAttribute("#toggle-panel", "aria-pressed");
 if (pressed !== "true") problems.push("panel toggle did not return to its pressed state");
 
+// The edge between the panes is draggable, and where it was left is where it
+// is on the next visit. The game keeps a floor whatever the drag asks for:
+// a clue book wide enough to read is no use beside a screen too small to play.
+{
+  const width = () => page.evaluate(() =>
+    Math.round(document.querySelector("#panel").getBoundingClientRect().width));
+  const stage = () => page.evaluate(() =>
+    Math.round(document.querySelector("#stage").getBoundingClientRect().width));
+  const before = await width();
+  const grip = await page.locator("#grip").boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(10, grip.y + 100, { steps: 10 });   // as far as it goes
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const dragged = await width();
+  if (dragged <= before) {
+    problems.push(`the panel did not widen with the grip: ${before} -> ${dragged}`);
+  }
+  if (await stage() < 300) {
+    problems.push(`dragging left the game ${await stage()}px, below its floor`);
+  }
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#grip");
+  if (await width() !== dragged) {
+    problems.push(`the panel width was not kept: ${dragged} -> ${await width()}`);
+  }
+  // The frame is given its src by the page rather than by the markup, so the
+  // checks below this one wait for it the way the first visit did.
+  await page.waitForFunction(() => {
+    const f = document.querySelector("#panel");
+    return f && f.contentDocument
+      && f.contentDocument.querySelector("nav button");
+  }, { timeout: 20000 });
+  await page.locator("#grip").dblclick();
+  await page.waitForTimeout(200);
+  if (await width() !== before) {
+    problems.push(`a double-click did not restore the default width: ${await width()}`);
+  }
+
+  // A drag whose release the grip never hears. Mid-drag the panel is made
+  // untouchable so the pointer cannot fall into the frame, and a drag left
+  // open leaves it that way: the clue book stays dead until something presses
+  // the grip again. Every way out of a drag has to close it.
+  for (const [how, escape] of [
+    ["the window losing focus", async () => page.evaluate(() => window.dispatchEvent(new Event("blur")))],
+    ["a release off the grip", async () => page.evaluate(() =>
+      document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true })))],
+  ]) {
+    await page.evaluate(() => {
+      const g = document.querySelector("#grip");
+      const box = g.getBoundingClientRect();
+      g.dispatchEvent(new PointerEvent("pointerdown", {
+        bubbles: true, pointerId: 1, clientX: box.x + 3, clientY: box.y + 50 }));
+    });
+    await page.waitForTimeout(100);
+    await escape();
+    await page.waitForTimeout(150);
+    const stuck = await page.evaluate(() =>
+      getComputedStyle(document.querySelector("#panel")).pointerEvents === "none");
+    if (stuck) problems.push(`a drag ended by ${how} left the panel untouchable`);
+  }
+}
+
+// Full screen is the document's, so Escape and the browser's own controls
+// leave it without this button being pressed: what is asserted is that the
+// button follows the document rather than its own idea of the state.
+if (await page.locator("#toggle-full").isHidden()) {
+  problems.push("no full-screen button, in an engine that has full screen");
+} else {
+  await page.click("#toggle-full");
+  await page.waitForTimeout(300);
+  const inFull = await page.evaluate(() => !!document.fullscreenElement);
+  if (!inFull) problems.push("the full-screen button did not reach full screen");
+  if (await page.getAttribute("#toggle-full", "aria-pressed") !== String(inFull)) {
+    problems.push("the full-screen button does not carry the document's state");
+  }
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  if (await page.evaluate(() => !!document.fullscreenElement)) {
+    await page.click("#toggle-full");
+    await page.waitForTimeout(300);
+  }
+  if (await page.getAttribute("#toggle-full", "aria-pressed") !== "false") {
+    problems.push("leaving full screen left the button pressed");
+  }
+}
+
 // Embedded, the panel must not draw a second header under the application's.
 const panelHeader = await page.frameLocator("#panel").locator("header").count()
   .catch(() => 0);
