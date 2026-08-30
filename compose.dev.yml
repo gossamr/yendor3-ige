@@ -1,0 +1,53 @@
+# Develop against the container without rebuilding it.
+#
+# An override, used on top of either deployment:
+#
+#   docker compose -f compose.hosted.yml -f compose.dev.yml up
+#   docker compose -f compose.yml        -f compose.dev.yml up
+#
+# The problem it solves: `docker compose up` builds only when the image is
+# absent and never rebuilds on a source change; only `--build` does that, and
+# there is no option to make `up` do it. So an edit to cabinet/ is invisible
+# until the next explicit rebuild, and a container serving last week's
+# JavaScript looks exactly like a container serving a bug.
+#
+# What the browser loads is bind-mounted read-only over what the image baked,
+# so an edit is live on the next page load. Nothing is written back; the
+# container's own tmp/ is still where the patched copy goes.
+#
+# For developing only. The deploy image is unchanged and still bakes all of
+# this, so nothing here affects what is published: `docker compose -f
+# compose.hosted.yml up --build` remains the thing being deployed.
+
+services:
+  cabinet:
+    volumes:
+      # cabinet/, node_modules and all. The host's copy, not the image's.
+      #
+      # This used to keep the image's node_modules in front of the mount with
+      # an anonymous volume, which was a mistake: Docker fills an anonymous
+      # volume once, when it first creates it, and then carries it forward
+      # across recreations. So it went stale the moment the image gained
+      # anything, pyodide and then the hooked emulator, and `up --build` did
+      # not refresh it. A mount that can serve last week's dependencies is the
+      # opposite of what this file is for.
+      #
+      # The host supplies them instead, which `make hosted-dev` guarantees:
+      # it installs cabinet/ and builds the hooked emulator before starting.
+      # Everything in there is JavaScript and wasm, so the host's platform does
+      # not matter.
+      - ./cabinet:/app/cabinet:ro
+
+      # The panel, as the *built* file. panel.css and panel.js are inlined into
+      # this by `tools/build_panel.py --shell`, so mounting the two sources
+      # would change nothing that is served: the shell is the artifact. Run
+      # `make panel-shell` on the host after editing either, and the change is
+      # live on the next page load without a rebuild.
+      - ./web/panel.html:/app/web/panel.html:ro
+
+      # The decoder the browser runs. Mounted whole rather than pruned: the
+      # image ships the seventeen modules the closure reaches and nothing else,
+      # and here the rest are on disk but still unpublished, because
+      # /decoder-files.json is the closure walk either way. An override is not
+      # a distribution.
+      - ./tools:/app/tools:ro

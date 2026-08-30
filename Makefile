@@ -38,10 +38,11 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data maps panel panel-shell test-py test-js test-panel \
-        test-cabinet test-persist test-decode test-hosted-trainer cabinet-deps \
-        serve trainer test-trainer serve-stock session clean patched \
-        patched-debug characters serve-headless
+.PHONY: all data maps pages panel panel-shell test-py test-js test-panel \
+        test-cabinet test-away test-persist test-decode test-hosted-trainer \
+        test hosted hosted-dev cabinet-deps serve trainer test-trainer \
+        serve-byo serve-stock session clean patched patched-debug characters \
+        serve-headless
 
 all: data panel
 
@@ -63,6 +64,11 @@ data:
 ## Crop the captured clue-book map pages into web/maps/
 maps:
 	PYTHONPATH=tools $(PY) tools/build_maps.py
+
+## The static site: the whole thing, with no game and no server. Needs no copy
+## of the game to build, which is what lets it run in CI.
+pages: panel-shell
+	$(BUN) tools/build_pages.js
 
 ## Build the Restoration page, both ways.
 ##
@@ -99,6 +105,26 @@ test-cabinet: patched panel
 	sleep 2; \
 	$(BUN) tools/cabinet_check.js --url=http://localhost:$(PORT)/; \
 	status=$$?; kill `cat tmp/serve.pid` 2>/dev/null; rm -f tmp/serve.pid; \
+	exit $$status
+
+## Stop the emulator while the player is away. Start it again when they come
+## back. Runs in each browser. Away is two conditions: a hidden tab, and a tab
+## on screen in an application that is no longer active. Safari reports only
+## the second. Watching visibility alone left the game running in the
+## background, and minutes behind the input on the way back.
+##
+## Backgrounding is driven through stubs. No headless engine models the real
+## thing: Playwright's Firefox calls a page visible and focused with another
+## tab in front of it.
+test-away: patched panel
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(AWAY_PORT) & echo $$! > tmp/away.pid; \
+	sleep 2; \
+	status=0; \
+	for browser in $(BROWSERS); do \
+	  $(BUN) tools/away_check.js --url=http://localhost:$(AWAY_PORT)/ \
+	    --browser=$$browser || status=1; \
+	done; \
+	kill `cat tmp/away.pid` 2>/dev/null; rm -f tmp/away.pid; \
 	exit $$status
 
 ## Prove the browser's storage is on disk: write, quit the browser, start a new
@@ -140,6 +166,28 @@ test-hosted-trainer: patched panel-shell trainer
 	status=$$?; kill `cat tmp/ht.pid` 2>/dev/null; rm -f tmp/ht.pid; \
 	exit $$status
 
+test: test-py test-js test-panel test-persist test-cabinet test-away \
+      test-decode test-hosted-trainer
+
+## The hosted cabinet in Docker: no game on the server, each player brings
+## their own copy and it is decoded and patched in their browser.
+##
+## --build every time, because `docker compose up` does not rebuild on a source
+## change: it builds only when the image is absent, and there is no option to
+## change that. Leaving it off is how a container comes to serve an old build.
+hosted:
+	docker compose -f compose.hosted.yml up --build
+
+## The same, with the browser's files mounted from the tree, so an edit is live
+## on the next page load rather than on the next rebuild. panel.css and
+## panel.js are inlined into the shell, so this builds it first.
+##
+## compose.dev.yml mounts the host's cabinet/ over the image's, node_modules
+## included, so both have to be here before the container starts: the emulator
+## js-dos ships, and the hooked copy of it that ?trainer loads.
+hosted-dev: panel-shell cabinet-deps trainer
+	docker compose -f compose.hosted.yml -f compose.dev.yml up --build
+
 ## js-dos and pyodide, in cabinet/. Only when they are not there already: this
 ## is a prerequisite of targets that need them, not a step to run every time.
 cabinet-deps:
@@ -167,6 +215,18 @@ test-trainer: trainer patched panel
 	$(BUN) tools/trainer_check.js --url=http://localhost:$(PORT)/; \
 	status=$$?; kill `cat tmp/serve.pid` 2>/dev/null; rm -f tmp/serve.pid; \
 	exit $$status
+
+## Serve the cabinet with no game on it, the way a static host does. The page
+## finds an empty manifest and offers the drop zone. The player's own copy is
+## unpacked, patched and decoded in the browser.
+##
+## Not the same as `make serve` and ?byo. That reaches the same code on a
+## server that still holds the game, where a route reading the server's copy
+## passes unnoticed. GitHub Pages and the hosted container have nothing to
+## read, and neither does this.
+serve-byo: panel-shell
+	@mkdir -p tmp/no-game
+	YENDOR_GAME_DIR=$(PWD)/tmp/no-game $(BUN) cabinet/serve.js --port=$(PORT)
 
 ## Serve the game exactly as it shipped, intro and attract loop and all
 serve-stock:

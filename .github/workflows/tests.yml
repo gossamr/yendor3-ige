@@ -1,0 +1,52 @@
+# The suites that need no copy of the game.
+#
+# No game files are here, so the decoders cannot be exercised. What runs is the
+# cabinet's own JavaScript, meaning keys, mouse, storage, the zip reader, the
+# roster and the boot wiring, plus the panel shell build, which reads only
+# committed code. The tests that do read the game stand down rather than fail, so a green
+# run means what ran passed, not that everything ran.
+#
+# The python suites read WORLD.DAT or REGISTER.EXE for every assertion, down to
+# collection, so none of them run here. `make test` runs everything against a
+# copy on disk.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # bun the way the README installs it: yarn vendors the pinned copy into
+      # node_modules/.bin, and the Makefile prefers that one. No third-party
+      # action, so nothing here carries a runtime of its own to keep current.
+      - name: Vendor bun
+        run: yarn install --frozen-lockfile --production
+
+      # Against cabinet/bun.lock, the same tree the Dockerfile and the Pages
+      # build resolve.
+      - name: Install the emulator and the decoder runtime
+        run: ../node_modules/.bin/bun install --frozen-lockfile
+        working-directory: cabinet
+
+      - name: Run the JavaScript suites
+        run: ../node_modules/.bin/bun test
+        working-directory: cabinet
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # tools/build_panel.py is standard library only, and the shell holds no
+      # decoded content, so it builds here without a game.
+      - name: Build the panel shell
+        run: make panel-shell PY=python3

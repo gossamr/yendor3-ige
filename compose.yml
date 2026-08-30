@@ -1,0 +1,52 @@
+# Serve the cabinet against a game you have locally.
+#
+# For a public deployment with no game on the server, use compose.hosted.yml
+# instead. The container tells the two apart by whether a game is mounted.
+#
+#   make all              # once on the host: decodes the game, builds the panel
+#   docker compose up
+#
+# Run `make all` first, not after. Both volumes below are bind mounts, and
+# Docker creates a *directory* in place of a bind-mount source that does not
+# exist, so starting without data/restoration.json leaves a directory of that
+# name on the host for you to delete. `make all` needs python3 and nothing
+# else: no venv, no third-party package.
+#
+#   PORT=9000 docker compose up      # publish somewhere else
+#   docker compose up --build        # after changing the cabinet
+name: yendor3
+
+services:
+  cabinet:
+    build:
+      context: .
+    image: yendor3-cabinet:latest
+
+    # Everything game-derived is mounted, never baked, so the image can be
+    # built and pushed anywhere without carrying the game inside it. All three
+    # are read-only: the patched copy is built in the container's own tmp/.
+    volumes:
+      # The game's own files.
+      - ./game:/app/game:ro
+      # The decoded tables. Mounted rather than copied because they are the
+      # game's content; the panel that reads them is built into the image.
+      # `make all` writes this, and needs only python3, with no third-party
+      # package.
+      - ./data/restoration.json:/app/data/restoration.json:ro
+
+    # Host 8090 by default, so it does not collide with anything already on
+    # 8080. The container always listens on 8080.
+    ports:
+      - "${PORT:-8090}:8080"
+
+    restart: unless-stopped
+
+    # Saves live in the browser's IndexedDB, not here, so the container holds
+    # nothing worth keeping and can be recreated freely.
+    #
+    # Reaching this from another machine: the cabinet asks the browser to make its
+    # storage non-evictable, and that request only exists in a secure context.
+    # Over http on a LAN address it is not one, so saves are still written but
+    # the browser may discard them under disk pressure, and the status bar says
+    # "saves stored" rather than "saves persistent". localhost counts as
+    # secure; a LAN address needs https.

@@ -1,0 +1,92 @@
+# Publish the static site.
+#
+# The site carries no game: each player supplies their own copy, which the page
+# reads in the browser and never uploads. So this workflow needs no secrets and
+# has nothing to leak.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let a run in progress finish rather than canceling it
+# half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Reports where the site will be served from, including a custom domain
+      # when one is configured. It runs before the build because og:url has to
+      # be written into the page, and deploy-pages only reports the address
+      # after the artifact has been uploaded.
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      # bun the way the README installs it: yarn vendors the pinned copy into
+      # node_modules/.bin, and the Makefile prefers that one. No third-party
+      # action, so nothing here carries a runtime of its own to keep current.
+      - name: Vendor bun
+        run: yarn install --frozen-lockfile --production
+
+      # js-dos, whose dist/emulators the build copies in, and pyodide, which
+      # the page runs the decoders under. bun, against cabinet/bun.lock, which
+      # is the lockfile that exists and the one the Dockerfile installs from,
+      # so CI and the image resolve the same tree.
+      #
+      # This used to be `yarn install --frozen-lockfile`, and there is no
+      # cabinet/yarn.lock: yarn v1 with none present resolves from
+      # package.json and succeeds, so the flag promised a reproducibility it
+      # was not delivering. Never npm either way: it produces a js-dos tree
+      # the cabinet cannot boot.
+      - name: Install the emulator and the decoder runtime
+        run: ../node_modules/.bin/bun install --frozen-lockfile
+        working-directory: cabinet
+
+      # The panel shell is built by tools/build_panel.py, which needs only the
+      # standard library, and no copy of the game, which is why it can run
+      # here at all.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Build the site
+        run: make pages PY=python3
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+
+      # A last check that nothing game-derived reached the output. The build
+      # does not put it there, but this is the file that gets published.
+      - name: Assert the site carries no game
+        run: |
+          for name in REGISTER.EXE WORLD.DAT PICTURES.VGA restoration.json; do
+            if find build/pages -name "$name" | grep -q .; then
+              echo "$name reached the published site" >&2
+              exit 1
+            fi
+          done
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

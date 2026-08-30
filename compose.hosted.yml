@@ -1,0 +1,34 @@
+# Serve the cabinet publicly, with no game on the server.
+#
+#   docker compose -f compose.hosted.yml up
+#
+# A separate file rather than an override of compose.yml, because Compose
+# merges volume lists instead of replacing them, and there is no way to take a
+# mount away in an override, and the whole point here is that nothing of the
+# game is mounted.
+#
+# Each player supplies their own copy from the browser and it is decoded on
+# their machine. Nothing about the game reaches this container, which is what
+# makes it distributable.
+name: yendor3-hosted
+
+services:
+  cabinet:
+    build:
+      context: .
+    ports:
+      - "${PORT:-8090}:8080"
+    restart: unless-stopped
+    # No volumes. That is the feature.
+    #
+    # Both halves are in the browser now. A player drops a zip; cabinet/zip.js
+    # unpacks it in the page; cabinet/decode.worker.js runs the project's own
+    # Python under pyodide over it, producing the panel's tables and applying
+    # the three patches the Makefile applies. Nothing is uploaded, and nothing
+    # about the game reaches this container. A player sending their copy to
+    # this server would be a distribution this project has no right to receive.
+    #
+    # `up` on its own does not rebuild. Compose builds only when the image is
+    # absent, so an edit to cabinet/ stays invisible until `--build`, and a
+    # container serving an old build looks exactly like a container serving a
+    # bug. Use `make hosted`, or compose.dev.yml to develop without rebuilding.

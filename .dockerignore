@@ -1,0 +1,37 @@
+# Nothing derived from the game goes into the image; it is mounted instead.
+game/
+data/
+web/restoration.html
+# Content read off the game's own screens.
+observed/
+
+# tools/ holds the decoders and the instruments that were used to find them.
+# Only Python is let through, since the capture drivers boot an emulator and
+# are no use in a server image, and the decoder stage below then prunes what is
+# let through to the sixteen modules the browser actually runs. The rest are
+# solvers, the disassembler, the OCR and the verifiers.
+# `tools/*` rather than `tools/`, so the exception below can re-include.
+tools/*
+!tools/*.py
+# The one piece of tools/ JavaScript the build needs: it writes the hooked
+# emulator into node_modules in the deps stage. The decoder stage prunes it
+# away again, so it reaches no published layer.
+!tools/build_trainer.js
+
+# cabinet/ holds the page's own code next to the things that drive it
+# headlessly. serve.js and boot.js are the server and are needed; the capture
+# drivers and the test suites are not, and an image is not where they belong.
+cabinet/*.test.js
+cabinet/capture.js
+cabinet/drive.js
+cabinet/probe.js
+cabinet/session.js
+
+tmp/
+.git/
+.venv/
+node_modules/
+cabinet/node_modules/
+tests/
+docs/
+*.md
