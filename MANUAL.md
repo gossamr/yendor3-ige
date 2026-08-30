@@ -41,6 +41,12 @@ What that means in practice:
   from that kill. The same four states also stop you being counted as ready to
   train.
 - **The ladder is a running total** of experience earned.
+- **There is a fixed amount of it.** Every monster in the game stands on one
+  cell of one map, and a monster you kill does not come back. There are 1,862
+  of them and they pay 13,322,378 experience between them. That is the whole of
+  what the game holds. Walk away from a monster you have not killed and it
+  returns to its post, so nothing is lost by leaving; nothing is gained by
+  going back over ground you have cleared.
 - **You can bank several levels.** The screen shows the highest level you have
   earned, but a trainer sells one level per visit. Fall four levels behind and
   you pay four times.
@@ -629,14 +635,14 @@ once an attack connects, thick armor does nothing to soften what it inflicts.
 **But an attack that misses inflicts nothing.** The effect is applied inside a
 branch that the game only reaches when the attack did damage. A miss jumps
 past it and the resist roll never happens. That is true in both directions,
-you against a creature and a creature against you.
+you against a monster and a monster against you.
 
 So the absorption that makes you unhittable makes you **immune to every
 condition in the game at the same time**, and it is the only defense that does.
 Protections reduce your chances one condition at a time; a negative margin
 removes the question.
 
-Only a handful of creatures inflict the three conditions that take a character
+Only a handful of monsters inflict the three conditions that take a character
 out of a fight. A character carrying one is skipped by the turn list entirely, earns nothing from the fight,
 drops out of the party averages, and cannot be trained until it is cured, and
 stoning is the most expensive cure in the game.
@@ -810,12 +816,12 @@ it is continuous, so a large accuracy advantage pays on every swing.
 
 Damage only ever moves the other way. Monsters carry special attacks that
 replace their damage with a fixed amount or leave a wound that bleeds for a set
-number of turns, and a creature can resist what you are hitting it with.
+number of turns, and a monster can resist what you are hitting it with.
 
 ### Resistance halves damage
 
-Some creatures shrug off a kind of attack and take **half** the damage from it.
-It is always half. A creature that resists two things about the same attack
+Some monsters shrug off a kind of attack and take **half** the damage from it.
+It is always half. A monster that resists two things about the same attack
 still takes half, not a quarter.
 
 What can be resisted:
@@ -827,13 +833,13 @@ What can be resisted:
 | A hand-to-hand swing | **no, never** |
 
 **A hand weapon is the one attack in the game that nothing shrugs off.** No
-creature resists it and no creature can.
+monster resists it and no monster can.
 
 An enchanted bow counts as magic as well as a shot, so anything that resists
-either one halves it. Against a creature that shrugs off magic, the enchantment
+either one halves it. Against a monster that shrugs off magic, the enchantment
 on a bow works against you.
 
-Resistance is listed on the creature's page in the clue book, and on the
+Resistance is listed on the monster's page in the clue book, and on the
 panel's Monsters tab.
 
 When a character's health reaches zero they are marked dead, drop out of the
@@ -844,18 +850,18 @@ lockpicker out of the party as well.
 ### Who gets attacked
 
 The party is one point on the map. Range is measured once, from the party's
-position to the creature's, so hand-to-hand and shooting are properties of the
+position to the monster's, so hand-to-hand and shooting are properties of the
 encounter rather than of a character: everyone is the same distance from
 everything.
 
-A creature choosing a victim rolls a number from 0 to 3, indexes the party by
+A monster choosing a victim rolls a number from 0 to 3, indexes the party by
 it, and rolls again if that slot is empty or holds someone dead, stoned, frozen
 or paralyzed. **Every able character is equally likely to be hit, whatever slot
 they are in.**
 
 Two things follow. Health and absorption are worth the same on any character,
 because none of them can be put where the blows land. A fighter cannot stand
-between a creature and your mage. And a caster's survivability is a real
+between a monster and your mage. And a caster's survivability is a real
 purchase rather than a hedge: with four characters in the pool, a quarter of
 everything thrown at the party arrives at the one with the lowest absorption.
 
@@ -872,7 +878,7 @@ The two also differ in who acts. Shooting is the whole party: it walks the four
 slots, takes a shot from every able character carrying a projectile, and
 resolves them one after another, each with that character's own ranged
 accuracy and ranged damage, drawing the four shots under the four panels.
-Hand-to-hand is one character against one creature. Up to three creatures can
+Hand-to-hand is one character against one monster. Up to three monsters can
 be engaged at once and you choose which to swing at, but the swing is a single
 character's, settled with their accuracy and their damage.
 
@@ -900,12 +906,12 @@ to two places at once: this list, and absorption at a fifth of whatever the
 point puts over 72.
 
 **Dexterity buys priority.** The list holds one entry per able character and one
-per engaged creature, four and up to three, so at most seven, and the round
+per engaged monster, four and up to three, so at most seven, and the round
 walks it forward once. However fast you are, you act once and then wait.
 
-When an actor dies their entry is flagged and skipped, so a creature killed
+When an actor dies their entry is flagged and skipped, so a monster killed
 before its entry comes up loses the whole round. A party that kills each
-creature in the round it arrives takes no damage at all.
+monster in the round it arrives takes no damage at all.
 
 What the game asks of you climbs faster than the +2 a level you get for free,
 so left alone **you are slower than what you fight**. Keeping pace has to be

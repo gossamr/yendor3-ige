@@ -15,8 +15,8 @@ the count of each run follows from the table:
       run  pixels     pictures  what it holds
         0  318 x 198        23
         1  210 x 105       156
-        2  140 x 155       270  creatures drawn tall, and scenery
-        3  190 x 110       238  creatures drawn wide, and spell effects
+        2  140 x 155       270  monsters drawn tall, and scenery
+        3  190 x 110       238  monsters drawn wide, and spell effects
         4  224 x  74        28
         5  224 x  62        14
         6   56 x 136        70
@@ -30,13 +30,13 @@ with no per-picture header.
 
 **A pixel is one palette index, and 0xFF is transparent.** The high nibble
 picks a twelve-color ramp and the low nibble the shade within it, which is
-what makes recoloring a creature possible: substituting one high nibble for
+what makes recoloring a monster possible: substituting one high nibble for
 another moves every pixel of that ramp to a different one at the same shade.
 
-**A creature's pictures.** The record's offset 26 is the first of ten
+**A monster's pictures.** The record's offset 26 is the first of ten
 consecutive pictures, and bit 0 of the word at offset 96 says which run they
 are in: set for run 3, clear for run 2 (image 0x10352). Within the ten, the
-draw loop cycles 0..5 while the creature stands and walks, shows 6 when it
+draw loop cycles 0..5 while the monster stands and walks, shows 6 when it
 attacks (image 0x80B0) and 9 when it dies (image 0x10397).
 
 Offsets 64..69 hold up to six recolor pairs, read when bit 2 of word 96 is
@@ -45,7 +45,7 @@ first zero byte.
 
 Bit 15 of the word at offset 98 sends the picture through a different blit
 (image 0x10378), which draws every pixel in ramp 0, the gray one, whatever
-ramp the picture stores. Three creatures carry it: GHOST, SPECTRE and PHASE
+ramp the picture stores. Three monsters carry it: GHOST, SPECTRE and PHASE
 TITAN, the last of which shares the TITAN artwork and is told apart by nothing
 else.
 """
@@ -66,8 +66,8 @@ SIZE, WIDTH, HEIGHT, BASE = 0x04, 0x08, 0x0A, 0x0C
 
 TRANSPARENT = 0xFF
 
-TALL, WIDE = 2, 3       # the two runs creatures are drawn from
-WIDE_BIT = (96, 0)      # record word 96, bit 0: the creature is drawn wide
+TALL, WIDE = 2, 3       # the two runs monsters are drawn from
+WIDE_BIT = (96, 0)      # record word 96, bit 0: the monster is drawn wide
 RECOLOR_BIT = (96, 2)  # record word 96, bit 2: the recolor list applies
 GREY_BIT = (98, 15)     # record word 98, bit 15: drawn in ramp 0 throughout
 
@@ -158,14 +158,14 @@ def bounds(raw: bytes, width: int) -> tuple[int, int, int, int]:
 
 
 def monster_run(runs: list[Run], word96: int) -> Run:
-    """Which run a creature is drawn from."""
+    """Which run a monster is drawn from."""
     return runs[WIDE if word96 >> WIDE_BIT[1] & 1 else TALL]
 
 
-def creature(pics: bytes, runs: list[Run], sprite: int, word96: int,
+def monster(pics: bytes, runs: list[Run], sprite: int, word96: int,
              word98: int, swaps: dict[int, int],
              frame: int = 0) -> tuple[Run, bytes]:
-    """One of a creature's ten pictures, drawn the way the game draws it."""
+    """One of a monster's ten pictures, drawn the way the game draws it."""
     run = monster_run(runs, word96)
     raw = recoloured(picture(pics, run, sprite + frame), swaps)
     return run, greyed(raw) if word98 >> GREY_BIT[1] & 1 else raw

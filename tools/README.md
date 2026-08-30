@@ -17,10 +17,11 @@ The hosted deployment is the exception. It ships no game and no JSON, so when a 
     registry.py      which of the 140 map slots the game names
     markers.py       the gold markers on a clue book map, and their captions
     links.py         the cell event table, and the destination of each door
+    spawns.py        which monster stands on each cell, and the census by map
     tiles.py         the map's tile artwork and its palette
     pack_maps.py     every map page, drawn from the files as tiles and a grid
     world_map.py     all 140 map slots drawn where they sit, as one PNG
-    pictures.py      the ten picture runs in PICTURES.VGA, and the creature art
+    pictures.py      the ten picture runs in PICTURES.VGA, and the monster art
 
 ## The instruments
 
@@ -32,7 +33,7 @@ The hosted deployment is the exception. It ships no game and no JSON, so when a 
     combat_model.py  the damage, resistance and reward rules, as a model
     ocr.py           reads the game's own font off a captured frame
     pngutil.py       PNG read, write and crop zoom, for captured frames
-    fight_probe.js   patches a creature's record, fights it, measures the damage
+    fight_probe.js   patches a monster's record, fights it, measures the damage
     build_trainer.js writes the emulator copy that the Trainer tab talks to
 
 ## The checks
@@ -49,9 +50,9 @@ A field is given a real name in [extract.py](extract.py) only when there is evid
 
 **verified** means the value was read off the game's own screen while it ran under emulation, and it matched the decoded field. [cabinet/session.js](../cabinet/session.js) reduces the cost of that, because it keeps one emulator running, reaches the clue book and captures the screen. `pngutil.zoom` then makes the numbers in a 320 by 200 frame legible.
 
-Most of the enemy record is verified this way against every creature the game lists, not against a sample. The five combat statistics come to 355 readings, all of which match. Each of the four rewards matches on all 71 creatures, and so does each of the twelve immunity and resistance rows. See [docs/monsters.md](../docs/monsters.md).
+Most of the enemy record is verified this way against every monster the game lists, not against a sample. The five combat statistics come to 355 readings, all of which match. Each of the four rewards matches on all 71 monsters, and so does each of the twelve immunity and resistance rows. See [docs/monsters.md](../docs/monsters.md).
 
-**inferred** means the data supports the field strongly, but the value was not read off the running game. The creature family code at offset 28 is the one field of this kind. It divides the 71 creatures the game lists into eleven groups that match their kinds exactly, and two of those groups are named by the game itself, because `INSECT` and `UNDEAD` appear as targets in the spell `AFFECTS` enumeration.
+**inferred** means the data supports the field strongly, but the value was not read off the running game. The monster family code at offset 28 is the one field of this kind. It divides the 71 monsters the game lists into eleven groups that match their kinds exactly, and two of those groups are named by the game itself, because `INSECT` and `UNDEAD` appear as targets in the spell `AFFECTS` enumeration.
 
 **unknown** means the field is emitted raw. One offset of the enemy record is in this class. Offset 104 is zero in all 73 records, so nothing distinguishes it and nothing reads it.
 

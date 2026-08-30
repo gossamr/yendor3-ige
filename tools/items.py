@@ -91,7 +91,7 @@ SPELL_NAME_LEN = 21
 # word then that many 4-byte entries of (record id, flags).
 #
 # The registry covers the whole clue book, not just items: list 1 is the 54
-# maps, list 2 the 71 creatures, list 3 the 98 spells, lists 5-10 the six
+# maps, list 2 the 71 monsters, list 3 the 98 spells, lists 5-10 the six
 # classes' spell lists, and 12-17 the six item categories. `book_list` reads
 # any of them, which is how a section knows which records the book indexes
 # without a screen reading of its contents.
@@ -100,7 +100,7 @@ LIST_ENTRY = 4
 
 # The lists other sections ask for by name.
 MAP_LIST = 1
-CREATURE_LIST = 2
+MONSTER_LIST = 2
 SPELL_LIST = 3
 
 # Which list id goes with which caption is set by the F5 menu, one branch per

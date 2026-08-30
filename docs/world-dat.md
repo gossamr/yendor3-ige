@@ -25,6 +25,7 @@ The map grid sits **before** section 0. Seven areas of 76,800 bytes fill `0x0000
 | 24–26 | `0x03ea03d` | 139,060 | prose lines, 4,090 × 34 ([shops.md](shops.md)) |
 | 28 | `0x041090d` | 26,472 | cell events ([map.md](map.md)) |
 | 29 | `0x0417075` | 7,738 | enemies, 73 × 106 ([monsters.md](monsters.md)) |
+| 30 | `0x0418eaf` | 10,000 | the spawn table, one uint16 per spawn id ([encounters.md](encounters.md)) |
 | 31 | `0x041b5bf` | 8,560 | spells, 107 × 80 ([spells.md](spells.md)) |
 | 32 | `0x041d72f` | 5,000 | the roster template, 10 × 500 ([saves.md](saves.md)) |
 

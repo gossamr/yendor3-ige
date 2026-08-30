@@ -2,12 +2,12 @@
 """Check the decoded monster art against the game's own clue-book screens.
 
 `tools/capture_monsters.js` photographs the F2 MONSTER STATISTICS page for
-every creature the game lists, in the order it lists them. Each page draws the
-creature at a fixed place, so rendering the record's own picture and comparing
+every monster the game lists, in the order it lists them. Each page draws the
+monster at a fixed place, so rendering the record's own picture and comparing
 it pixel for pixel says whether the picture, the palette and the recolour list
 are all right.
 
-The comparison takes the best of the creature's ten pictures because the page
+The comparison takes the best of the monster's ten pictures because the page
 animates: a capture catches whichever step the loop had reached.
 
     bun tools/capture_monsters.js --out=tmp/monsters --count=72
@@ -29,7 +29,7 @@ import tiles
 ROOT = Path(__file__).resolve().parent.parent
 
 # Where each run's pictures are drawn on the page, found by searching for the
-# offset that matches best and identical for every creature in that run.
+# offset that matches best and identical for every monster in that run.
 ANCHOR = {P.TALL: (8, 7), P.WIDE: (6, 33)}
 
 
@@ -75,7 +75,7 @@ def main(shot_dir: str = "tmp/monsters") -> int:
         swaps = {s["from"]: s["to"] for s in e["recolour"]}
         best = (0.0, None)
         for f in range(P.FRAMES):
-            run, raw = P.creature(pics, runs, e["sprite"], e["masks"]["w96"],
+            run, raw = P.monster(pics, runs, e["sprite"], e["masks"]["w96"],
                                   e["masks"]["w98"], swaps, f)
             hit, total = compare(rgb, sw, sh, raw, run.width, index,
                                  ANCHOR[run.index])

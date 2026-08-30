@@ -97,8 +97,8 @@ PARTY_AT, PARTY_MAX = 492, 4
 AREAS, BANDS, LEVELS, CELLS = 7, 24, 20, 40
 BAND_BYTES = LEVELS * CELLS // 8          # 100
 
-# The creature structs the map keeps: eighty of them, at DS:0x122C.
-SPAWN_SLOTS, CREATURE = 80, 156
+# The monster structs the map keeps: eighty of them, at DS:0x122C.
+SPAWN_SLOTS, MONSTER = 80, 156
 
 # Facings, as the look-ahead dispatch at image 0x112D6 tests them.
 FACING = {0x8000: "north", 0x4000: "south", 0x2000: "west", 0x1000: "east"}
@@ -133,8 +133,8 @@ STUBS: dict[int, tuple[int, int | None, str]] = {
     2: (0x17EF6, 34, "containers: eight items each"),
     3: (0x17EA1, 1, "the chest path is finished with this bundle: one bit each"),
     4: (0x17E82, 1, "items handed over: one byte a bundle, one bit an item"),
-    5: (0x17EC0, 1, "world flags, set and cleared by number"),
-    6: (0x17E46, 12480, "the eighty creature structs, from DS:0x122C"),
+    5: (0x17EC0, 1, "monster gone from its cell: one bit a spawn id"),
+    6: (0x17E46, 12480, "the eighty monster structs, from DS:0x122C"),
 }
 
 # What sections 3 and 4 are indexed by: WORLD.DAT's section 10, a thousand
@@ -450,13 +450,13 @@ class Save:
             })
         return out
 
-    # -- section 6, the creatures on the map --------------------------------
-    def creatures(self) -> list[tuple[int, str]]:
+    # -- section 6, the monsters on the map --------------------------------
+    def monsters(self) -> list[tuple[int, str]]:
         """The occupied spawn slots, by the name each struct carries at +0x32."""
         s = self.sections[6]
         out = []
         for i in range(SPAWN_SLOTS):
-            at = s.base + i * CREATURE
+            at = s.base + i * MONSTER
             n = name_of(self.blob[at + 0x32:at + 0x32 + 12])
             if n and n.isprintable():
                 out.append((i, n))
@@ -527,7 +527,7 @@ def print_save(path: Path) -> None:
                 f" {sum(1 for i in table[b][TREASURE_ITEMS] if i)} items)"
                 for b in bits[:6]))
     print(f"  flags      {save.bits_set(5)[:24]}")
-    print(f"  creatures  {save.creatures()}")
+    print(f"  monsters  {save.monsters()}")
 
 
 def main(argv: list[str]) -> int:

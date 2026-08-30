@@ -245,7 +245,7 @@ The offsets are from the section's own start. It holds 2,597 records in six kind
 | `0x4000` container | 71 | image `0x025CB` |
 | `0x2000` door | 139 | the destination record below, 1-based |
 | `0x1000` person | 139 | the NPC's own index in the table at `DS:0x0EC8`, not 1-based, and records 0 and 140 stand nowhere |
-| `0x0800` item | 1,862 | something lying on the ground |
+| `0x0800` monster | 1,862 | a spawn id. Section 30 names the monster, and that id's bit in save section 5 says whether it is still there ([encounters.md](encounters.md)) |
 | `0x0400` script | 6 | a hand-written handler. The one at image `0x0B704` draws Saxon's ship on Yendor's shore once a flag is set |
 
 A `STAT = N` legend square is a person: that NPC's `+0x14` is the stat's offset in the character record's maximum block ([saves.md](saves.md)) and `+0x16` is N.

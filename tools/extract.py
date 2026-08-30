@@ -7,7 +7,7 @@ the tab when a player brings their own copy. Either way the panel is built
 from its output rather than reading WORLD.DAT itself.
 
 Field naming policy: a field is given a real name only where its meaning was
-confirmed against evidence (the prose descriptions, the creature families, a
+confirmed against evidence (the prose descriptions, the monster families, a
 monotonic difficulty progression, or a targeted immunity test). Everything
 else keeps an `unknown_<offset>` name so that unverified guesses can never be
 mistaken for facts. See README in tools/ for what is confirmed and how.
@@ -51,12 +51,12 @@ def reflow(lines: list[str]) -> str:
 # Enemy record layout.
 #
 # Everything named here was confirmed against the game's own F2 "MONSTER
-# STATISTICS" screen. tools/capture_monsters.js walks all 71 listed creatures
+# STATISTICS" screen. tools/capture_monsters.js walks all 71 listed monsters
 # and tools/ocr.py reads the values straight off the frames, so each field below
-# was checked on every creature rather than on a sample:
+# was checked on every monster rather than on a sample:
 #
 #   * the five combat statistics match on 355/355 readings
-#   * the twelve immunity and resistance rows match on all 71 creatures
+#   * the twelve immunity and resistance rows match on all 71 monsters
 #   * the four reward figures match on 71/71
 #
 # The game omits the placeholder record named "NOT USED" from its own list,
@@ -68,25 +68,25 @@ ENEMY_FIELDS = {
     "dexterity": 36,
     "absorption": 38,
     "damage": 40,
-    # Only 13 creatures carry ranged attacks; the rest show these rows blank.
+    # Only 13 monsters carry ranged attacks; the rest show these rows blank.
     "ranged_accuracy": 50,
     "ranged_damage": 52,
     "family": 28,      # INFERRED: groups insects, undead, dwarves, elves,
                        # dragons and humans; what INSECT / UNDEAD key off.
-    # The creature's level. It runs 1 (WASP, CENTIPEDE) to 45 (PALTIVAR), and
-    # ranking the 71 creatures by it gives almost exactly the ranking by
+    # The monster's level. It runs 1 (WASP, CENTIPEDE) to 45 (PALTIVAR), and
+    # ranking the 71 monsters by it gives almost exactly the ranking by
     # absorption or damage: every other stat is grown from it.
     "level": 32,
-    # The creature's sprite. The draw loop keeps the current frame at struct
+    # The monster's sprite. The draw loop keeps the current frame at struct
     # offset 8 and sets it from here: at animation step 0x49 it stores this
     # value plus six (the attack frame) and at 0x4f it stores this value back
-    # (image 0x80b0 and 0x80e9). Creatures that would share artwork share it --
+    # (image 0x80b0 and 0x80e9). Monsters that would share artwork share it --
     # WASP with WASP QUEEN, the three giants, the three dragons.
     "sprite": 26,
     # The two sounds, both indexes into the executable's 141-entry VOC table.
-    # The resolver plays 42 when the creature's blow lands and 44 when it
+    # The resolver plays 42 when the monster's blow lands and 44 when it
     # misses (image 0x1053 and 0x109e); 42 plays again from the attack
-    # animation itself, at step 0x4a (image 0x80c7). Where a creature has no
+    # animation itself, at step 0x4a (image 0x80c7). Where a monster has no
     # weapon the two are the same value; the fifteen that swing one share a
     # single miss sound, 35, and keep their own for the hit. Both towers have
     # neither, which is right: they only shoot.
@@ -108,7 +108,7 @@ FIELD_CONFIDENCE = {
 # Special attacks. Two are pinned to single bits of the word at 96; the rest --
 # the condition-inflicting ones, match no bit, byte or pair of bits anywhere
 # in the record, so they are not a bitmask and are left undecoded. Twenty pairs
-# of creatures hold identical words at 96 and 98 and are still shown different
+# of monsters hold identical words at 96 and 98 and are still shown different
 # attack lists by the game (SNOW GIANT and FIRE GIANT, DWARF SCOUT and ICE
 # DWARF), which rules those words out as the sole source.
 ATTACK_BITS = {(96, 12): "PARTY ATTACK", (96, 9): "BREAK SHIELD"}
@@ -117,14 +117,14 @@ ATTACK_BITS = {(96, 12): "PARTY ATTACK", (96, 9): "BREAK SHIELD"}
 # Offset 60 is an *id*, and the routine that prints the SPECIAL ATTACK line
 # (image 0x7ee4) resolves it before testing anything:
 #
-#     mov ax, es:[si+0x6e]   ; the creature's offset 60, +50 for the in-memory
+#     mov ax, es:[si+0x6e]   ; the monster's offset 60, +50 for the in-memory
 #     lcall 0x357:0xe        ; struct this routine walks
 #     ...                    ; -> bx = 0x96da + id*12
 #     test word [di+8], 0x8000 / "SICK, "   and so on down the bits
 #
 # So the mask lives in a twelve-byte table in the executable, keyed by the id.
 # That is why looking for it inside the 106-byte record failed: pairs of
-# creatures really do share every masky-looking word and differ only in this id.
+# monsters really do share every masky-looking word and differ only in this id.
 ATTACK_TABLE = 0x96DA          # DS offset of the twelve-byte entries
 ATTACK_ENTRY = 12
 ATTACK_MASK_AT = 8             # the condition mask within an entry
@@ -139,7 +139,7 @@ ATTACK_EFFECT_BITS = {
 }
 
 
-# Offsets 64-69: how one drawing serves several creatures.
+# Offsets 64-69: how one drawing serves several monsters.
 #
 # When bit 2 of word 96 is set, the draw loop copies these six bytes out and
 # the renderer splits each into its two nibbles (`shl ax,1` four times then
@@ -147,7 +147,7 @@ ATTACK_EFFECT_BITS = {
 # nibble a color and the low nibble what to draw instead. Six pairs, stopping
 # at a zero byte.
 #
-# The record does not say that; its shape does. All 32 creatures carrying a
+# The record does not say that; its shape does. All 32 monsters carrying a
 # list stop at the first zero byte, and in all 32 the colors being replaced
 # are distinct: neither would survive if these bytes were something else. And
 # it explains the sprite groups: FROST GIANT carries no list and SNOW GIANT and
@@ -188,7 +188,7 @@ REWARD_FIELDS = {
 
 # Immunity. Six condition effects occupy the top bits, most significant first,
 # and the damage types occupy the bottom of the word. Bit 5 is never set by any
-# creature: nothing is immune to physical damage, only resistant to it.
+# monster: nothing is immune to physical damage, only resistant to it.
 IMMUNITY_WORD = 100
 IMMUNITY_BITS = {
     15: "POISON", 14: "DISEASE", 13: "PARALYSIS",
@@ -196,7 +196,7 @@ IMMUNITY_BITS = {
     4: "MAGIC DAMAGE", 3: "FIRE", 2: "COLD", 1: "ELECTRIC", 0: "POWER",
 }
 
-# Resistance is a set of things the creature shrugs off. Every blow builds a
+# Resistance is a set of things the monster shrugs off. Every blow builds a
 # word describing itself and the applier ANDs it with this one, halving the
 # damage once for each bit that survives (image 0x0C690 for a blow, image
 # 0x1D8AF for a spell, and the chain at 0x1D72F written out bit by bit.
@@ -217,12 +217,12 @@ IMMUNITY_BITS = {
 # An enchanted weapon filed under magic is the grouping making sense of itself:
 # the blow is part magical, so magic resistance takes half of it.
 #
-# Creatures carry only 15, 14 and 13, so the two row masks pick out the same
-# creatures the single bits would. The masks are still what the fields are
+# Monsters carry only 15, 14 and 13, so the two row masks pick out the same
+# monsters the single bits would. The masks are still what the fields are
 # defined as, because they are what the game asks.
 #
 # A melee swing builds no word at all: image 0x00E73 resolves the blow and
-# image 0x00EC8 subtracts the result from the creature's health directly. It is
+# image 0x00EC8 subtracts the result from the monster's health directly. It is
 # the one blow with no bit, and bit 14 is the one physical bit with no blow.
 RESISTANCE_WORD = 102
 RESIST_PHYSICAL_ROW = 0xC000
@@ -232,7 +232,7 @@ RESIST_UNMATCHED = 0x4000
 
 # Magic resistance has two sources: this bit of the resistance word, and bit 4
 # of the immunity word. The game shows RESISTANT when either is set, verified
-# on all 71 creatures, including the four (BLAZIOS, CHAMELEON MAN, FIRE DWARF,
+# on all 71 monsters, including the four (BLAZIOS, CHAMELEON MAN, FIRE DWARF,
 # SORCERER) that carry only the immunity-word bit.
 MAGIC_VIA_IMMUNITY_BIT = 0x0010
 
@@ -242,7 +242,7 @@ ENEMY_MASK_WORDS = [96, 98]
 
 # What is left of the 106 bytes: 104, which is zero in all 73 records.
 #
-# Every other offset is now named. The in-memory creature is the record copied
+# Every other offset is now named. The in-memory monster is the record copied
 # to an origin 50 bytes earlier (80 of them, 156 bytes each, at `DS:0x122C`,
 # image 0x1234e), so record offset N is `[si+N+50]` in the code, and
 # `tools/xref.py` finds the instructions that read it. The character record is
@@ -254,8 +254,8 @@ ENEMY_UNKNOWN = [104]
 
 # --- the ranged attack -----------------------------------------------------
 #
-# Thirteen creatures shoot. The code that launches the shot (image 0x12579)
-# fills a 24-byte projectile record from the creature's, and every field it
+# Thirteen monsters shoot. The code that launches the shot (image 0x12579)
+# fills a 24-byte projectile record from the monster's, and every field it
 # takes is one that was undecoded:
 #
 #     projectile +0x04  <- record 46   the picture, in PICTURES.VGA run 1
@@ -272,7 +272,7 @@ RANGED_PICTURE, RANGED_SOUND, RANGED_ATTACK_ID = 46, 48, 62
 RANGED_RECOLOUR, RANGED_RECOLOUR_BYTES = 70, 6
 RANGED_RECOLOR_BIT = (96, 1)
 
-# How often the creature shoots rather than closing. The AI rolls 1..100 and
+# How often the monster shoots rather than closing. The AI rolls 1..100 and
 # compares it with a threshold picked by the highest of these four bits, or 5
 # where none is set (image 0x129f8). Exactly the thirteen shooters carry one:
 # the three that cannot move (FUNGUS and the two towers) carry the 90, and
@@ -280,34 +280,34 @@ RANGED_RECOLOR_BIT = (96, 1)
 RANGED_CHANCE_BITS = {12: 90, 11: 75, 10: 50, 9: 25}
 RANGED_CHANCE_DEFAULT = 5
 
-# The creature's ordinary attack, resolved through the same twelve-byte table
-# as the special one (image 0x13ed). It is 2 for every creature but FIRE
+# The monster's ordinary attack, resolved through the same twelve-byte table
+# as the special one (image 0x13ed). It is 2 for every monster but FIRE
 # MANTIS, whose 38 is the table's other entry that inflicts no condition.
 ENEMY_ORDINARY_ATTACK_ID = 58
 
-# Where an effect graphic is drawn on the creature. The draw loop picks a base
+# Where an effect graphic is drawn on the monster. The draw loop picks a base
 # position, adds these two, and blits a picture from run 6 there (image
-# 0x10443). They go with the artwork rather than the creature: everything that
+# 0x10443). They go with the artwork rather than the monster: everything that
 # shares a picture shares them, and they are the same 35, 45 for most of the
-# creatures drawn tall.
+# monsters drawn tall.
 HIT_OFFSET = (54, 56)
 
 # How the walk cycle runs, from two bits of word 96 (image 0x15398). Bit 5
 # runs the six frames and snaps back to the first; bit 4 runs them and comes
 # back down, using bit 3 to remember which way it is going; bit 6 stops the
-# animation altogether. Every creature the game lists carries exactly one of
+# animation altogether. Every monster the game lists carries exactly one of
 # the first two, and none carries the third.
 WALK_BITS = {4: "bounce", 5: "loop", 6: "still"}
 WALK_BIT_WORD = 96
 
 # What a steal takes, in the same packed BCD as the four rewards, carried into
 # the pending-effect record with the attack id (image 0x13ce). Only the three
-# creatures whose special attack is STEAL GOLD have one.
+# monsters whose special attack is STEAL GOLD have one.
 ENEMY_STEAL = (92, 4)
 
 
 def ranged_attack(exe: bytes, rec: bytes) -> dict | None:
-    """The creature's ranged attack, or None where it has none."""
+    """The monster's ranged attack, or None where it has none."""
     picture = u16(rec, RANGED_PICTURE)
     if not picture:
         return None
@@ -349,10 +349,10 @@ def enemy_name(rec: bytes) -> str:
 
 
 def extract_enemies(d: S.Directory) -> list[dict]:
-    # Which creatures the clue book indexes, from the book's own list registry
+    # Which monsters the clue book indexes, from the book's own list registry
     # rather than from the placeholder's name. Record 0 is a zero-filled
     # sentinel, so a record's 1-based id is its index.
-    book = set(I.book_list(d.exe, I.CREATURE_LIST))
+    book = set(I.book_list(d.exe, I.MONSTER_LIST))
     out = []
     for i, rec in enumerate(d[S.ENEMIES].records(d.world, S.ENEMY_RECORD)):
         name = enemy_name(rec)
@@ -399,24 +399,24 @@ def extract_enemies(d: S.Directory) -> list[dict]:
 
 # --- monster art -----------------------------------------------------------
 
-# The picture a creature is drawn with. tools/pictures.py has the file's shape;
+# The picture a monster is drawn with. tools/pictures.py has the file's shape;
 # what is decided here is which of the ten pictures to show and how to store it.
 #
-# The first of the ten is the creature standing still. The other nine are the
+# The first of the ten is the monster standing still. The other nine are the
 # rest of the walk cycle, the attack and the death, which a still picture has
 # no use for.
 MONSTER_FRAME = 0
 # Section 12's first palette. The map screen draws with it too. Drawing these
 # pictures with it reproduces the clue book's own monster screens pixel for
-# pixel on 64 of the 71 creatures the game lists; on the other seven the
-# capture caught the page mid-refresh, with the top of the creature on one
+# pixel on 64 of the 71 monsters the game lists; on the other seven the
+# capture caught the page mid-refresh, with the top of the monster on one
 # step of the walk cycle and the bottom on the next. tools/verify_monsters.py
 # measures this.
 MONSTER_PALETTE = 0
 
 
 def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, dict]:
-    """name -> a PNG of the creature, cropped to its own pixels.
+    """name -> a PNG of the monster, cropped to its own pixels.
 
     Each picture carries a palette of just the colors it uses, which is what
     keeps 71 of them inside a quarter of a megabyte. Index 0 is the
@@ -429,10 +429,10 @@ def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, d
     for e in enemies:
         # The game omits the placeholder record from its own list and never
         # draws it, so the picture its sprite field points at is not a
-        # creature: it is the scenery that run 2 starts with.
+        # monster: it is the scenery that run 2 starts with.
         if not e["listed"]:
             continue
-        run, raw = P.creature(
+        run, raw = P.monster(
             pics, runs, e["sprite"], e["masks"]["w96"], e["masks"]["w98"],
             {s["from"]: s["to"] for s in e["recolour"]}, MONSTER_FRAME)
         w, h, crop = _cropped(raw, run.width)
@@ -443,14 +443,14 @@ def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, d
 
 # The projectile run. Each picture holds the shot at the four angles it can
 # travel at, so it is shown whole rather than cut up: which of the four the
-# game picks is a property of the shot, not of the creature.
+# game picks is a property of the shot, not of the monster.
 PROJECTILE_RUN = 1
 
 
 def projectile_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, dict]:
-    """picture number -> a PNG of the shot, for every picture a creature fires.
+    """picture number -> a PNG of the shot, for every picture a monster fires.
 
-    Keyed by the picture rather than by the creature because seven pictures
+    Keyed by the picture rather than by the monster because seven pictures
     serve all thirteen shooters: three of them fire the same arrows.
     """
     runs = P.read_runs(d.exe, len(pics))
@@ -535,7 +535,7 @@ SPELL_FIELDS = {"mp": 24, "nuore": 26, "damage": SPELL_DAMAGE,
 # mapping: each branch below is one `test` in the printer, in its order.
 #
 # Offset 76 is the spell's blow word, which the combat model already reads for
-# its bit 13 (`tools/combat_model.py`, measured against a live creature): one
+# its bit 13 (`tools/combat_model.py`, measured against a live monster): one
 # word, two readings, because the printer asks what kind of blow it is in
 # order to say what the blow reaches.
 SPELL_AFFECTS_WORD = 72
@@ -732,7 +732,7 @@ def extract_spells(d: S.Directory) -> list[dict]:
                         if element >> bit & 1]
         s["restorative"] = rec[SPELL_FAMILY] == SPELL_FAMILY_RESTORATIVE
         s["amount"] = u16(rec, SPELL_AMOUNT) or None
-        # The blow word, which says both what a resistant creature halves and
+        # The blow word, which says both what a resistant monster halves and
         # what the AFFECTS row reaches.
         s["blow"] = u16(rec, SPELL_BLOW)
         s["listed"] = i + 1 in book
@@ -909,6 +909,7 @@ MAP_PAGES = json.loads(_MAP_PAGES.read_text()) if _MAP_PAGES and _MAP_PAGES.exis
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pack_maps import WALKED_LINKS as _WALKED_LINKS  # noqa: E402
 import links as K  # noqa: E402
+import spawns as SP  # noqa: E402
 
 def extract_legend(d: S.Directory) -> list[str]:
     """The map legend labels, which stop well short of the section's end.
@@ -1091,6 +1092,9 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         "map_links": {**K.by_label(d, MAP_PAGES,
                                    markers.by_page(d.world, MAP_PAGES)),
                       **{f"{a}|{b}": v for (a, b), v in _WALKED_LINKS.items()}},
+        # Which monsters stand on each map, and how many: the 0x0800 cell
+        # events, resolved through section 30 (`tools/spawns.py`).
+        "spawns": SP.census(d, enemies),
         "items": extract_items(d),
         "leveling": extract_leveling(d),
         "enhancers": I.Items(d).enhancers(),
@@ -1110,7 +1114,7 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
     }
 
     # The Planner tab's model tables, which read the decoded items and
-    # creatures rather than the game's files: filled in once those are in hand.
+    # monsters rather than the game's files: filled in once those are in hand.
     payload["planner"] = PL.build(payload)
 
     payload["propers"] = proper_nouns(payload)

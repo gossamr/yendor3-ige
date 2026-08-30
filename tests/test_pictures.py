@@ -1,7 +1,7 @@
-"""The picture runs in PICTURES.VGA, and the creature art read out of them.
+"""The picture runs in PICTURES.VGA, and the monster art read out of them.
 
 The run table is checked against the file it describes, ten runs that tile the
-whole 17 MB with no gap and no remainder, and the creature art against
+whole 17 MB with no gap and no remainder, and the monster art against
 the game's own clue-book screens, which is the only check that can tell a
 plausible decode from a right one.
 """
@@ -51,7 +51,7 @@ def test_the_last_run_is_the_map_tile_bank(directory):
     assert run.base == tiles.BANK_ALIGN + tiles.BLOCK * tiles.TILE_BYTES
 
 
-def test_a_creature_names_a_picture_that_exists(directory):
+def test_a_monster_names_a_picture_that_exists(directory):
     pics = PICS.read_bytes()
     rs = runs(directory)
     for e in extract.extract_enemies(directory):
@@ -65,7 +65,7 @@ def test_recolouring_moves_a_ramp_and_leaves_the_shade(directory):
     assert P.greyed(raw) == bytes([0x00, 0x0F, 0x03, P.TRANSPARENT])
 
 
-def test_the_creatures_drawn_gray_are_the_three_the_bit_names(directory):
+def test_the_monsters_drawn_gray_are_the_three_the_bit_names(directory):
     off, bit = P.GREY_BIT
     gray = {e["name"] for e in extract.extract_enemies(directory)
             if e["masks"][f"w{off}"] >> bit & 1}
@@ -75,13 +75,13 @@ def test_the_creatures_drawn_gray_are_the_three_the_bit_names(directory):
 def test_the_art_reproduces_the_games_own_monster_screens(directory):
     """The proof of the whole chain: run, picture number, palette, recolour
     and the gray bit. Each capture is one step of an animation the clue book
-    runs, so the creature's ten pictures are all candidates; a page caught
+    runs, so the monster's ten pictures are all candidates; a page caught
     mid-refresh shows two steps at once and matches neither exactly.
 
-    Measured: 64 of 71 exact, and no creature below 0.53.
+    Measured: 64 of 71 exact, and no monster below 0.53.
     """
     if not any(SHOTS.glob("*.png")):
-        pytest.skip(f"no creature captures in {SHOTS.relative_to(ROOT)}; "
+        pytest.skip(f"no monster captures in {SHOTS.relative_to(ROOT)}; "
                     "run tools/capture_monsters.js")
     import verify_monsters as V
 
@@ -105,7 +105,7 @@ def test_the_art_reproduces_the_games_own_monster_screens(directory):
         swaps = {s["from"]: s["to"] for s in e["recolour"]}
         best = 0.0
         for f in range(P.FRAMES):
-            run, raw = P.creature(pics, rs, e["sprite"], e["masks"]["w96"],
+            run, raw = P.monster(pics, rs, e["sprite"], e["masks"]["w96"],
                                   e["masks"]["w98"], swaps, f)
             hit, total = V.compare(rgb, sw, sh, raw, run.width, index,
                                    V.ANCHOR[run.index])
@@ -117,7 +117,7 @@ def test_the_art_reproduces_the_games_own_monster_screens(directory):
         assert exact >= seen * 0.85, f"only {exact} of {seen} exact"
 
 
-def test_every_listed_creature_gets_a_picture(directory):
+def test_every_listed_monster_gets_a_picture(directory):
     pics = PICS.read_bytes()
     enemies = extract.extract_enemies(directory)
     art = extract.monster_art(directory, pics, enemies)
@@ -131,7 +131,7 @@ def test_every_listed_creature_gets_a_picture(directory):
         assert (w, h) == (a["width"], a["height"]), name
 
 
-def test_the_art_is_cropped_to_the_creature(directory):
+def test_the_art_is_cropped_to_the_monster(directory):
     """A picture is mostly empty, and storing the empty part costs bytes the
     panel carries on every load."""
     pics = PICS.read_bytes()

@@ -4,7 +4,7 @@
 
 The Evidence column uses the classifiers [README.md](README.md) defines. **measured** here means [tools/save_probe.js](../tools/save_probe.js) played a scripted session and copied `CURGAME` after every step, and [tools/save_map.py](../tools/save_map.py) named the offsets that moved between two copies. **screens** means a save was put back on the emulated disk and read off the game's own F1 to F5 pages.
 
-**Saving is a file copy.** SAVE writes the roster and the creature block into `CURGAME` first, reads it back from 5,000 to 68,557, and writes all 81,037 bytes to `SAVGAMEn`. The two files then compare equal byte for byte.
+**Saving is a file copy.** SAVE writes the roster and the monster block into `CURGAME` first, reads it back from 5,000 to 68,557, and writes all 81,037 bytes to `SAVGAMEn`. The two files then compare equal byte for byte.
 
 **`CURGAME` is a random access record store, not a memory dump.** The game seeks into it and writes single records as they change, which is a hundred bytes when the party crosses a row of the world, or one byte when a door opens. The file can therefore be read while the game is being played, and most of a fresh file is zeros.
 
@@ -40,8 +40,8 @@ One stub per section points the handle at the right table entry and sets the rec
 | 2 | `0x17EF6` | 21,800 | 44,064 | 34 | 1,296 | containers |
 | 3 | `0x17EA1` | 65,864 | 1,059 | 1 | 1,059 | bundles the chest path has finished |
 | 4 | `0x17E82` | 66,923 | 1,008 | 1 | 1,008 | items handed over, a bit each |
-| 5 | `0x17EC0` | 67,931 | 626 | 1 | 626 | world flags |
-| 6 | `0x17E46` | 68,557 | 12,480 | 12,480 | 1 | the creatures on the map |
+| 5 | `0x17EC0` | 67,931 | 626 | 1 | 626 | which monsters are still on the map |
+| 6 | `0x17E46` | 68,557 | 12,480 | 12,480 | 1 | the monsters on the map |
 
 [tools/saves.py](../tools/saves.py) reads the offsets out of the executable rather than restating them, and [tests/test_saves.py](../tests/test_saves.py) reads each record length back out of its stub's bytes.
 
@@ -161,17 +161,21 @@ The table has **two entry points**, and they index section 3 differently.
 
 `DS:0xF48` is written once at startup, at image `0x0F076`, with the constant **1,008**, which is the size of section 4 and also one bit bank of section 3. Nothing else writes it, and only `0x25D3` reads it. Section 3 is therefore banked. A thousand bundles need 126 bytes, and the 1,059 bytes of section 3 have room for eight such banks.
 
-Image `0x10BDA` decides which entry an object is recorded through, using a flag in the map object that names it. `[si+2] & 0x8000` takes the first entry and `& 0x4000` takes the second, and the object's number is at `[si+4]` in both cases. Three further bits (`0x1000`, `0x800` and `0x400`) are other kinds of object with no bit array at all. `0x800` gates on a section 5 flag, tested at image `0x10CC3`. Both entries are followed by `test [0x588F], al`, so the bit is read as "this one has already been dealt with".
+Image `0x10BDA` decides which entry an object is recorded through, using a flag in the map object that names it. `[si+2] & 0x8000` takes the first entry and `& 0x4000` takes the second, and the object's number is at `[si+4]` in both cases. Three further bits (`0x1000`, `0x800` and `0x400`) are other kinds of object with no bit array at all. `0x800` is a monster, gated on a section 5 flag tested at image `0x10CC3` ([encounters.md](encounters.md)). Both entries are followed by `test [0x588F], al`, so the bit is read as "this one has already been dealt with".
 
 The second entry has no per-item bits at all, so whatever reaches a bundle that way is recorded by its bank-1 bit alone.
 
-## Section 5, world flags
+## Section 5, which monsters are still on the map
 
-626 bytes, so 5,008 flags, with a set / clear / test triple at image `0x127B4`, `0x1276B` and `0x127FB`, each taking the flag number in `ax`. Opening the Athaneum's south gate sets flags 37 and then 36.
+626 bytes, so 5,008 flags, with a set / clear / test triple at image `0x127B4`, `0x1276B` and `0x127FB`, each taking the flag number in `ax`. The flag number is a **spawn id**: the 1,862 monsters the maps place are numbered 1 to 1,862, and each one's bit says whether it is still standing on its cell. [encounters.md](encounters.md) has the whole chain.
 
-## Section 6, the creatures on the map
+Set means the monster is not standing on its cell. Until it is killed it is in one of the eighty slots section 6 holds instead. Opening the Athaneum's south gate sets flags 37 and then 36, which are the two centipedes on adjacent cells of Yendor, where that gate leads: they come off the map as the party sees them. Death frees the slot at image `0x12CA6` and leaves the flag set, and nothing else clears it, so a killed monster does not return.
 
-12,480 bytes written from `DS:0x122C`, which is the spawn table: 80 creature structs of 156 bytes each, the same ones [monsters.md](monsters.md) describes. A creature's name sits at struct offset `0x32`.
+Nothing found reads the remaining 3,146 flags.
+
+## Section 6, the monsters on the map
+
+12,480 bytes written from `DS:0x122C`, which is the spawn table: 80 monster structs of 156 bytes each, the same ones [monsters.md](monsters.md) describes. A monster's name sits at struct offset `0x32`.
 
 This is the one section that the game does not keep up to date as it plays. It is written to `CURGAME` only by the save itself, so `CURGAME` carries the copy made at launch until the first save.
 

@@ -63,7 +63,9 @@ KINDS = {
     0x1000: "person",       # argument is the record's own index in the NPC
                             # table at DS:0x0EC8, not 1-based unlike the
                             # door's; records 0 and 140 stand nowhere
-    0x0800: "item",         # something lying on the ground
+    0x0800: "monster",     # a monster; the argument is its spawn id,
+                            # which `tools/spawns.py` resolves to a
+                            # monster through WORLD.DAT section 30
     0x0400: "script",       # a hand-written handler, six in all
 }
 

@@ -85,10 +85,10 @@ def test_the_seen_grid_is_the_whole_world_one_bit_a_cell(exe):
     assert grid.size * 8 == S.AREAS * S.BANDS * S.LEVELS * S.CELLS
 
 
-def test_the_last_section_is_the_eighty_creature_structs(exe):
-    creatures = S.sections(exe)[6]
-    assert creatures.records == 1
-    assert creatures.size == S.SPAWN_SLOTS * S.CREATURE
+def test_the_last_section_is_the_eighty_monster_structs(exe):
+    monsters = S.sections(exe)[6]
+    assert monsters.records == 1
+    assert monsters.size == S.SPAWN_SLOTS * S.MONSTER
 
 
 def test_the_container_section_divides_into_whole_records(exe):
@@ -167,7 +167,7 @@ def test_the_stock_party_carries_two_containers():
 def test_a_fresh_file_has_nothing_recorded_in_it():
     save = template()
     assert save.seen_cells() == []
-    assert save.creatures() == []
+    assert save.monsters() == []
     assert all(save.bits_set(i) == [] for i in (3, 4, 5))
     assert all(save.container(n) == [] for n in range(save.sections[2].records))
 

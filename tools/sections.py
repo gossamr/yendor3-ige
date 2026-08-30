@@ -30,7 +30,7 @@ LORE = 16
 CONVO_TOPICS = 23
 CONVO_TEXT = 24
 ENEMIES = 29
-CATEGORIES = 30
+SPAWN_TABLE = 30            # spawn id -> enemy record; see tools/spawns.py
 SPELLS = 31
 PRECREATED_PARTY = 32
 
@@ -165,7 +165,7 @@ if __name__ == "__main__":
         MAP_NAMES_20: "map names (20-char)", MAP_NAMES_12: "map names (12+12)",
         ITEMS: "items", LORE: "lore/books", CONVO_TOPICS: "conversation topics",
         CONVO_TEXT: "conversation prose", ENEMIES: "enemies",
-        CATEGORIES: "category codes", SPELLS: "spells",
+        SPAWN_TABLE: "spawn table", SPELLS: "spells",
         PRECREATED_PARTY: "pre-created party",
     }
     for s in d.sections:
