@@ -57,6 +57,49 @@ The coordinates are **not a fraction of the screen between 0 and 1**. The respon
 
 Lists select on a **double** click, and both the save slot list and the clue book ignore a single click. The second press must carry no motion before it, or the pair does not register as a double click. A double *right* click has a meaning of its own rather than being a stronger form of the single right click. On a portrait it toggles every inventory panel at once.
 
+## A phone
+
+The cabinet lays itself out for a phone and takes a finger as its pointer. Everything here was **measured**: in Chromium emulating a Pixel 7 and an iPhone SE, in Firefox and WebKit emulating an iPhone 14, and on an Android emulator running Chrome, all driven by [tools/mobile_check.js](../tools/mobile_check.js) and `adb`.
+
+**The layout.** Under 900 pixels wide the game is drawn across the top at the width of the screen and its own 8:5 shape, with the keys under it. On a screen that is wider than it is tall and at most 520 pixels tall, a phone on its side, the header becomes a column down the left edge, the keys a column down the right, and the game is the full height between them. In both the clue book is a page over the game, put away to start and brought out by the book button; under the game it had whatever height the keys left it, which was not enough to read. The book button and the full screen button are separate: neither changes the other. The header's status line moves onto its own row under 640 pixels, and under 480 the title is cut to *Thaine* so five buttons fit beside it.
+
+**A finger on the game.** [cabinet/touch.js](../cabinet/touch.js) reads pointer events of type `touch` and `pen` before the browser makes mouse events of them, and sends the emulator what the game expects:
+
+| Gesture | Sent |
+|---|---|
+| tap | the cursor placed at the spot (below), left press, 160 ms, release |
+| second tap within 350 ms and 32 px of the first | left press and release with no motion in front of it |
+| finger held still 450 ms | the cursor placed, right press, held until the finger lifts, relative motion while it moves |
+| second finger while the first is down | right click at the first finger |
+| finger moved more than 12 px | relative motion following it, and no click on lifting |
+| the Right key, then a tap | that tap is a right click; held down, every tap is one |
+
+**Placing the cursor.** A tap places the cursor the way [cabinet/keys.js](../cabinet/keys.js) places a headless click: a relative motion of -4000 on each axis drives the arrow into the top-left corner, then one relative motion steps it out to the spot at 2 pixels a unit. A tap sending the absolute value the mouse path sends landed a screen away on the phone: the value is right only while the cursor is where the last send left it, and the game moves the cursor itself between screens. Homing starts every tap from a known place.
+
+Three things the placing waits for, all measured on the Android emulator, whose guest runs several times slower than a desktop's:
+
+- The step goes out only once the frame shows the arrow at the corner. Sent 40 ms after the homing, the two deltas reached the driver as one, and their sum still clamped at the corner.
+- After homing the arrow's tip rests at `HOME`, (2, 16) at 640x400 on the main menu, and a line or two from there on other screens. So once the frame shows the arrow away from the corner its tip is located and the cursor nudged the rest of the way. One frame read at a time; no probing.
+- The button is held 160 ms. The game reads the button as it goes round its loop, and on the phone one turn of the loop outlasted a 60 ms click, which then never happened as far as the game could tell. Typed keys are held 120 ms for the same reason.
+
+The second tap of a double tap carries no motion because the guest drops the pair if any arrives between the presses, which is the same rule the headless double click follows.
+
+**What the game does with a click**, found while playing it by touch, and true with a mouse too:
+
+- On the main menu, R is Credits and I is Introduction. A tap on Character Creation or Assemble a Party opens it. Enter the Game is inert to the mouse until a party has been assigned; the E key enters regardless.
+- On Assemble a Party the four stock characters start with their boxes ticked, and a tap on a box, or the keys 6 to 9, toggles one into the party; the screen looks the same either way. DONE takes a click just below its lettering and ignores one on it. D does the same.
+- In the world the game's own arrow buttons move the party, Space reports NOTHING HERE when nothing is ahead, a right click on a portrait opens that character's inventory and a double click opens the sheet.
+
+**The keys.** The strip under the screen holds Esc, Enter, Space, the right click, the device's keyboard and a drawer with the digits, F1 to F10 and the letters. Above it, on until put away with the **Pad** key and remembered in `localStorage` under `cabinet.game-keys` once the key has been pressed, are the game's own keys: F1 to F4 for the party members, A, S, C and D, P, M, K and R on the left, R under D as the way back out of the disk panel, and a last column of L, Y and N for what the disk panel asks, and the arrows with the two sidesteps on the right. A key is down for as long as a finger is on it. The device's own keyboard types into a one-pixel field; each character is sent as the key that produces it, with Shift held for a capital, and Backspace as a deletion, which the field can only report while it holds something, so it always holds one space.
+
+**Installing.** The page carries a web manifest and a service worker at the site root, so a browser offers to add it to the home screen and opens it in its own window. The worker fetches the shell itself as it installs, since the first visit's own requests go out before it is in place to see them, and keeps everything else the page loads as it is fetched: the emulator and its wasm at the first boot, pyodide and the decoders at the first decode. It serves a copy only when the network does not answer. [tools/offline_check.js](../tools/offline_check.js) proves the whole of it, as `make test-offline`: the static site is served with no game, a copy is dropped in, decoded and booted, then the server is stopped and the page reloaded, and it comes back with the stored copy offered, the clue book populated from storage and the game painting, every one of its requests answered locally. [tools/build_icons.js](../tools/build_icons.js) draws the icons and `favicon.ico` from [cabinet/icon.svg](../cabinet/icon.svg); both servers answer `/favicon.ico` at the root.
+
+**Sound.** The audio context is resumed from the click that boots the game, and it is running afterwards on the Android emulator's Chrome and on Chrome on an iPhone. Where a browser refuses a resume that comes seconds after the click, the volume icon dims, the status line says so, and the next press or tap resumes it.
+
+**Full screen.** An iPhone lets only a video go full screen, and Chrome there does not report it through `fullscreenEnabled`, so the button is not shown on an iPhone by name, nor anywhere a request is refused as unsupported. The home screen is its full screen, and the manifest offers that. The viewport pins the scale, since WebKit on a phone otherwise rescales the page on every turn of the phone.
+
+**The cursor mapping.** A finger has no pointer to align with, so the calibration in [cabinet/mouse.js](../cabinet/mouse.js) does not run on a touch screen; a tap homes the cursor instead, as above. While the calibration did run there it moved the cursor about to find it, every tap waited behind it, and the tap then landed wherever a probe had left the cursor: that was the tap that did nothing on the Android emulator and on an iPhone. The mouse's calibration is as it was.
+
 ## One long session
 
 [cabinet/session.js](../cabinet/session.js) keeps one emulator running and reads commands from `tmp/session.cmd`, so the cost of booting is paid once rather than once per interaction. `--backend=x` selects DOSBox-X, and `--trace` logs every filesystem mutation beside the command that caused it. [cabinet/cabinet.js](../cabinet/cabinet.js) accepts `?backend=dosbox|dosboxX` and `?mouse=absolute|relative`.

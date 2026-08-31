@@ -917,3 +917,31 @@ body.embedded .guide-side { top: 3.2rem; }
 .plan-heading { display: flex; align-items: baseline; flex-wrap: wrap;
                 gap: .5rem; margin-bottom: .3rem; }
 .plan-heading .curve-sub { margin: 0; }
+
+/* A box that scrolls inside the page keeps its scrolling to itself: a finger
+   that runs the outline or a list to its end was carrying the page along. */
+.guide-toc, .list, .maps-list, .sheet-wrap, .md-table-wrap, .world-map-shell,
+.watch-dump, .watch-log, pre.raw { overscroll-behavior: contain; }
+
+/* --- a finger ---------------------------------------------------------------
+
+   Where the pointer is a finger every control has to be the size of one, and
+   a text field has to be 16px or the phone zooms the page to it on focus. The
+   look is otherwise the same: only sizes change, and only here. */
+@media (pointer: coarse) {
+  nav button { min-height: 2.75rem; padding: .5rem .7rem; }
+  body.embedded nav button { padding: .6rem .6rem; }
+  body.embedded nav #search { min-height: 2.5rem; font-size: 16px; }
+  #search, .picker, .trainer-num, .trainer-filter, .trainer-clock, .watch-at,
+  .save-coin, .save-xp, .save-level, .save-filter, .debug-band, .debug-cell,
+  .debug-field, .watch-len, .watch-value, .watch-put-bytes { font-size: 16px; }
+  .picker { min-height: 2.5rem; }
+  .list button { padding: .5rem .6rem; font-size: 13px; }
+  .toggle, .view-picker button, details.curve-box > summary,
+  .guide-toc button { min-height: 2.4rem; padding: .35rem .7rem; }
+  .chip.census, .map-goto, .guide-link { padding: .3rem .5rem; }
+  button.map-mark { min-width: 1.6em; line-height: 1.6; }
+  .cheat-cell { min-height: 3.8rem; }
+  .trainer-table button, .plan-goals button, .cheat-holder button { min-height: 2.4rem; }
+  body.embedded main { padding: .7rem .6rem; }
+}

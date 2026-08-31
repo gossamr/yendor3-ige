@@ -59,19 +59,6 @@ Put your copy of the game in `game/`, then run:
     make serve-stock       # the game exactly as it shipped, including the introduction
     make test              # 366 python, 69 javascript, panel, persistence, boot
 
-## Cheats
-
-Opening `http://localhost:8080/?cheats` adds a Cheats tab to the panel. It holds two things, behind a selector: the trainer, which edits the running game, and the save editor, which edits a saved game. Without the flag the cabinet runs js-dos exactly as it ships and the tab is absent.
-
-The trainer needs the hooked emulator. `make trainer` writes a second copy of the emulator that carries a hook, which can read and write the memory of the running game; the hosted build does not contain the hooked copy at all, so there the tab holds the save editor alone.
-
-The trainer holds each character's health, magic and conditions. Behind those it holds the character sheet, which is twenty six attributes and skills in both the current column and the maximum column. It also holds the party's purse, the party's position and the in-game time, any item in the game, and the health of each monster in the current fight.
-
-Below those controls, collapsed by default, is a Debug block. It is intended for taking the game apart rather than for playing it. It edits the party's band, cell and facing one number at a time. It edits a monster's own record in place, which is what [tools/fight_probe.js](tools/fight_probe.js) does without booting the game separately. It also opens a window on the game's memory. That window re-reads a region on every tick and reports what changed since the snapshot was taken, searches for a value that the game is currently displaying and returns the addresses that could hold it, and writes or freezes the address that the search returns.
-
-The save editor works on one of the cabinet's saved games rather than on the running game, so it needs no hook. It draws the character panel the game draws when you press P: eight carried slots, then what the character holds, wears and carries. A slot takes any item the game would let it hold, and the sheet, the level, the experience and the party's gold, food and nuore are beside it. Write puts the file back on the emulated disk and into the browser's storage, and the game reads it the next time that slot is loaded.
-
-The same hook is available from the command line, which is how a question about the game is settled by measurement. [tools/fight_probe.js](tools/fight_probe.js) patches a monster's record, fights the monster, and reports how much health each blow removed.
 
 ## Hosting it
 
@@ -99,6 +86,24 @@ There are two files rather than one file and an override. Compose merges volume 
 [docs/README.md](docs/README.md) says how to read them and [docs/world-dat.md](docs/world-dat.md) indexes the rest. [map.md](docs/map.md), [items.md](docs/items.md), [monsters.md](docs/monsters.md), [spells.md](docs/spells.md), [saves.md](docs/saves.md), [shops.md](docs/shops.md) and [pictures.md](docs/pictures.md) describe the file formats. [combat.md](docs/combat.md) and [leveling.md](docs/leveling.md) describe the rules those formats encode. [running.md](docs/running.md), [patching.md](docs/patching.md) and [panel.md](docs/panel.md) describe the harness around them.
 
 [MANUAL.md](MANUAL.md) is a player's manual written from the decoded tables.
+
+## Cheats
+
+Opening `http://localhost:8080/?cheats` adds a Cheats tab to the panel. It holds two things, behind a selector: the trainer, which edits the running game, and the save editor, which edits a saved game. Without the flag the cabinet runs js-dos exactly as it ships and the tab is absent.
+
+The trainer needs the hooked emulator. `make trainer` writes a second copy of the emulator that carries a hook, which can read and write the memory of the running game; the hosted build does not contain the hooked copy at all, so there the tab holds the save editor alone.
+
+The trainer holds each character's health, magic and conditions. Behind those it holds the character sheet, which is twenty six attributes and skills in both the current column and the maximum column. It also holds the party's purse, the party's position and the in-game time, any item in the game, and the health of each monster in the current fight.
+
+Below those controls, collapsed by default, is a Debug block. It is intended for taking the game apart rather than for playing it. It edits the party's band, cell and facing one number at a time. It edits a monster's own record in place, which is what [tools/fight_probe.js](tools/fight_probe.js) does without booting the game separately. It also opens a window on the game's memory. That window re-reads a region on every tick and reports what changed since the snapshot was taken, searches for a value that the game is currently displaying and returns the addresses that could hold it, and writes or freezes the address that the search returns.
+
+The save editor works on one of the cabinet's saved games rather than on the running game, so it needs no hook. It draws the character panel the game draws when you press P: eight carried slots, then what the character holds, wears and carries. A slot takes any item the game would let it hold, and the sheet, the level, the experience and the party's gold, food and nuore are beside it. Write puts the file back on the emulated disk and into the browser's storage, and the game reads it the next time that slot is loaded.
+
+The same hook is available from the command line, which is how a question about the game is settled by measurement. [tools/fight_probe.js](tools/fight_probe.js) patches a monster's record, fights the monster, and reports how much health each blow removed.
+
+## On a phone
+
+It works on a phone too. Tap to click, hold for a right click, and use the keys under the screen for anything the game wants typed. Turn the phone sideways and the game takes the whole screen. You can add it to your home screen, and after that it opens without a connection. [docs/running.md](docs/running.md) has the details.
 
 ## License
 

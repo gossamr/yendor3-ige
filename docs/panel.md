@@ -44,6 +44,8 @@ There are six tabs: Maps, Monsters, Spells, Items, Guides and Planner, and a sev
 - The evidence names the monster every number came off. With bosses counted, level 40 is measured against Paltivar's accuracy of 240 and absorption of 170.
 - Absorption 186 shuts out freezing, paralysis and stoning, and the four monsters behind it are named.
 
+**A finger.** Where the pointer is coarse, every tab is at least 44 pixels tall and every text field is 16 pixels, which is the size below which a phone zooms the page to a field on focus. [tools/mobile_check.js](../tools/mobile_check.js) taps a tab in an emulated phone and fails if one is shorter than 40 pixels.
+
 ## The Cheats tab
 
 `?cheats` adds it, and it holds two things behind the same selector the Guides tab uses.

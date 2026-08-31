@@ -6,13 +6,26 @@
   --red:#c33c33;
 }
 * { box-sizing: border-box; }
+/* Hidden means hidden, whatever display a rule below gives the element: the
+   browser's own [hidden] rule loses to any class selector, which is how the
+   full screen button stood in the bar on an iPhone, dimmed, with `hidden`
+   set on it. */
+[hidden] { display: none !important; }
 /* The cabinet is an application shell, not a document: it fills the window and
    never scrolls. Anything that needs to scroll does so inside its own pane. */
 /* One header across the top, then the game and the panel side by side beneath
    it. The header belongs to the application, not to either pane, so it stays
    put when the panel is collapsed. */
+/* Not position: fixed, and not 100dvh. Both were tried for an iPhone that
+   scrolled the page on a tap of the Pad key; the fixed body put the whole
+   page too low in portrait, header off the top. The scroll came from the
+   key taking focus, which touch.js now refuses, and cabinet.js undoes any
+   document scroll that happens anyway. */
 html, body { height: 100%; margin: 0; overflow: hidden; }
-body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+/* The column is pinned to the window: an auto column takes the width of the
+   longest unwrappable thing in it, and the status line is one. */
+body { display: grid; grid-template-rows: auto minmax(0, 1fr);
+       grid-template-columns: minmax(0, 1fr); }
 body {
   background: var(--stone-100); color: var(--ink);
   font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -86,6 +99,8 @@ body {
                                        border-color: var(--amber); }
 
 #volume-control.muted .wave { display: none; }
+/* The context has not started: the browser wants a tap first. */
+#volume-control.suspended .wave { opacity: .25; }
 #volume-menu { align-items: center; gap: .4rem; }
 /* Vertical, so loud is up. `writing-mode` is how a range is turned on its side
    in current browsers; the -webkit appearance is the older spelling, kept for
@@ -94,6 +109,17 @@ body {
           -webkit-appearance: slider-vertical;
           width: 1.1rem; height: 6rem; accent-color: var(--amber);
           background: none; cursor: pointer; }
+/* On an iPhone the engine's vertical slider comes with a white-bordered
+   track of its own, so there the range is drawn here: the track is the
+   input's background, a bar up its middle, and the thumb the engine's,
+   restyled. Nowhere else, since the engine's own slider is right there. */
+body.iphone #volume { -webkit-appearance: none; appearance: none;
+                      margin: 0; padding: 0; border: 0; outline: none;
+                      background: linear-gradient(var(--stone-600), var(--stone-600)) center / 4px 100% no-repeat; }
+body.iphone #volume::-webkit-slider-runnable-track { background: none; border: 0; }
+body.iphone #volume::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+                                            width: 14px; height: 14px; border-radius: 50%;
+                                            border: 0; background: var(--amber); }
 #volume-value { color: var(--stone-700); font-size: 12px;
                 font-variant-numeric: tabular-nums; min-width: 3ch;
                 text-align: center; }
@@ -109,7 +135,11 @@ button.icon[aria-pressed="false"] .fill { opacity: 0; }
 button { background: var(--stone-200); color: var(--ink); border: 1px solid var(--stone-400);
          white-space: nowrap;
          border-radius: 2px; font: inherit; font-size: 12px; padding: .25rem .6rem; cursor: pointer; }
-button:hover { color: var(--amber-lit); border-color: var(--amber); }
+/* Only where there is a pointer to hover with: a touch screen holds the
+   hover on whatever was last tapped, so a key would stay lit. */
+@media (hover: hover) {
+  button:hover { color: var(--amber-lit); border-color: var(--amber); }
+}
 button:disabled { opacity: .45; cursor: default; }
 button[aria-pressed="true"] { color: var(--amber-lit); border-color: var(--amber);
                               background: var(--stone-100); }
@@ -213,3 +243,293 @@ body.bring-your-own:not(.running) #bring-your-own.failed {
 
 /* The screen has nothing to show until a copy is chosen and running. */
 body.bring-your-own:not(.running) #screen { display: none; }
+
+
+/* --- a phone ----------------------------------------------------------------
+
+   Two things change on a small screen. The layout stacks: the game across the
+   top at the width of the screen, the clue book under it, since there is no
+   room beside it for either. And the pointer is a finger: taps go to the game
+   as clicks, and the keys the game reads are drawn under the screen, because
+   the device has none. cabinet.js sets body.touch where the pointer is coarse.
+   The breakpoints are in pixels for the reason the panel cap is: a zoomed
+   desktop is not a phone. */
+
+/* The bar's two texts must be allowed to shrink, or a long status line pushes
+   the buttons off the right of the window. */
+#bar strong, #status { min-width: 0; }
+/* The full name where there is room for it, Yendor where there is not. */
+.title-short { display: none; }
+#bar strong { overflow: hidden; text-overflow: ellipsis; }
+#bar { padding-left: max(.9rem, env(safe-area-inset-left));
+       padding-right: max(.9rem, env(safe-area-inset-right)); }
+
+@media (max-width: 640px) {
+  /* The status takes a second row rather than a slice of the first: the
+     title and five buttons are the whole width of a phone between them. */
+  #bar { flex-wrap: wrap; gap: .3rem .45rem; padding: .4rem .6rem; }
+  #bar strong { font-size: 12px; letter-spacing: .06em; }
+  #status { order: 9; flex-basis: 100%; font-size: 11px; max-width: none; }
+}
+@media (max-width: 480px) {
+  /* Five buttons and a title do not share 320 pixels. The name is cut to the
+     word that identifies it, and the buttons to their icons. */
+  .title-long { display: none; }
+  .title-short { display: inline; }
+  button.icon { padding: .4rem .4rem; }
+}
+
+@media (max-width: 900px) {
+  /* Stacked. The game is drawn at the screen's width and its own shape,
+     with the keys under it, and the clue book is a page over the lot,
+     brought out by its button: under the game it had whatever height the
+     keys left it, which on a phone was not enough to read. The canvas needs
+     a height of its own here: in the column layout flex gives it one, and
+     in an auto-sized row flex gives it none. */
+  #app { grid-template-rows: minmax(0, 1fr); position: relative; }
+  #stage { flex: none; border-right: 0; }
+  #screen { flex: none; height: auto; aspect-ratio: 8 / 5; }
+  #panel { position: absolute; inset: 0; z-index: 3; }
+  body.bring-your-own:not(.running) #bring-your-own { margin: 1rem .8rem; padding: 1rem; }
+}
+
+/* A phone on its side. Three hundred pixels tall, so every row of chrome is
+   a fifth of the game: the header becomes a column down the left, the keys a
+   column down the right, and the game is the full height between them. The
+   pad, when it is on, floats over the bottom corners of the game, which it
+   leaves empty. The clue book is a page over the game rather than a sliver
+   beside it: cabinet.js puts it away on turning the phone this way and the
+   book button brings it up. Keyed on the height and not the width, since a
+   phone's width on its side is anything from 640 to 950 pixels. */
+@media (orientation: landscape) and (max-height: 520px) {
+  body { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  #bar { flex-direction: column; align-items: center; flex-wrap: nowrap;
+         gap: .4rem; padding: .5rem .3rem;
+         padding-left: max(.3rem, env(safe-area-inset-left));
+         border-bottom: 0; border-right: 1px solid var(--stone-400);
+         /* Visible, or the menus that open beside the column are cut to
+            the slice over it. The status clips its own overflow. */
+         min-height: 0; overflow: visible; }
+  /* Read down the spine, the way a title on a shelf is. */
+  #bar strong, #status { writing-mode: vertical-rl; flex: none; }
+  #bar strong { font-size: 11px; letter-spacing: .12em; }
+  .title-long { display: none; }
+  .title-short { display: inline; }
+  #status { order: 9; flex: 1 1 0; min-height: 0; max-width: none;
+            font-size: 10px; margin-top: .2rem; overflow: hidden; }
+  #bar .spacer { display: none; }
+  .menu-panel { top: 0; left: calc(100% + .35rem); transform: none; }
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+         position: relative; }
+  #grip { display: none; }
+  #stage { flex: 1 1 auto; flex-direction: row; min-height: 0; border: 0;
+           position: relative; }
+  #screen { flex: 1 1 0; min-width: 0; min-height: 0; height: 100%;
+            aspect-ratio: auto; }
+  #panel { position: absolute; inset: 0; z-index: 3; }
+  #stage .hint { display: none; }
+  /* Two columns of nine, each key placed by hand, since the order here is
+     not the portrait row's: the main keys down the first column with the
+     drawer and 1 to 3 under them, and down the second the five keys that
+     have no control of the game's own to sit on, then the device keyboard
+     and 4 to 6. */
+  /* No room kept for the safe-area inset on this side: it took the width
+     the game needed to keep its height, for nothing. */
+  body.touch #stage #touch { display: grid; grid-template-columns: 3.6rem 3.6rem;
+                             /* Rows scale with the height: 2.3rem on a screen 375
+                                tall, which is 36.8 of 375. */
+                             grid-auto-rows: 9.81%; gap: .3rem; align-content: center;
+                             flex: none; border-top: 0; border-left: 1px solid var(--stone-400);
+                             padding: .3rem; min-height: 0; overflow-y: auto; }
+  body.touch .touch-main, body.touch .touch-more { display: contents; }
+  body.touch .touch-main .touch-key, body.touch .touch-more .touch-key {
+    min-height: 0; height: 100%; width: 3.6rem; font-size: 13px; }
+  body.touch #touch button[data-action="pad"] { grid-area: 1 / 1; }
+  body.touch #touch button[data-keys="Escape"] { grid-area: 2 / 1; }
+  body.touch #touch button[data-keys="Enter"] { grid-area: 3 / 1; }
+  body.touch #touch button[data-keys="Space"] { grid-area: 4 / 1; }
+  body.touch #touch button[data-action="right"] { grid-area: 5 / 1; }
+  body.touch #touch button[data-action="drawer"] { grid-area: 6 / 1; }
+  body.touch #touch button[data-keys="Digit1"] { grid-area: 7 / 1; }
+  body.touch #touch button[data-keys="Digit2"] { grid-area: 8 / 1; }
+  body.touch #touch button[data-keys="Digit3"] { grid-area: 9 / 1; }
+  body.touch #touch .touch-more button[data-keys="KeyP"] { grid-area: 1 / 2; }
+  body.touch #touch .touch-more button[data-keys="KeyM"] { grid-area: 2 / 2; }
+  body.touch #touch .touch-more button[data-keys="KeyK"] { grid-area: 3 / 2; }
+  body.touch #touch .touch-more button[data-keys="KeyR"] { grid-area: 4 / 2; }
+  body.touch #touch .touch-more button[data-keys="KeyL"] { grid-area: 5 / 2; }
+  body.touch #touch button[data-action="keyboard"] { grid-area: 6 / 2; }
+  body.touch #touch button[data-keys="Digit4"] { grid-area: 7 / 2; }
+  body.touch #touch button[data-keys="Digit5"] { grid-area: 8 / 2; }
+  body.touch #touch button[data-keys="Digit6"] { grid-area: 9 / 2; }
+  /* Over the game. The four variables are the drawn game's box within the
+     stage, measured by cabinet.js, since the canvas is the full height and
+     the game sits centered in it with black either side. The arrows go
+     exactly over the game's own arrow block, which is at 492..616 by
+     321..394 of its 640x400, so a thumb finds ours where it found the
+     game's; the action keys go to the bottom-left corner, over the first
+     portraits, which the disk panel leaves alone. */
+  body.touch .touch-game { position: absolute; inset: 0; display: block;
+                           padding: 0; pointer-events: none;
+                           background: none; border: 0; }
+  body.touch .touch-game[hidden] { display: none; }
+  /* Each block is one target with a margin of its own around the keys, so
+     a thin finger in a gap lands on the block and not on the game under it.
+     The block itself is not drawn: only its keys are. */
+  body.touch .touch-pad { position: absolute; pointer-events: auto;
+                          padding: .3rem; background: none; touch-action: none; }
+  /* Its own size, in the game's bottom-right corner, its keys flush with
+     the game's right edge: the block's own padding hangs past it. */
+  body.touch .touch-pad { right: calc(100% - var(--game-x, 0px) - var(--game-w, 640px) - .3rem);
+                          bottom: calc(100% - var(--game-y, 0px) - var(--game-h, 400px) - .3rem);
+                          grid-template-columns: repeat(3, 3.2rem); }
+  /* The action keys go each over the game's own control for it: F1 to F4
+     centered on the four portraits, A S C D on the four icons, Y and N
+     under the direction line at the right. Placed one by one, in fractions
+     of the drawn game measured off a frame. P, M, K, R and L have no place
+     on the game yet and stay in the drawer here. */
+  body.touch .touch-actions { display: contents; }
+  /* Y over N, flush with the game's right edge, from the YES line the game
+     writes in its message box, at 0.585 of its height, down to the top of
+     the pad, which stands 6.1rem up from the game's bottom edge; the two
+     split that run. */
+  body.touch .touch-actions .touch-key[data-keys="KeyY"],
+  body.touch .touch-actions .touch-key[data-keys="KeyN"] {
+    --run: calc(var(--game-h, 400px) * 0.415 - 5.8rem);
+    right: calc(100% - var(--game-x, 0px) - var(--game-w, 640px));
+    width: calc(var(--game-w, 640px) * 0.09);
+    height: calc(var(--run) / 2 - .1rem); min-height: 0; }
+  body.touch .touch-actions .touch-key[data-keys="KeyY"] {
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.585); }
+  body.touch .touch-actions .touch-key[data-keys="KeyN"] {
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.585 + var(--run) / 2 + .1rem); }
+  body.touch .touch-actions .touch-key[data-keys="KeyP"],
+  body.touch .touch-actions .touch-key[data-keys="KeyM"],
+  body.touch .touch-actions .touch-key[data-keys="KeyK"],
+  body.touch .touch-actions .touch-key[data-keys="KeyR"],
+  body.touch .touch-actions .touch-key[data-keys="KeyL"] { display: none; }
+  body.touch .touch-actions .touch-key { position: absolute; pointer-events: auto;
+                                         height: 2.4rem; min-height: 0; padding: 0;
+                                         font-size: 13px; touch-action: none; }
+  body.touch .touch-actions .touch-key[data-keys="F1"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.0200);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.895 - 2.4rem);
+    width: calc(var(--game-w, 640px) * 0.110); }
+  body.touch .touch-actions .touch-key[data-keys="F2"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.2012);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.895 - 2.4rem);
+    width: calc(var(--game-w, 640px) * 0.110); }
+  body.touch .touch-actions .touch-key[data-keys="F3"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.3825);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.895 - 2.4rem);
+    width: calc(var(--game-w, 640px) * 0.110); }
+  body.touch .touch-actions .touch-key[data-keys="F4"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.5637);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.895 - 2.4rem);
+    width: calc(var(--game-w, 640px) * 0.110); }
+  body.touch .touch-actions .touch-key[data-keys="KeyA"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.7506);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.3725 - 1.2rem);
+    width: calc(var(--game-w, 640px) * 0.052); }
+  body.touch .touch-actions .touch-key[data-keys="KeyS"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.8084);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.3725 - 1.2rem);
+    width: calc(var(--game-w, 640px) * 0.052); }
+  body.touch .touch-actions .touch-key[data-keys="KeyC"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.8662);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.3725 - 1.2rem);
+    width: calc(var(--game-w, 640px) * 0.052); }
+  body.touch .touch-actions .touch-key[data-keys="KeyD"] {
+    left: calc(var(--game-x, 0px) + var(--game-w, 640px) * 0.9271);
+    top: calc(var(--game-y, 0px) + var(--game-h, 400px) * 0.3725 - 1.2rem);
+    width: calc(var(--game-w, 640px) * 0.052); }
+
+  body.touch .touch-actions { grid-template-columns: repeat(5, 2.8rem); }
+  body.touch .touch-pad { grid-template-columns: repeat(3, 3.2rem); }
+  body.touch .touch-game .touch-key { min-height: 2.6rem; font-size: 14px;
+                                      background: #1c1c1ccc; border-color: #555c; }
+  /* Across the drawn game, no wider: measured from the stage's edge it ran
+     under the key column on an iPhone, whose notch widens the column by
+     the safe-area inset, and the key that closes it went under it. */
+  body.touch .touch-drawer { position: absolute; bottom: .4rem;
+                             left: calc(var(--game-x, 0px) + .3rem);
+                             right: calc(100% - var(--game-x, 0px) - var(--game-w, 640px) + .3rem);
+                             background: #141414e6;
+                             border: 1px solid var(--stone-400); border-radius: 4px;
+                             padding: .3rem; z-index: 2; }
+}
+
+/* The second key column is a sideways phone's; see the landscape block. */
+.touch-more { display: none; }
+
+/* The keys. Hidden unless the pointer is a finger. */
+#touch { display: none; background: var(--stone-100);
+         border-top: 1px solid var(--stone-400);
+         padding-bottom: env(safe-area-inset-bottom); }
+body.touch #touch { display: block; }
+body.touch .hint { display: none; }
+.touch-hint { display: none; }
+body.touch .touch-hint { display: block; padding-top: .35rem; padding-bottom: .35rem; }
+body.touch #screen { touch-action: none; cursor: default; }
+/* A finger held on the game is a right click, not the start of a selection:
+   an iPhone otherwise lights the stage as selected text and offers its
+   callout. */
+body.touch #stage, body.touch #bar, body.touch #touch {
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The game's keys, under the main row when they are on, so the Pad key
+   that shows them stays where it was: party members, actions and items on
+   the left, the arrows on the right. */
+.touch-game { display: flex; gap: .5rem; padding: 0 .5rem .45rem; }
+.touch-game[hidden] { display: none; }
+.touch-actions { display: grid; grid-template-columns: repeat(5, 1fr);
+                 grid-auto-rows: 1fr; gap: .3rem; flex: 1 1 0; min-width: 0; }
+.touch-pad { display: grid; grid-template-columns: repeat(3, 1fr);
+             grid-auto-rows: 1fr; gap: .3rem; flex: 0 0 42%; }
+.touch-main { display: flex; gap: .3rem; padding: .45rem .5rem; }
+.touch-main .touch-key { flex: 1 1 0; min-width: 0; padding: 0 .1rem; }
+.touch-main .touch-key[data-action="pad"] { flex: .8 1 0; }
+.touch-drawer { padding: 0 .5rem .45rem; display: flex; flex-direction: column;
+                gap: .3rem; }
+.touch-drawer[hidden] { display: none; }
+.touch-row { display: flex; gap: .25rem; }
+.touch-row .touch-key { flex: 1 1 0; min-width: 0; min-height: 2.4rem;
+                        padding: 0; font-size: 12px; }
+.touch-row .touch-key[data-keys="Backspace"] { flex: 1.6 1 0; }
+.touch-row .touch-key[data-keys="Tab"] { flex: 1.3 1 0; }
+
+.touch-key {
+  min-height: 2.75rem; padding: 0 .2rem; border-radius: 4px;
+  background: var(--stone-200); border: 1px solid var(--stone-400);
+  color: var(--ink); font: inherit; font-size: 14px; line-height: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* The finger stays on the key: no scroll, no zoom, no selection, and no
+     callout on a long press. */
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+/* Off is the ordinary key, not the dimmed one the bar's toggles use: a key
+   in its plain color reads as a key, and a gray one as disabled. */
+.touch-key[aria-pressed="false"] { color: var(--ink); }
+.touch-key[aria-pressed="true"] {
+  color: var(--amber-lit); border-color: var(--amber); background: var(--stone-000);
+}
+/* Under a finger the whole key lifts, not only its letter. Weighted to
+   outrank the landscape rule that paints the keys translucent. */
+body.touch #touch .touch-key.down { background: #4e4e4e; }
+.touch-key svg { display: block; margin: 0 auto; }
+.touch-pad .touch-key { font-size: 17px; }
+
+/* The field the device's keyboard types into. On screen, because a browser
+   scrolls to bring a focused field into view, and invisible. */
+#typer { position: fixed; bottom: 0; left: 0; width: 1px; height: 1px;
+         padding: 0; border: 0; opacity: .01; pointer-events: none;
+         font-size: 16px; }
+
+/* Bar buttons big enough for a fingertip, only where there is one. */
+@media (pointer: coarse) {
+  button.icon { padding: .5rem .55rem; }
+  .menu-panel button { padding: .5rem .6rem; }
+}

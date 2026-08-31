@@ -3,7 +3,18 @@
 <head>
 <meta charset="utf-8">
 <title>Yendorian Tales III &mdash; IGE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The scale is pinned. WebKit on a phone otherwise rescales the page on
+     every turn of the phone and on focusing a field, and a game that has to
+     be aimed at cannot be at a zoom it did not ask for. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c0c0c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="manifest" href="cabinet/manifest.webmanifest">
+<link rel="icon" href="cabinet/icon.svg" type="image/svg+xml">
+<link rel="icon" href="cabinet/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="cabinet/icon-192.png">
 <!-- The description is repeated for Open Graph because the two are read by
      different consumers: search engines read the name form, and link previews
      in chat clients read the property form. -->
@@ -15,7 +26,8 @@
 </head>
 <body>
 <header id="bar">
-  <strong>The Tyrants of Thaine</strong>
+  <!-- The first two words go on a phone, where the buttons need the width. -->
+  <strong><span class="title-long">The Tyrants of Thaine</span><span class="title-short">Yendor 3</span></strong>
   <span id="status">ready</span>
   <span class="spacer"></span>
   <button id="boot" class="icon" type="button" aria-label="Start the game"
@@ -108,7 +120,7 @@
       </svg>
       <strong id="byo-title">Bring your own copy</strong>
       <p id="byo-note">Drop a zip of your Yendorian Tales III directory here, or
-         click to choose one. It is read in this tab and never uploaded.</p>
+         tap to choose one. It is read in this tab and never uploaded.</p>
       <input id="game-zip" type="file" accept=".zip,application/zip" hidden>
     </div>
     <p id="byo-options">
@@ -120,9 +132,33 @@
         attract loop, and keeps a character&rsquo;s roll when their class
         changes. Your own files are not written to either way.</span>
     </p>
+    <!-- The keys a touch screen has none of. Built by touch.js, shown only
+         where the pointer is a finger, and drawn under the screen so that a
+         thumb on the pad never covers the game. The game's own keys sit
+         behind the Pad key, on by default; the drawer holds the rest of the
+         keyboard behind another, since a name is typed once and a step is
+         taken ten thousand times. -->
+    <div id="touch">
+      <div class="touch-main"></div>
+      <div class="touch-more"></div>
+      <div class="touch-game" hidden>
+        <div class="touch-actions" aria-label="Party, actions and items"></div>
+        <div class="touch-pad" aria-label="Movement"></div>
+      </div>
+      <div class="touch-drawer" hidden></div>
+    </div>
+    <!-- The device's own keyboard types into this. Kept on screen at one
+         pixel rather than off it, because a browser scrolls to an off-screen
+         field it focuses. -->
+    <input id="typer" type="text" autocomplete="off" autocapitalize="characters"
+           autocorrect="off" spellcheck="false" enterkeyhint="enter"
+           aria-label="Type into the game" tabindex="-1">
     <p class="hint">
       Click the screen to give it the keyboard. Arrows move, <kbd>A</kbd> attack,
-      <kbd>C</kbd> cast, <kbd>Space</kbd> use, <kbd>F8</kbd> in-game clue book.
+      <kbd>C</kbd> cast, <kbd>Space</kbd> use.
+    </p>
+    <p class="hint touch-hint">
+      Tap the screen to click. Hold for a right click. Tap twice to open.
     </p>
   </div>
   <div id="grip" role="separator" tabindex="0" aria-orientation="vertical"

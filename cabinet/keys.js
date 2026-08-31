@@ -85,6 +85,14 @@ export async function skipSplash(ci, rounds = 12) {
  */
 export const MOUSE_SCALE = 2;
 
+/**
+ * Where the cursor's tip rests after the homing delta: not the corner, but
+ * two pixels in and sixteen down, at 640x400. Measured by tapping seven spots
+ * in an emulated phone and locating the arrow afterwards; the same offset at
+ * every one. A move that wants to land on a pixel starts from here.
+ */
+export const HOME = { x: 2, y: 16 };
+
 export async function moveTo(ci, x, y) {
   ci.sendMouseRelativeMotion(-4000, -4000);
   await new Promise((r) => setTimeout(r, 60));

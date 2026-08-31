@@ -23,12 +23,16 @@ const lum = (d, i) => d[i] + d[i + 1] + d[i + 2];
  * pixels much brighter in `a` than in `b` are the cursor. Its hotspot is the
  * tip, which is the top-left of that region.
  */
-export function locateCursor(a, b, width, height, threshold = 150) {
+export function locateCursor(a, b, width, height, threshold = 150, floor = 0) {
   const xs = [], ys = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
-      if (lum(a, i) - lum(b, i) > threshold) { xs.push(x); ys.push(y); }
+      // `floor` asks for pixels that are bright as well as brighter: the
+      // tap's look passes it, so the reference frame's own cursor does not
+      // show up as a ghost where its black outline was. Calibration does
+      // not.
+      if (lum(a, i) - lum(b, i) > threshold && lum(a, i) > floor) { xs.push(x); ys.push(y); }
     }
   }
   const count = xs.length;

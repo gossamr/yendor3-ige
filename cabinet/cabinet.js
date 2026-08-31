@@ -6,9 +6,10 @@
 // fsReadFile(), which is how the overlay reads the game's state: js-dos has no
 // guest-memory API, so the emulated filesystem is the only channel.
 import { KEY_CODES } from "./keymap.js";
-import { BUTTONS, DOM_BUTTONS } from "./keys.js";
+import { BUTTONS, DOM_BUTTONS, MOUSE_SCALE, HOME } from "./keys.js";
 import { startAudio } from "./audio.js";
-import { calibrate, fallbackTransform, retryDelay } from "./mouse.js";
+import { calibrate, fallbackTransform, retryDelay, locateCursor } from "./mouse.js";
+import { Taps, mountTouchKeys, mountTyper } from "./touch.js";
 import {
   loadFiles, startAutosave, fingerprint, notKeptReason, putFile, diskPaths,
   loadRoster, saveRoster, requestPersistence, storageEstimate,
@@ -46,6 +47,19 @@ const EMU = new URL("../emulators/", import.meta.url).href;
 // there is something to put in it.
 const CHEATS = new URLSearchParams(location.search).has("cheats");
 let trainerReady = false;
+
+// Whether the pointer is a finger. Decided once from the media query rather
+// than from the first event, because the keys have to be on the screen before
+// anything is touched. `?touch` forces it, which is how tools/mobile_check.js
+// drives the layout in a desktop browser.
+const TOUCH = new URLSearchParams(location.search).has("touch")
+  || (window.matchMedia && matchMedia("(pointer: coarse)").matches);
+document.body.classList.toggle("touch", TOUCH);
+// An iPhone, by name: it has no full screen for a page, and its browser
+// scrolls a page that runs taller than the window however the page asks it
+// not to, so the clue book starts put away there.
+const IPHONE = /iPhone|iPod/.test(navigator.userAgent) || navigator.standalone === true;
+document.body.classList.toggle("iphone", IPHONE);
 
 async function trainerAvailable() {
   if (!CHEATS) return false;
@@ -488,6 +502,9 @@ let nextAttempt = 0;
 
 async function ensureCalibrated() {
   if (calibrating || !ci) return;
+  // A finger has no pointer to align with, and a tap places the cursor by
+  // homing it (see wireInput), so nothing is measured on a touch screen.
+  if (TOUCH) return;
   const sized = transform && transform.width === canvas.width
     && transform.height === canvas.height;
   if (sized && !transform.approximate) return;
@@ -616,6 +633,298 @@ function wireInput() {
     ci.sendMouseButton(button(e), false);
   });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Touch.
+  //
+  // A finger is read by Taps into the mouse actions the game understands, and
+  // each is sent here. The pointer events are taken before the browser makes
+  // mouse events out of them, so the handlers above never see a touch.
+  // A gesture that began on one of the keys laid over the game's own
+  // controls: a tap is the key, and anything else, a hold, a second finger,
+  // an armed Right, is the click it would have been on the game beneath.
+  let keyUnderFinger = null;
+  const taps = new Taps((a) => {
+    const key = keyUnderFinger;
+    if (a.type === "tap" || a.type === "press" || a.type === "release") keyUnderFinger = null;
+    if (key && a.type === "tap" && a.button === BUTTONS.left) { pressKey(key); return; }
+    touchAction(a);
+  });
+  const finger = (e) => e.pointerType === "touch" || e.pointerType === "pen";
+  const at = (e) => ({ id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp });
+  const overGame = () => matchMedia("(orientation: landscape) and (max-height: 520px)").matches;
+  const touchRoot = $("#touch");
+  touchRoot.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest(".touch-actions button.touch-key");
+    if (!b || !finger(e) || !overGame()) return;
+    e.preventDefault();
+    e.stopPropagation();   // not the key's own down: the gesture decides
+    keyUnderFinger = b;
+    b.classList.add("down");
+    try { b.setPointerCapture(e.pointerId); } catch { /* the canvas finishes it */ }
+    taps.down(at(e));
+  }, true);
+  for (const [type, go] of [["pointermove", "move"], ["pointerup", "up"], ["pointercancel", "cancel"]]) {
+    touchRoot.addEventListener(type, (e) => {
+      const b = e.target.closest?.(".touch-actions button.touch-key");
+      if (!b || !finger(e) || !overGame() || !taps.active) return;
+      e.stopPropagation();
+      if (type !== "pointermove") b.classList.remove("down");
+      taps[go](at(e));
+    }, true);
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!finger(e)) return;
+    e.preventDefault();
+    canvas.focus({ preventScroll: true });
+    taps.down(at(e));
+  });
+  // The touch itself is canceled as well as the pointer event: on an iPhone
+  // a held touch starts a selection and its callout whatever the pointer
+  // event said, and only a canceled touchstart stops it.
+  canvas.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+  canvas.addEventListener("pointermove", (e) => { if (finger(e)) taps.move(at(e)); });
+  canvas.addEventListener("pointerup", (e) => { if (finger(e)) taps.up(at(e)); });
+  canvas.addEventListener("pointercancel", (e) => { if (finger(e)) taps.cancel(at(e)); });
+  touchTaps = taps;
+
+  // Sent one after another: a double click is two presses in order.
+  let queue = Promise.resolve();
+  const later = (ms) => new Promise((r) => setTimeout(r, ms));
+  // A tap is placed the way the headless drivers place a click, in
+  // keys.js: the cursor is driven into the top-left corner with a delta
+  // larger than the screen, then stepped out to the spot. The absolute
+  // motion the mouse path sends is not a position to the guest: it reaches
+  // the driver as the difference from the last one sent, so it is right
+  // only while the cursor is where the last send left it, and a tap after
+  // the game had moved the cursor itself landed a screen away. Homing
+  // starts every tap from a known place, whatever happened in between.
+  // The guest moves MOUSE_SCALE pixels per unit of delta, and the homed
+  // cursor rests at HOME rather than at the corner.
+  const place = async (a) => {
+    const p = target({ clientX: a.x, clientY: a.y });
+    if (!ctx) ctx = canvas.getContext("2d", { alpha: false });
+    const read = () => ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const nearHome = (t) => Math.abs(t.x - HOME.x) <= 6 && Math.abs(t.y - HOME.y) <= 6;
+    // Read frames until the arrow's tip is found where `want` says, or the
+    // time is up. The guest draws at its own pace, and on a slow phone two
+    // deltas sent a few tens of milliseconds apart reached the driver as
+    // one: the homing plus the step summed to a move that still clamped at
+    // the corner, and the tap landed there. So each move is sent only once
+    // the frame shows the one before it drawn.
+    const seen = async (before, want, ms = 900) => {
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        await later(40);
+        const found = locateCursor(read(), before, canvas.width, canvas.height, 150, 400);
+        if (found && want(found)) return found;
+      }
+      return null;
+    };
+    const before = read();
+    ci.sendMouseRelativeMotion(-4000, -4000);
+    const homed = await seen(before, nearHome, 1500);
+    const corner = read();
+    ci.sendMouseRelativeMotion(Math.round((p.x - HOME.x) / MOUSE_SCALE),
+                               Math.round((p.y - HOME.y) / MOUSE_SCALE));
+    window.__cabinet.mouseEvents += 1;
+    window.__cabinet.lastSent = [p.x, p.y];
+    // Where the arrow rests after homing moves with the video mode, by a
+    // line or two, so once it is drawn at its new place the cursor is
+    // nudged the rest of the way. A screen that hides the arrow gets the
+    // press as aimed, and soon: the wait is long only where the arrow was
+    // seen arrive at the corner, which says it will be seen leave it.
+    const tip = await seen(homed ? corner : before, (t) => !nearHome(t), homed ? 2500 : 300);
+    window.__cabinet.lastNudge = null;
+    if (tip) {
+      const dx = p.x - tip.x, dy = p.y - tip.y;
+      window.__cabinet.lastNudge = [dx, dy];
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+        const nudged = read();
+        ci.sendMouseRelativeMotion(Math.round(dx / MOUSE_SCALE), Math.round(dy / MOUSE_SCALE));
+        await seen(nudged, () => true, 400);
+      }
+    }
+    // The press never goes on the heels of a move: the driver takes the
+    // queue one event at a time.
+    await later(80);
+    return p;
+  };
+  let fingerAt = null;   // canvas pixel the cursor was last put at by a finger
+  // Between gestures the arrow rests in the far corner, where only its tip
+  // shows: a cursor sitting where the last tap was is a pointer the phone
+  // does not have, over whatever the player is looking at. A tap homes the
+  // cursor anyway, so where it waited does not matter to the next one.
+  let parkTimer = 0;
+  const park = () => {
+    parkTimer = 0;
+    if (!ci || taps.active) return;
+    ci.sendMouseRelativeMotion(4000, 4000);
+    fingerAt = null;
+  };
+  const parkLater = () => {
+    clearTimeout(parkTimer);
+    parkTimer = setTimeout(park, PARK_AFTER);
+  };
+  parkLater();
+  function touchAction(a) {
+    clearTimeout(parkTimer);
+    queue = queue.then(async () => {
+      if (!ci) return;
+      if (a.type === "move") {
+        // A drag follows the finger by the distance it moved.
+        const p = target({ clientX: a.x, clientY: a.y });
+        if (fingerAt) {
+          ci.sendMouseRelativeMotion(Math.round((p.x - fingerAt.x) / MOUSE_SCALE),
+                                     Math.round((p.y - fingerAt.y) / MOUSE_SCALE));
+        } else {
+          await place(a);
+        }
+        fingerAt = p;
+        return;
+      }
+      if (a.type === "release") { ci.sendMouseButton(a.button, false); return; }
+      // The second click of a double click carries no motion: the guest
+      // drops the pair if any arrives between the presses.
+      if (!a.again) fingerAt = await place(a);
+      ci.sendMouseButton(a.button, true);
+      if (a.type === "press") return;
+      // Held long enough for a slow guest to see it down. The game reads
+      // the button's state as it goes round its loop, and on a phone one
+      // turn of that loop can outlast a 60 ms click, which then never
+      // happened as far as the game could tell.
+      await later(TAP_HOLD);
+      ci.sendMouseButton(a.button, false);
+      await later(40);
+      window.__cabinet.taps += 1;
+    }).catch((err) => console.warn("touch:", err.message))
+      .then(parkLater);
+    armRight(false);
+  }
+}
+
+/** How long a tap holds the button down. */
+const TAP_HOLD = 160;
+/** How long after the last gesture the cursor goes back to its corner. */
+const PARK_AFTER = 4000;
+
+// The finger's gesture reader, once wireInput has made one, so the on-screen
+// right-button key can arm it.
+let touchTaps = null;
+const rightKey = () => document.querySelector('#touch button[data-action="right"]');
+function armRight(on) {
+  const b = rightKey();
+  if (b) b.setAttribute("aria-pressed", String(on || !!touchTaps?.holdButton));
+}
+
+/**
+ * The on-screen keys, and the device's keyboard behind one of them.
+ *
+ * Mounted at load rather than at boot so the strip is there to look at, and
+ * a key does nothing until there is a game to send it to. Codes are the
+ * KeyboardEvent.code names the keymap already translates.
+ */
+// The pad is on until put away and stays as it was left: the game draws its
+// own arrows and its own A, S, C and D, but at a phone's size they are small
+// for a thumb, and the party keys have no button in the game at all.
+// Stored only when the key is pressed, so what is remembered is a choice.
+const PAD_KEY = "cabinet.game-keys";
+function showPad(on, remember = false) {
+  $("#touch .touch-game").hidden = !on;
+  syncPadKey();
+  if (remember) {
+    try { localStorage.setItem(PAD_KEY, on ? "on" : "off"); } catch { /* storage off */ }
+  }
+}
+/** The Pad key lit only while the keys are on the screen. */
+function syncPadKey() {
+  const game = $("#touch .touch-game");
+  const key = $('#touch button[data-action="pad"]');
+  if (!game || !key) return;
+  key.setAttribute("aria-pressed", String(!game.hidden && getComputedStyle(game).display !== "none"));
+}
+
+/**
+ * Where the drawn game's left and right edges are within the stage, as the
+ * two variables the landscape overlay is placed by. The canvas is the full
+ * height there and the game keeps its own shape inside it, so the edges
+ * move with the window and with the video mode.
+ */
+function fitTouchOverlay() {
+  const touch = $("#touch");
+  const stage = $("#stage");
+  if (!touch || !stage) return;
+  const r = canvas.getBoundingClientRect();
+  const s = stage.getBoundingClientRect();
+  const scale = Math.min(r.width / canvas.width, r.height / canvas.height);
+  const w = canvas.width * scale, h = canvas.height * scale;
+  const x = r.left - s.left + (r.width - w) / 2, y = r.top - s.top + (r.height - h) / 2;
+  for (const [name, value] of [["x", x], ["y", y], ["w", w], ["h", h]]) {
+    touch.style.setProperty(`--game-${name}`, `${Math.round(value)}px`);
+  }
+}
+
+/** Press and release one of the drawn keys, held long enough to be seen. */
+function pressKey(button) {
+  const codes = (button.dataset.keys ?? "").split(" ").filter(Boolean);
+  for (const c of codes) sendTouchKey(c, true);
+  setTimeout(() => { for (const c of codes.slice().reverse()) sendTouchKey(c, false); }, 120);
+}
+let sendTouchKey = () => {};
+
+function wireTouchKeys() {
+  const root = $("#touch");
+  fitTouchOverlay();
+  window.addEventListener("resize", () => { fitTouchOverlay(); syncPadKey(); });
+  // The canvas changes size without the window doing so: shown at boot, or
+  // a phone's bars coming and going.
+  if (window.ResizeObserver) new ResizeObserver(fitTouchOverlay).observe(canvas);
+  matchMedia("(orientation: landscape)").addEventListener("change", () => setTimeout(fitTouchOverlay, 50));
+  const sendKey = (code, down) => {
+    const key = KEY_CODES[code];
+    if (key === undefined || !ci) return;
+    ci.sendKeyEvent(key, down);
+    window.__cabinet.keys += 1;
+  };
+  sendTouchKey = sendKey;
+  const typer = mountTyper($("#typer"), {
+    sendKey,
+    onClose: () => { $("#touch").classList.remove("typing"); },
+  });
+  mountTouchKeys(root, {
+    sendKey,
+    onAction: (action, button, e) => {
+      if (action === "keyboard") {
+        // focus() from inside the gesture is what brings the keyboard up.
+        $("#touch").classList.add("typing");
+        typer.open();
+      } else if (action === "pad") {
+        showPad(root.querySelector(".touch-game").hidden, true);
+      } else if (action === "drawer") {
+        const drawer = root.querySelector(".touch-drawer");
+        drawer.hidden = !drawer.hidden;
+        button.setAttribute("aria-pressed", String(!drawer.hidden));
+      } else if (action === "right") {
+        if (!touchTaps) return;
+        // Armed for the next tap on the press; held down, every tap is a
+        // right click until the key is let go.
+        touchTaps.button = BUTTONS.right;
+        touchTaps.holdButton = true;
+        armRight(true);
+        const up = () => {
+          touchTaps.holdButton = false;
+          armRight(touchTaps.button === BUTTONS.right);
+          button.removeEventListener("pointerup", up);
+          button.removeEventListener("pointercancel", up);
+        };
+        button.addEventListener("pointerup", up);
+        button.addEventListener("pointercancel", up);
+        try { button.setPointerCapture(e.pointerId); } catch { /* releases on pointerup anyway */ }
+      }
+    },
+  });
+  let padWanted = true;
+  try { padWanted = localStorage.getItem(PAD_KEY) !== "off"; } catch { /* storage off */ }
+  showPad(padWanted);
 }
 
 
@@ -854,6 +1163,11 @@ async function boot() {
     document.body.classList.add("running");
     if (!offscreen) ci.events().onFrame((rgb) => { if (rgb) { frames += 1; paint(rgb); } });
     wireInput();
+    // The canvas is shown now, and the overlay is placed by its edges.
+    fitTouchOverlay();
+    // A finger places the cursor by homing it, see wireInput, so the mapping
+    // a mouse measures when it first arrives over the canvas is not needed.
+    if (TOUCH) say("running \u00b7 touch");
     // Browsers only allow audio to start from a user gesture: the click that
     // got us here counts.
     audio = startAudio(ci);
@@ -862,7 +1176,7 @@ async function boot() {
     // left the rest of boot unreachable: no autosave, so nothing wrote the
     // player's game, and no pauseWhenAway. The context comes up again on the
     // way back from a pause. Volume applies to a suspended one.
-    if (audio) { applyVolume(); audio.resume().catch(() => {}); }
+    if (audio) { applyVolume(); audio.resume().catch(() => {}); unlockAudio(); }
     pauseWhenAway();
     autosave = startAutosave(ci, originals, {
       onSave: (result) => {
@@ -879,6 +1193,40 @@ async function boot() {
     $("#boot").disabled = false;
     throw err;
   }
+}
+
+/**
+ * Start the sound on the first touch if the boot did not.
+ *
+ * A browser starts an audio context only inside a user gesture, and the boot
+ * takes several seconds past the click that began it: Chrome remembers the
+ * click and honors the late resume, Safari on a phone does not. So the next
+ * press or tap resumes it, and the status line says which happened.
+ */
+function unlockAudio() {
+  const state = () => audio?.context.state;
+  // The volume icon shows it too, since the status line moves on.
+  const show = () => volumeControl.classList.toggle("suspended", state() !== "running");
+  const stop = () => {
+    show();
+    for (const type of ["pointerdown", "keydown", "touchend"]) {
+      document.removeEventListener(type, tryResume, true);
+    }
+  };
+  const tryResume = () => {
+    if (!audio || state() === "running") return stop();
+    audio.resume().then(() => { if (state() === "running") { stop(); say("running \u00b7 sound on"); } })
+      .catch(() => {});
+  };
+  for (const type of ["pointerdown", "keydown", "touchend"]) {
+    document.addEventListener(type, tryResume, true);
+  }
+  // Read after the resume the boot asked for has had its say.
+  setTimeout(() => {
+    if (state() === "running") { stop(); return; }
+    show();
+    status.textContent += " \u00b7 sound starts on the next tap";
+  }, 1500);
 }
 
 /**
@@ -1175,7 +1523,13 @@ const fullscreenElement = () =>
 const enterFullscreen = document.documentElement.requestFullscreen
   || document.documentElement.webkitRequestFullscreen;
 const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
-if (enterFullscreen && exitFullscreen) {
+// An iPhone has the functions and lets only a video use them, and Chrome
+// there does not say so through fullscreenEnabled either, so the phone is
+// asked for by name. The home screen is its full screen; the manifest offers
+// that. A request the browser refuses anywhere else hides the button too.
+const fullscreenAllowed = !IPHONE
+  && (document.fullscreenEnabled ?? document.webkitFullscreenEnabled ?? true);
+if (enterFullscreen && exitFullscreen && fullscreenAllowed) {
   full.hidden = false;
   full.addEventListener("click", async () => {
     try {
@@ -1183,8 +1537,10 @@ if (enterFullscreen && exitFullscreen) {
       else await enterFullscreen.call(document.documentElement);
     } catch (err) {
       // A refusal is the browser's to make: a window that is already the
-      // system's full screen, or a policy that wants a fresh gesture.
+      // system's full screen, or a policy that wants a fresh gesture. A
+      // browser that will not do it at all gets its button taken away.
       status.textContent = `full screen refused: ${err.message}`;
+      if (/not supported|not allowed|denied/i.test(err.message)) full.hidden = true;
     }
     canvas.focus();
   });
@@ -1199,17 +1555,34 @@ if (enterFullscreen && exitFullscreen) {
 }
 
 const toggle = $("#toggle-panel");
+const showPane = (shown) => {
+  app.classList.toggle("panel-hidden", !shown);
+  toggle.setAttribute("aria-pressed", String(shown));
+  syncPadKey();
+};
 // A toggle names what it controls; whether it is on is carried by its pressed
 // state, not by rewriting the label to a verb.
 toggle.addEventListener("click", () => {
-  const hidden = app.classList.toggle("panel-hidden");
-  toggle.setAttribute("aria-pressed", String(!hidden));
+  showPane(app.classList.contains("panel-hidden"));
   canvas.focus();
 });
+// A phone has the room for one thing. The game is that thing, and the clue
+// book lies over it when asked for, in either orientation: see the
+// stylesheet's phone blocks. So it starts put away there, and the book
+// button is the only thing that moves it. The full screen button is its own
+// switch and touches neither.
+{
+  const phone = matchMedia("(max-width: 900px)").matches
+    || matchMedia("(orientation: landscape) and (max-height: 520px)").matches;
+  if (phone || IPHONE) showPane(false);
+}
 
 // Handles for the browser checks in tools/cabinet_check.js.
 window.__cabinet = {
   mouseEvents: 0,
+  // Touch: taps delivered to the game, and on-screen key presses sent.
+  taps: 0,
+  keys: 0,
   // Frames delivered by the emulator. The guest drives its own vsync, so this
   // rate is how much of the emulated machine the host is actually managing to
   // run, which is what says whether a cycle count is being sustained or just
@@ -1282,6 +1655,28 @@ $("#import-file").addEventListener("change", async (e) => {
 });
 
 $("#boot").addEventListener("click", boot);
+wireTouchKeys();
+// The page has nothing to scroll, and a phone that scrolls it anyway, to
+// bring a focused control into view, leaves the header off the top with no
+// way back. Whatever scrolled it is undone.
+for (const target of [window, document]) {
+  target.addEventListener("scroll", () => {
+    if (scrollY || scrollX) scrollTo(0, 0);
+    const root = document.scrollingElement;
+    if (root && (root.scrollTop || root.scrollLeft)) { root.scrollTop = 0; root.scrollLeft = 0; }
+  }, { passive: true });
+}
+
+// Installable, and openable with no network once it has been opened with
+// one: the shell, the emulator and the decoder are kept by the worker as
+// they are fetched, and a copy of the game is already in storage. At the
+// site root, because a worker reaches only what is under it, so both servers
+// put it there. A browser that has none, or a page served in a way it will
+// not take a worker from, is left as it was.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register(new URL("../sw.js", import.meta.url))
+    .catch((err) => console.warn("no service worker:", err.message));
+}
 
 // The drop zone, wired only where it is offered.
 const drop = $("#bring-your-own");
