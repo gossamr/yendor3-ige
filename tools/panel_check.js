@@ -343,7 +343,12 @@ const takeHitAt = async (level) => planner.locator(
   `.plan-career tbody tr[data-level="${level}"] + tr .plan-evidence-block`,
   { hasText: "Take hit" }).first().innerText().catch(() => "");
 const tower = await takeHitAt(16);
-if (!/Accuracy\s*\n?160\b/.test(tower) || !tower.includes("Fire Dwarf Tower")) {
+// Case-insensitively, because a monster that heads its column is set in
+// capitals there and `innerText` reports what is rendered rather than what the
+// node holds.
+const names = (text) => text.toUpperCase();
+if (!/Accuracy\s*\n?160\b/.test(tower)
+    || !names(tower).includes("FIRE DWARF TOWER")) {
   problems.push("planner: level 16 is not measured against the Fire Dwarf "
     + `Tower's shot: ${JSON.stringify(tower)}`);
 } else if (!/shot/i.test(tower)) {
@@ -363,12 +368,14 @@ await page.waitForTimeout(400);
 await page.click(".plan-evidence");
 await page.waitForTimeout(600);
 const last = planner.locator('.plan-career tbody tr[data-level="40"] + tr');
-const endgame = await last.innerText();
+const blocks = await last.locator(".plan-evidence-block").allInnerTexts();
 for (const [what, expected] of [["Accuracy", "240"], ["Absorption", "170"]]) {
-  // The working is a comparison now: a label, its value, then the monster the
-  // value came off, each on its own line under the Them column.
-  const line = new RegExp(`${what}\\s*\\n${expected}\\s*\\nPaltivar`);
-  if (!line.test(endgame)) {
+  // A label and its value on their own lines, in a block that names Paltivar.
+  // Where every number on the right comes off one monster it is named once at
+  // the head of the column, in capitals; where they come off several, each
+  // carries its own under it. The name is in the block either way.
+  const line = new RegExp(`${what}\\s*\\n${expected}\\b`);
+  if (!blocks.some((b) => line.test(b) && names(b).includes("PALTIVAR"))) {
     problems.push(`planner: level 40 is not measured against Paltivar's `
       + `${what.toLowerCase()} of ${expected} with bosses counted`);
   }

@@ -101,6 +101,10 @@ nav button .fk { color: var(--stone-600); margin-right: .4rem; }
 nav button[aria-selected="true"] .fk { color: var(--amber-dim); }
 
 main { padding: 1rem; max-width: 1200px; }
+/* The reading width is for prose. The career is a table with a row a level and
+   a block of working under each, and capping it left the space right of the
+   chart empty, by more the wider the window. It takes what there is. */
+main:has(section[data-key="pl"]:not([hidden])) { max-width: none; }
 section[hidden] { display: none; }
 
 h2 { font-size: 15px; letter-spacing: .06em; color: var(--ink-bright);
@@ -803,10 +807,14 @@ body.embedded .guide-side { top: 3.2rem; }
    them, and the wrapper scrolls when the goals outgrow the column. Headers sit
    on the same edge as their cells for the same reason -- the page's own table
    rule right-aligns a header over a left-aligned column. */
-.plan-career { width: auto; font-variant-numeric: tabular-nums; }
+/* The table fills the width it is given. Sized to its content it stopped
+   wherever the Spend column happened to end and left the rest of every row
+   empty at any window. The slack goes to Spend, which is the one column whose
+   content varies, so the columns before it stay as tight as their figures. */
+.plan-career { width: 100%; font-variant-numeric: tabular-nums; }
+.plan-career th:last-child, .plan-career td:last-child { width: 100%; }
 .plan-career th, .plan-career td { text-align: left; padding-right: 1.1rem;
                                    white-space: nowrap; }
-.plan-career th:last-child, .plan-career td:last-child { padding-right: 0; }
 .plan-career td.plan-held { color: var(--verdant); }
 .plan-career td.plan-short { color: var(--blood-lit); }
 .plan-career td.plan-unreachable { color: var(--amber-lit); }
@@ -821,28 +829,53 @@ body.embedded .guide-side { top: 3.2rem; }
    wide as its widest cell, so working that sized itself would drag the whole
    schedule out past any window and leave the columns scrolling for no reason.
    Equal columns, so a goal's block is the same shape wherever it appears. */
-.plan-working { display: grid; gap: .8rem 1.8rem; width: min(60rem, 86vw);
-                grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
-.plan-evidence-block { margin: 0; min-width: 0; }
-/* One label column for every block, so the values line up down the row and
-   across it. Left to itself the grid sizes each block's labels separately and
-   no two values start in the same place. */
-/* Yours against theirs: two label-and-value pairs a row, and the line that
-   settles the goal across the whole width beneath them. */
-.plan-versus { display: grid; gap: .1rem .5rem; align-items: baseline;
-               grid-template-columns: max-content minmax(2.5rem, 1fr)
-                                      max-content minmax(2.5rem, 1fr); }
+/* Columns rather than a grid. A grid's rows are as tall as the tallest cell
+   in them, so first strike, which is one line, sat in a hole eight lines deep
+   beside kills per rest. Columns pack each block against the one above it and
+   the goals still read in order, down one column and on to the next. */
+.plan-working { column-width: 19rem; column-gap: 1.8rem; width: 100%; }
+/* The rule divides one goal from the next. It used to sit inside a goal,
+   between its working and its verdict, which drew a line through the middle of
+   a group and none at all between groups. */
+.plan-evidence-block { margin: 0 0 .9rem; min-width: 0;
+                       padding: .5rem .8rem 0 0;
+                       border-top: 1px solid var(--stone-400);
+                       break-inside: avoid; -webkit-column-break-inside: avoid; }
+/* The rule divides one goal from the next, so the first one has nothing above
+   it to be divided from. */
+.plan-evidence-block:first-child { padding-top: 0; border-top: 0; }
+/* Yours against theirs, each side its own list. */
+.plan-versus { display: grid; gap: .1rem 1.4rem; align-items: start;
+               grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+/* One side of the comparison, as long as it happens to be. The label column is
+   the same width in every block and on both sides, so the values start in the
+   same place down a column and across it. Sized to the longest label the tab
+   has rather than to whatever the block happens to hold, which set every block
+   its own margin and lined nothing up with anything. */
+.plan-side { display: grid; align-content: start; gap: .1rem .5rem;
+             align-items: baseline;
+             grid-template-columns: 7rem minmax(2.5rem, 1fr); }
 .plan-column { grid-column: span 2; color: var(--stone-600); font-size: 11px;
                letter-spacing: .08em; text-transform: uppercase; }
+/* The column headed with the monster instead of with the word, in the same
+   capitals as the heading it replaces: it is a column heading and reads as
+   one, where lower case read as another value. */
 .plan-label { color: var(--stone-700); }
 .plan-mine-value, .plan-theirs-value { display: flex; flex-wrap: wrap;
                                        gap: 0 .35rem; color: var(--gold); }
 .plan-mine-value .note, .plan-theirs-value .note { flex-basis: 100%; margin: 0; }
 /* The comparison the verdict turns on. It carries the color, because it is
    the one line that says which way the block went. */
-.plan-decides { grid-column: 1 / -1; display: flex; flex-wrap: wrap;
-                gap: 0 .4rem; align-items: baseline; margin-top: .25rem;
-                padding-top: .25rem; border-top: 1px solid var(--stone-400); }
+.plan-decides { display: flex; flex-wrap: wrap;
+                gap: 0 .4rem; align-items: baseline; }
+/* The goal and its verdict on one row, the verdict pushed right so the answers
+   line up down the column whatever the goals are called. Pushed by a margin
+   rather than by space-between, so that a verdict too long to share the line
+   is still a verdict when it wraps instead of reading as the first row of the
+   working. */
+.plan-evidence-head { display: flex; flex-wrap: wrap; align-items: baseline;
+                      gap: 0 1rem; margin-bottom: .3rem; }
+.plan-evidence-head .plan-decides { margin-left: auto; justify-content: flex-end; }
 .plan-decides .plan-label { color: inherit; }
 .plan-decides strong { font-variant-numeric: tabular-nums; }
 .plan-needs { color: var(--stone-700); }
@@ -865,6 +898,11 @@ body.embedded .guide-side { top: 3.2rem; }
 
 /* The goal columns are numbered, and the summary above is the key. */
 .plan-career th.plan-goal-col { color: var(--stone-600); }
+/* A switch that belongs to one goal, under the target it changes the reading
+   of rather than beside it, where it would set the column's width. */
+.plan-goal-switch { display: flex; align-items: center; gap: .3rem;
+                    margin-top: .3rem; font-size: 11px;
+                    color: var(--stone-600); }
 .plan-key { display: inline-block; min-width: 1.2rem; color: var(--stone-600); }
 
 /* The pool comparison: the row the plan is on is the one to read against. */
