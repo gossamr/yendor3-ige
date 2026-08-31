@@ -9,7 +9,8 @@
 // server, which does have the game and would otherwise never offer the drop
 // zone.
 //
-// With --trainer it also boots the dropped copy, walks the menus to a party
+// With --trainer it also boots the dropped copy with ?cheats, walks the menus
+// to a party
 // and reads it out of the running game's memory. That is the combination the
 // deployments keep breaking in isolation: the hooked emulator has to be built
 // into whatever is serving, the panel has to be told the flag through a frame
@@ -39,7 +40,7 @@ const engineName = arg("browser", "chromium");
 const engine = playwright[engineName];
 if (!engine) throw new Error(`no such browser: ${engineName}`);
 const WITH_TRAINER = process.argv.includes("--trainer");
-if (WITH_TRAINER) url.searchParams.set("trainer", "1");
+if (WITH_TRAINER) url.searchParams.set("cheats", "1");
 
 // A zip of the game directory, made here rather than kept in the tree: the
 // game is not ours to commit, and this is what a player's own archive looks
@@ -401,8 +402,10 @@ if (WITH_TRAINER) {
   if (shim !== 200) await fail(`the hooked emulator is not published here (${shim})`);
 
   const frameSrc = await page.getAttribute("#panel", "src");
-  if (!/[?&]trainer=1/.test(frameSrc)) {
-    await fail(`the panel was not told about the trainer: ${frameSrc}`);
+  for (const flag of ["cheats", "trainer"]) {
+    if (!new RegExp(`[?&]${flag}=1`).test(frameSrc)) {
+      await fail(`the panel was not told about ${flag}: ${frameSrc}`);
+    }
   }
 
   await page.click("#boot");
@@ -457,11 +460,15 @@ if (WITH_TRAINER) {
   await type(["e"], 14000);
   await type(["r"], 3000);
 
-  await inPanel((d) => d.querySelector('nav button[data-key="tr"]')?.click());
+  await inPanel((d) => {
+    d.querySelector('nav button[data-key="ch"]')?.click();
+    d.querySelector('section[data-key="ch"] .view-picker button[data-view="trainer"]')
+      ?.click();
+  });
   let rows = 0;
   for (let i = 0; i < 180 && !rows; i++) {
     rows = await inPanel((d) =>
-      d.querySelectorAll('section[data-key="tr"] table tbody tr').length).catch(() => 0);
+      d.querySelectorAll('section[data-key="ch"] table tbody tr').length).catch(() => 0);
     if (!rows) await page.waitForTimeout(500);
   }
   if (!rows) await fail("the trainer never read the party out of the running game");

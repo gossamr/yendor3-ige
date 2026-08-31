@@ -89,7 +89,7 @@
   const DEFAULTS = {
     active: "f2", monsterPick: null, spellClass: null, curveOpen: false,
     rawPages: false, mapPick: null, legendOpen: false, itemCategory: null,
-    docPick: null, plan: null, planPool: false,
+    docPick: null, plan: null, planPool: false, cheatPick: null,
   };
 
   function restored() {
@@ -416,6 +416,11 @@
   // absent rather than broken when there is nothing behind it.
   const TRAINER = new URLSearchParams(location.search).has("trainer");
 
+  // The tab the trainer lives in, asked for the same way and separately: the
+  // save editor beside it reads the cabinet's save files rather than the
+  // running game, so it works where there is no hooked emulator.
+  const CHEATS = new URLSearchParams(location.search).has("cheats");
+
   // The channel the hooked emulator answers on. It is a BroadcastChannel
   // rather than a port because the emulator runs in a worker js-dos owns and
   // this code runs in an iframe, and neither holds a reference to the other, and
@@ -493,6 +498,22 @@
     "Mapping", "Navigate", "Bartering", "Repair", "Thievery", "Linguistic",
   ];
   const SKILL_FROM = 14;   // where the skills start, and the table's second half
+
+  // Six of the twenty-six are not stored answers but worked-out ones. The
+  // equipment assembly at image 0x0649E writes the five combat words every
+  // time a character equips something: shot accuracy and shot damage from the
+  // projectile skill and the missile weapon, accuracy and damage from the
+  // melee skill and the weapon in hand, absorption from the armor. Capacity is
+  // ten times strength. See docs/leveling.md.
+  //
+  // A number typed into one of those holds until the next thing that writes
+  // it, which is the next time anything is picked up or put on, so the sheet
+  // shows them and does not take them. What moves them is the attribute or the
+  // skill above, or the item in the slot.
+  const DERIVED = new Set(["Shot accuracy", "Shot damage", "Accuracy",
+                           "Damage", "Absorption", "Capacity"]
+    .map((name) => SHEET.indexOf(name)));
+
 
   // The class word holds 1 to 9, and a promoted tier adds 10 or 20. The first
   // three classes have no tiers; the other six are the triads the clue book's
@@ -609,9 +630,19 @@
         // unlit torch's.
         const duration = Number(String((item.fields || {}).duration || "")
           .match(/^\d+/)?.[0] || 0) || (item.name === "LIT TORCH" ? LIT : 0);
-        itemsById.set(item.id, { name: item.name, charge: duration });
+        // The slot the game equips it in, and whether it costs a shield. Both
+        // belong to the item rather than to the enchantment, so a +N form
+        // takes the base item's.
+        const slot = item.slot || null;
+        const twoHanded = (item.fields || {})["2-handed"] === "YES";
+        // Which containers will take it, as the item's own page prints the
+        // row: BACKPACK, BOX and BAG in some combination, or neither of the
+        // two panel answers, which name no container at all.
+        const fits = String((item.fields || {})["fits in"] || "");
+        itemsById.set(item.id, { name: item.name, charge: duration, slot, twoHanded, fits });
         for (const v of item.variants || []) {
-          itemsById.set(v.id, { name: `${item.name} +${v.plus}`, charge: duration });
+          itemsById.set(v.id, { name: `${item.name} +${v.plus}`, charge: duration,
+                                slot, twoHanded, fits });
         }
       }
     }
@@ -619,6 +650,13 @@
   }
   const itemName = (id) => itemIndex().get(id)?.name || `item ${id}`;
   const itemCharge = (id) => itemIndex().get(id)?.charge || 0;
+  const itemSlot = (id) => itemIndex().get(id)?.slot || null;
+  const itemTwoHanded = (id) => itemIndex().get(id)?.twoHanded === true;
+  // A container is an item the game equips into the container slot, which is
+  // the bag, the box and the backpack and nothing else (docs/items.md).
+  const isContainer = (id) => itemSlot(id) === "AMMUNITION";
+  const fitsInside = (id, holder) =>
+    (itemIndex().get(id)?.fits || "").includes(holder);
 
   // A character's name is the test for "is this really the party": four
   // uppercase letters or more, and nothing that is not a name character.
@@ -695,6 +733,17 @@
     failed.waiting = hits.length === 0 || near.length > 0;
     throw failed;
   }
+
+  /**
+   * Is this node being looked at?
+   *
+   * The trainer draws into a container inside its section rather than into the
+   * section itself, so its own `hidden` is never set and asking it says yes
+   * for a tab nobody is on. The section is what `draw()` hides, so that is
+   * what to ask.
+   */
+  const onScreen = (node) =>
+    node.isConnected && !node.closest("section[data-key]")?.hidden;
 
   // The tab is live: it re-reads the game every tick rather than waiting to be
   // asked, because the interesting moment is usually mid-fight and clicking a
@@ -902,7 +951,7 @@
     clearInterval(trainerTimer);
     if (!emulator) { setLive(false, "No emulator on the channel."); return; }
     const tick = async () => {
-      if (!root.isConnected || root.hidden) { clearInterval(trainerTimer); return; }
+      if (!onScreen(root)) { clearInterval(trainerTimer); return; }
       if (trainerReading) return;
       trainerReading = true;
       try {
@@ -1130,6 +1179,81 @@
     refresh(statsBox.querySelector(".trainer-xp"), person.experience);
   }
 
+  /**
+   * The twenty-six numbers, both columns, as a table of inputs.
+   *
+   * Two stats to a row: the fourteen the character is on the left, the twelve
+   * it can do on the right. Each is held twice, and both are writable: raising
+   * an attribute without its maximum leaves the next level-up to put it back.
+   *
+   * The trainer and the save editor show the same sheet and write it to
+   * different places, so the shape is here and the writing is the caller's.
+   * The inputs carry their index and column, which is how both callers put
+   * numbers back into them.
+   */
+  function sheetTable(onSet, { hide = null, single = false } = {}) {
+    const left = [];
+    for (let i = 0; i < SKILL_FROM; i += 1) if (!hide || !hide.has(i)) left.push(i);
+    const right = [];
+    for (let i = SKILL_FROM; i < SHEET.length; i += 1) if (!hide || !hide.has(i)) right.push(i);
+
+    const table = el("table", { className: "effects trainer-sheet-table" });
+    const head = single
+      ? ["Attribute", "Value", "Skill", "Value"]
+      : ["Attribute", "Now", "Max", "Skill", "Now", "Max"];
+    table.append(el("thead", {}, el("tr", {},
+      head.map((t) => el("th", { scope: "col", textContent: t })))));
+    const body = el("tbody");
+    const cell = (index, col) => {
+      const input = el("input", { type: "number", min: "0", max: "9999",
+                                  className: "trainer-num trainer-stat",
+                                  dataset: { index: String(index), col } });
+      // "live" is what the code calls it; "now" is what the column says, and
+      // where there is one column there is nothing to tell apart.
+      input.setAttribute("aria-label", single ? SHEET[index]
+        : `${SHEET[index]} ${col === "live" ? "now" : "max"}`);
+      if (DERIVED.has(index)) {
+        input.disabled = true;
+        input.title = "the game sets this one from the attributes, the skills "
+          + "and what the character is carrying";
+      } else {
+        editable(input);
+        input.onchange = () => {
+          const value = Number(input.value) | 0;
+          onSet(index, col, value);
+          // One value writes both columns: the number the game plays with, and
+          // the ceiling its level-ups grow. Character creation writes the same
+          // value into both, so this is the state the game itself produces;
+          // moving one and not the other is a character the game cannot make.
+          if (single) onSet(index, "max", value);
+          sent(input);
+        };
+      }
+      return el("td", {}, [input]);
+    };
+    // Two stats to a row: what the character is on the left, what it can do on
+    // the right, and a blank where one side runs out before the other.
+    const pair = (row, index) => {
+      if (index === undefined) {
+        for (let k = 0; k < (single ? 2 : 3); k += 1) row.append(el("td", {}));
+        return;
+      }
+      row.append(el("th", { scope: "row", textContent: SHEET[index] }),
+                 cell(index, "live"));
+      if (!single) row.append(cell(index, "max"));
+    };
+    for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+      const row = el("tr");
+      pair(row, left[i]);
+      pair(row, right[i]);
+      body.append(row);
+    }
+    table.append(body);
+    // Narrower than the panel gets by hand, so the table scrolls in its own
+    // box rather than taking the whole page sideways with it.
+    return el("div", { className: "sheet-wrap" }, [table]);
+  }
+
   function buildStats(person) {
     statsBox.textContent = "";
     statsBox.dataset.name = person.name;
@@ -1155,46 +1279,9 @@
     head.append(level, el("span", { className: "note", textContent: "Exp." }), xp);
     statsBox.append(head);
 
-    // Two stats to a row: the fourteen the character is on the left, the
-    // twelve it can do on the right. Each is held twice, and both are
-    // writable: raising an attribute without its maximum leaves the next
-    // level-up to put it back.
-    const table = el("table", { className: "effects trainer-sheet-table" });
-    table.append(el("thead", {}, el("tr", {},
-      ["Attribute", "Now", "Max", "Skill", "Now", "Max"]
-        .map((t) => el("th", { scope: "col", textContent: t })))));
-    const body = el("tbody");
-    const cell = (index, col) => {
-      const input = editable(el("input", { type: "number", min: "0", max: "9999",
-                                  className: "trainer-num trainer-stat",
-                                  dataset: { index: String(index), col } }));
-      // "live" is what the code calls it; "now" is what the column says.
-      input.setAttribute("aria-label",
-                         `${SHEET[index]} ${col === "live" ? "now" : "max"}`);
-      input.onchange = () => {
-        write(person.at + CHAR[col] + index * CHAR.statStride,
-              bytes16(Number(input.value) | 0));
-        sent(input);
-      };
-      return el("td", {}, [input]);
-    };
-    for (let i = 0; i < SKILL_FROM; i += 1) {
-      const row = el("tr");
-      row.append(el("th", { scope: "row", textContent: SHEET[i] }),
-                 cell(i, "live"), cell(i, "max"));
-      const j = SKILL_FROM + i;
-      if (j < SHEET.length) {
-        row.append(el("th", { scope: "row", textContent: SHEET[j] }),
-                   cell(j, "live"), cell(j, "max"));
-      } else {
-        for (let k = 0; k < 3; k += 1) row.append(el("td", {}));
-      }
-      body.append(row);
-    }
-    table.append(body);
-    statsBox.append(table);
-    statsBox.append(el("p", { className: "note", textContent:
-      "Capacity is what the character can carry, in tenths of a unit." }));
+    statsBox.append(sheetTable((index, col, value) => {
+      write(person.at + CHAR[col] + index * CHAR.statStride, bytes16(value));
+    }));
   }
 
   /** Every write goes through here, so every write quiets the refresh. */
@@ -1793,6 +1880,742 @@
                 zoom, close);
     dialog.append(head, shell);
     return dialog;
+  }
+
+  /* --- the save editor -------------------------------------------------- */
+  //
+  // The trainer's job done to a file instead of to the running game. The game
+  // is not involved: a save is 81,037 bytes and its first 5,000 are the roster
+  // (docs/saves.md), which is the same 500-byte character record the trainer
+  // reads out of memory, at the same displacements. So everything below is
+  // read and written with the constants above it.
+  //
+  // The file itself belongs to the cabinet, which is holding it either on the
+  // emulated disk or in the browser's storage. This asks for it rather than
+  // reaching for it: the cabinet owns the store, and the panel knows only
+  // which slots there are and what is in the one it opened.
+
+  /** One ask, one reply, over the same channel the tables came across. */
+  const host = (() => {
+    const waiting = new Map();
+    let next = 1;
+    addEventListener("message", (e) => {
+      if (e.source !== window.parent) return;
+      const m = e.data;
+      if (!m || !waiting.has(m.id)) return;
+      const w = waiting.get(m.id);
+      waiting.delete(m.id);
+      m.error ? w.reject(new Error(m.error)) : w.resolve(m);
+    });
+    return (type, extra = {}) => new Promise((resolve, reject) => {
+      const id = `panel-${next++}`;
+      waiting.set(id, { resolve, reject });
+      window.parent.postMessage({ type, id, ...extra }, "*");
+      // The cabinet answers every ask, with an answer or with an error, so
+      // this only fires where something is wrong with it. It is a timeout
+      // rather than a wait forever because a control that never comes back
+      // says less than one that says so.
+      setTimeout(() => {
+        if (waiting.delete(id)) reject(new Error("The game is not answering."));
+      }, 15000);
+    });
+  })();
+
+  const SAVE_BYTES = 81037;   // every save is this long; cabinet/roster.js too
+  const ROSTER_SLOTS = 10;      // the header slot and nine characters
+  const PARTY_AT = 492;         // four words in the header: who is playing
+  const PARTY_SIZE = 4;
+  const WORN_FLAGS = 0x15C;     // bit 0x20: a two-handed weapon is in hand
+  const TWO_HANDED = 0x20;
+
+  // The equipment slots, at the character record's own offsets, in the three
+  // columns the game's own panel puts them in: what the character holds down
+  // one side, what it carries down the other, and what it wears on the figure
+  // between them. The first six carry an item id and a second word, like a
+  // panel slot; the four worn ones are a word each, out of a run of five whose
+  // middle word no item in the game can reach. See docs/items.md.
+  const EQUIP = [
+    { at: 0x13A, label: "Missile", fits: "MISSILE WEAPON", column: "left" },
+    { at: 0x14A, label: "Ring", fits: "RING", column: "left" },
+    { at: 0x142, label: "Hand", fits: "HAND WEAPON", column: "left" },
+    { at: 0x152, label: "Head", fits: "HEAD", column: "worn", word: true },
+    { at: 0x154, label: "Body", fits: "BODY", column: "worn", word: true },
+    { at: 0x15A, label: "Hands", fits: "HANDS", column: "worn", word: true },
+    { at: 0x158, label: "Feet", fits: "FEET", column: "worn", word: true },
+    // The payload calls this slot AMMUNITION, after the bit that routes an
+    // item into it. The three items carrying that bit are the bag, the box and
+    // the backpack, so the label is what it holds.
+    { at: 0x13E, label: "Container", fits: "AMMUNITION", column: "right" },
+    { at: 0x14E, label: "Ring", fits: "RING", column: "right" },
+    { at: 0x146, label: "Shield", fits: "SHIELD", column: "right" },
+  ];
+  const HAND_AT = 0x142, SHIELD_AT = 0x146;
+
+  // Section 2, the containers: 1,296 records of 34 bytes, a word and then
+  // eight four-byte entries with the same shape as a panel slot. A record is
+  // numbered from 1, and a slot holding a container carries its record number
+  // in the slot's second word. See docs/saves.md.
+  const SECTION_2 = 21800;
+  const RECORD_BYTES = 34;
+  const RECORD_COUNT = 1296;     // and record 0 is "no container"
+  const RECORD_SLOTS = 8;
+  const RECORD_ENTRIES = 2;      // where the eight entries begin in a record
+  // The allocator's two words, in the roster's header slot. The record it
+  // hands out is the head of a free list threaded through the first word of
+  // each free record, and the counter when that list is empty (image 0x1600E,
+  // and image 0x051C8 pushes a record back on to the list).
+  const ALLOC_NEXT = 430;
+  const ALLOC_FREE = 432;
+  // The three containers are the three items the game equips into the
+  // container slot, so what a slot fits is what an item's own record says.
+  const CONTAINERS = { BAG: "BAG", BOX: "BOX", BACKPACK: "BACKPACK" };
+  const PURSE_LIMIT = 99999999;
+  // Where health and magic sit in the sheet, which is where their maximums
+  // are: the pair whose two columns mean now and most rather than now and
+  // after the next level.
+  const HEALTH_ROW = SHEET.indexOf("Health");
+  const MAGIC_ROW = SHEET.indexOf("Magic");
+
+  let saveRoot = null;      // where the editor is drawn
+  let saveList = [];        // the slots the cabinet is holding, once asked
+  let saveAsked = false;
+  let savePath = null;      // which one is open
+  let saveBytes = null;     // its bytes, edited in place
+  let saveDirty = false;
+  let saveWho = null;       // which roster slot is on screen
+  let savePick = null;      // which of its item slots the picker writes to
+  let saveNote = "";
+  let saveBusy = false;
+  let saveWriteButton = null, saveState = null;
+
+  const sU16 = (at) => saveBytes[at] | (saveBytes[at + 1] << 8);
+  const sBcd = (at) => bcd(saveBytes, at);
+
+  /**
+   * Every write goes through here, so every write marks the file unwritten.
+   *
+   * It does not redraw. A number is typed into a field and committed by
+   * leaving it, and leaving it means going to the next one, so a redraw here
+   * would take away the field that had just been tabbed into. The two things
+   * that have to change are the button that writes the file and the word
+   * beside it, and those are moved rather than rebuilt.
+   */
+  function sPut(at, bytes) {
+    saveBytes.set(bytes, at);
+    saveDirty = true;
+    if (saveWriteButton) saveWriteButton.disabled = saveBusy || !saveDirty;
+    if (saveState) saveState.textContent = "unsaved changes";
+  }
+
+  function renderSaveEditor(root) {
+    saveRoot = root;
+    if (!saveAsked) { saveAsked = true; askSaves(); }
+    drawSaveEditor();
+  }
+
+  /** What the cabinet is holding. Also the Reload button. */
+  async function askSaves() {
+    saveBusy = true;
+    drawSaveEditor();
+    try {
+      const reply = await host("saves?");
+      saveList = reply.saves || [];
+      saveNote = saveList.length ? "" : "No saved games yet. Save one in the game first.";
+      // Whatever was open stays open if it is still there; otherwise the
+      // first slot, since a picker showing a name and an editor showing
+      // nothing is a control that looks broken until it is used.
+      const want = saveList.some((f) => f.path === savePath)
+        ? savePath
+        : (saveList[0] || {}).path || null;
+      if (want) await openSave(want);
+      else closeSave();
+    } catch (e) {
+      saveList = [];
+      saveNote = e.message;
+    } finally {
+      saveBusy = false;
+      drawSaveEditor();
+    }
+  }
+
+  function closeSave() {
+    savePath = null;
+    saveBytes = null;
+    saveDirty = false;
+    saveWho = null;
+    savePick = null;
+  }
+
+  async function openSave(path) {
+    saveBusy = true;
+    drawSaveEditor();
+    try {
+      const reply = await host("save-read", { path });
+      const bytes = new Uint8Array(reply.bytes);
+      if (bytes.length !== SAVE_BYTES) {
+        throw new Error(`Slot ${path.slice(-1)} is not a saved game this can read.`);
+      }
+      // Reading the same slot again is a reload, so it keeps the character on
+      // screen and the slot that was chosen; reading another one is a
+      // different file and starts where a file starts.
+      const same = savePath === path;
+      savePath = path;
+      saveBytes = bytes;
+      saveDirty = false;
+      if (!same) { savePick = null; saveWho = null; }
+      saveNote = "";
+    } catch (e) {
+      closeSave();
+      saveNote = e.message;
+    } finally {
+      saveBusy = false;
+      drawSaveEditor();
+    }
+  }
+
+  async function writeSave() {
+    if (!saveBytes) return;
+    saveBusy = true;
+    drawSaveEditor();
+    try {
+      const reply = await host("save-write", { path: savePath, bytes: saveBytes });
+      saveDirty = false;
+      saveNote = `Slot ${savePath.slice(-1)} saved. `
+        + "Load it in the game to play it.";
+    } catch (e) {
+      saveNote = e.message;
+    } finally {
+      saveBusy = false;
+      drawSaveEditor();
+    }
+  }
+
+  /** The characters in the file, and which of them are out playing. */
+  function saveRoster() {
+    const party = [];
+    for (let i = 0; i < PARTY_SIZE; i += 1) party.push(sU16(PARTY_AT + i * 2));
+    const out = [];
+    for (let slot = 1; slot < ROSTER_SLOTS; slot += 1) {
+      const at = slot * DS.character;
+      const name = asText(saveBytes.slice(at + CHAR.name,
+                                          at + CHAR.name + CHAR.nameLen));
+      if (!looksLikeName(name)) continue;
+      out.push({
+        slot, at, name,
+        playing: party.includes(slot),
+        classCode: sU16(at + CHAR.classCode),
+        level: sU16(at + CHAR.level),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Every item slot of one character, keyed by where it is in the file.
+   *
+   * The eight panel slots and the ten equipment slots, and then whatever any
+   * of those is holding: a container's eight entries are slots like any
+   * other, and a container can itself be inside one, since a bag fits in a
+   * backpack. So the walk goes down, and a slot's `holder` is the container
+   * it is inside, which is what decides the items it will take.
+   */
+  function saveSlots(person) {
+    const out = new Map();
+    // A record that holds a container pointing back at itself would walk for
+    // ever. The file is edited by hand here and by other hands elsewhere, so
+    // the walk remembers where it has been rather than trusting it.
+    const seen = new Set();
+    const add = (spec) => {
+      out.set(spec.at, spec);
+      const id = sU16(spec.at);
+      if (spec.word || !isContainer(id)) return;
+      const record = sU16(spec.at + 2);
+      if (!record || seen.has(record)) return;
+      seen.add(record);
+      const base = SECTION_2 + record * RECORD_BYTES + RECORD_ENTRIES;
+      for (let k = 0; k < RECORD_SLOTS; k += 1) {
+        add({ at: base + k * CHAR.carriedStride, label: `${titleCase(itemName(id))} ${k + 1}`,
+              fits: null, holder: itemName(id), inside: spec.at, column: "inside" });
+      }
+    };
+    for (let k = 0; k < CHAR.carriedSlots; k += 1) {
+      add({ at: person.at + CHAR.carried + k * CHAR.carriedStride,
+            label: `Slot ${k + 1}`, fits: null, column: "carried" });
+    }
+    for (const spec of EQUIP) add({ ...spec, at: person.at + spec.at });
+    return out;
+  }
+
+  /**
+   * Give a container a record of section 2 to keep its contents in.
+   *
+   * The same two words the game uses, in the roster's header slot: the head of
+   * a free list threaded through the first word of each free record, and a
+   * counter for when that list is empty. Image 0x1600E does exactly this, and
+   * zeroes the record it hands out.
+   */
+  function allocateRecord() {
+    const free = sU16(ALLOC_FREE);
+    let record;
+    if (free) {
+      record = free;
+      sPut(ALLOC_FREE, bytes16(sU16(SECTION_2 + record * RECORD_BYTES)));
+    } else {
+      record = sU16(ALLOC_NEXT);
+      // The section is 1,296 records and the one after the last is section 3.
+      // The game has no such check, since nothing it does reaches the end;
+      // this can be clicked all day, and a record past the end would be
+      // written over the bundles.
+      if (record < 1 || record >= RECORD_COUNT) {
+        saveNote = "There is no room for another container in this game.";
+        return 0;
+      }
+      sPut(ALLOC_NEXT, bytes16(record + 1));
+    }
+    sPut(SECTION_2 + record * RECORD_BYTES, new Uint8Array(RECORD_BYTES));
+    return record;
+  }
+
+  /** And take it back, which is image 0x051C8: zeroed, then pushed on to the
+   *  free list through its own first word. Whatever was in it goes with it,
+   *  which is what the game does to a container it destroys. */
+  function freeRecord(record) {
+    if (!record || record >= RECORD_COUNT) return;
+    sPut(SECTION_2 + record * RECORD_BYTES, new Uint8Array(RECORD_BYTES));
+    sPut(SECTION_2 + record * RECORD_BYTES, bytes16(sU16(ALLOC_FREE)));
+    sPut(ALLOC_FREE, bytes16(record));
+  }
+
+  function drawSaveEditor() {
+    const root = saveRoot;
+    if (!root || !root.isConnected) return;
+    root.textContent = "";
+
+    root.append(el("div", { className: "trainer-head" }, [
+      el("div", { className: "trainer-headline" }, [
+        el("h4", { className: "curve-sub", textContent: "Saved games" }),
+        el("p", { className: "empty trainer-note", textContent: saveNote }),
+      ]),
+      ...aboutSaves(),
+    ]));
+
+    const row = el("div", { className: "picker-row" });
+    const pick = el("select", { className: "picker save-pick" });
+    pick.setAttribute("aria-label", "Which saved game");
+    for (const f of saveList) {
+      pick.append(el("option", {
+        value: f.path, selected: f.path === savePath,
+        textContent: `Slot ${f.path.slice(-1)}`
+                     + (f.caption ? ` · ${titleCase(f.caption)}` : ""),
+      }));
+    }
+    pick.disabled = !saveList.length || saveBusy;
+    pick.onchange = () => {
+      if (saveDirty
+          && !confirm(`Slot ${savePath.slice(-1)} has unsaved changes. `
+                      + "Open another anyway?")) {
+        pick.value = savePath;
+        return;
+      }
+      openSave(pick.value);
+    };
+    const reload = el("button", { type: "button", className: "toggle save-reload",
+                                  textContent: "Reload" });
+    reload.disabled = saveBusy;
+    reload.onclick = () => askSaves();
+    const write = el("button", { type: "button", className: "toggle save-write",
+                                 textContent: "Save" });
+    write.disabled = saveBusy || !saveBytes || !saveDirty;
+    write.onclick = () => writeSave();
+    row.append(pick, reload, write);
+    saveWriteButton = write;
+    saveState = null;
+    if (saveBytes) {
+      // Nothing where there is nothing to say. "Saved" sitting there from the
+      // moment a slot is opened reads as something this did, and it has not
+      // written anything: only the button does that.
+      saveState = el("span", { className: "note save-state", textContent:
+        saveBusy ? "working\u2026" : saveDirty ? "unsaved changes" : "" });
+      row.append(saveState);
+    }
+    root.append(row);
+
+    if (!saveBytes) {
+      if (!saveBusy && !saveList.length) {
+        root.append(el("p", { className: "empty", textContent:
+          "Nothing to edit yet. Save your game in one of its six slots and it "
+          + "will be here." }));
+      }
+      return;
+    }
+
+    const roster = saveRoster();
+    if (!roster.length) {
+      root.append(el("p", { className: "empty",
+                            textContent: "No characters in this game." }));
+      return;
+    }
+    if (!roster.some((p) => p.slot === saveWho)) {
+      saveWho = (roster.find((p) => p.playing) || roster[0]).slot;
+    }
+    const person = roster.find((p) => p.slot === saveWho);
+
+    // Who the panel is of. The four out playing are first and are marked,
+    // because those are the ones the game's own panel shows.
+    const who = el("div", { className: "view-picker save-who" });
+    for (const p of [...roster].sort((a, b) => (b.playing - a.playing) || (a.slot - b.slot))) {
+      const b = el("button", { type: "button", dataset: { slot: String(p.slot) } });
+      // A dot for the four who are out adventuring, against the ones left at
+      // the keep. A word for it would be a word on every button, and the
+      // button already carries a name, a class and a level.
+      const mark = el("i", { className: `save-mark${p.playing ? " on" : ""}` });
+      mark.title = p.playing ? "in the party" : "not in the party";
+      b.append(el("span", { className: "save-name" },
+                 [mark, document.createTextNode(titleCase(p.name))]),
+               el("span", { className: "note", textContent:
+                 `${titleCase(className(p.classCode))} ${p.level}` }));
+      b.setAttribute("aria-label", `${titleCase(p.name)}, `
+        + `${className(p.classCode)} level ${p.level}`
+        + `${p.playing ? ", in the party" : ""}`);
+      b.setAttribute("aria-current", String(p.slot === saveWho));
+      b.onclick = () => { saveWho = p.slot; savePick = null; drawSaveEditor(); };
+      who.append(b);
+    }
+    root.append(who);
+    // The purse is the party's rather than the character's. It is three
+    // counters in the roster's header slot, so it sits above whoever is on
+    // screen rather than inside their sheet.
+    root.append(savePurse());
+
+    // As many columns as the panel is wide enough to hold: what the character
+    // carries, what is inside it, and the sheet, side by side where there is
+    // room and one under the other where there is not. The picker travels with
+    // the panel, because it acts on whichever slot was clicked there.
+    const layout = el("div", { className: "save-layout" });
+    layout.append(el("div", { className: "save-gear" },
+                     [inventoryPanel(person), itemPicker(person)]),
+                  el("div", { className: "save-sheet" }, [saveSheet(person)]));
+    // The containers take the whole width under those two rather than a column
+    // of their own: their own cards already wrap, so the more room they have
+    // the fewer rows they need.
+    const holders = containerPanels(person);
+    if (holders) layout.append(holders);
+    root.append(layout);
+  }
+
+  /**
+   * The character's panel, in the shape the game draws it.
+   *
+   * Eight carried slots three across, then the figure: what the character
+   * holds down the left, what it carries down the right, and what it wears
+   * between them. The game draws the worn pieces on the figure itself and has
+   * artwork for every item; this has names and no artwork, so the worn slots
+   * take the figure's place rather than standing on it.
+   */
+  function inventoryPanel(person) {
+    const slots = saveSlots(person);
+    const panel = el("div", { className: "cheat-panel" });
+
+    const grid = el("div", { className: "cheat-grid" });
+    for (let k = 0; k < CHAR.carriedSlots; k += 1) {
+      grid.append(slotCell(slots.get(person.at + CHAR.carried + k * CHAR.carriedStride)));
+    }
+    panel.append(grid);
+
+    const body = el("div", { className: "cheat-body" });
+    for (const column of ["left", "worn", "right"]) {
+      const col = el("div", { className: `cheat-column cheat-${column}` });
+      for (const spec of EQUIP.filter((e) => e.column === column)) {
+        col.append(slotCell(slots.get(person.at + spec.at)));
+      }
+      body.append(col);
+    }
+    panel.append(body);
+
+    // The foot of the game's panel: the portrait, then health over magic. The
+    // bars are the pair the game draws; the numbers are what they are of.
+    const health = sU16(person.at + CHAR.health);
+    const magic = sU16(person.at + CHAR.magic);
+    const maxAt = person.at + CHAR.max;
+    const full = { health: sU16(maxAt + HEALTH_ROW * CHAR.statStride),
+                   magic: sU16(maxAt + MAGIC_ROW * CHAR.statStride) };
+    const foot = el("div", { className: "cheat-foot" });
+    foot.append(el("div", { className: "cheat-name" }, [
+      el("strong", { textContent: titleCase(person.name) }),
+      el("span", { className: "note", textContent:
+        `${titleCase(className(person.classCode))} · level ${person.level}` }),
+    ]));
+    for (const [key, value] of [["health", health], ["magic", magic]]) {
+      const share = full[key] ? Math.min(1, value / full[key]) : 0;
+      const bar = el("div", { className: `cheat-bar cheat-bar-${key}` },
+                     [el("i", { style: `width:${(share * 100).toFixed(1)}%` })]);
+      bar.title = `${key} ${value} of ${full[key]}`;
+      foot.append(bar);
+    }
+    panel.append(foot);
+    return panel;
+  }
+
+  /**
+   * What is inside the containers this character is carrying.
+   *
+   * The game keeps these out of the character's own panel: a container is
+   * opened on its own. So they are drawn under it, one grid to a container,
+   * and a bag inside a backpack gets a grid of its own.
+   */
+  function containerPanels(person) {
+    const slots = saveSlots(person);
+    const out = el("div", { className: "cheat-holders" });
+    for (const spec of slots.values()) {
+      const id = sU16(spec.at);
+      if (spec.word || !isContainer(id)) continue;
+      const record = sU16(spec.at + 2);
+      const box = el("div", { className: "cheat-holder" });
+      box.append(el("div", { className: "cheat-holder-head" }, [
+        el("strong", { textContent: titleCase(itemName(id)) }),
+        el("span", { className: "note", textContent: spec.label }),
+      ]));
+      if (!record) {
+        box.append(el("p", { className: "note", textContent:
+          `${titleCase(itemName(id))} has nowhere to keep anything yet. Put it `
+          + "in the slot again and it will." }));
+      } else {
+        const grid = el("div", { className: "cheat-grid" });
+        const base = SECTION_2 + record * RECORD_BYTES + RECORD_ENTRIES;
+        for (let k = 0; k < RECORD_SLOTS; k += 1) {
+          grid.append(slotCell(slots.get(base + k * CHAR.carriedStride)));
+        }
+        box.append(grid);
+      }
+      out.append(box);
+    }
+    return out.children.length ? out : null;
+  }
+
+  /** One slot: what is in it, and the button that selects it. */
+  function slotCell(spec) {
+    const id = sU16(spec.at);
+    const cell = el("button", { type: "button",
+                                className: `cheat-cell${id ? "" : " empty"}`,
+                                dataset: { at: String(spec.at) } });
+    cell.setAttribute("aria-pressed", String(savePick === spec.at));
+    cell.append(el("span", { className: "cheat-slot", textContent: spec.label }),
+                el("span", { className: "cheat-item",
+                             textContent: id ? titleCase(itemName(id)) : "—" }));
+    cell.onclick = () => {
+      savePick = savePick === spec.at ? null : spec.at;
+      drawSaveEditor();
+    };
+    return cell;
+  }
+
+  /**
+   * What goes in the slot that was clicked.
+   *
+   * The list is what the game would let the slot hold: an equipment slot takes
+   * the items whose own record names that slot, and a carried slot takes
+   * anything, which is what the game's own equip dispatch does with an item it
+   * has nowhere else to put (docs/items.md).
+   */
+  function itemPicker(person) {
+    const row = el("div", { className: "picker-row save-place" });
+    const slots = saveSlots(person);
+    const spec = savePick === null ? null : slots.get(savePick);
+    if (!spec) {
+      row.append(el("span", { className: "note", textContent:
+        "Choose a slot above to put something in it." }));
+      return row;
+    }
+    const all = [];
+    for (const item of [...(D.items || [])].sort((a, b) => a.name < b.name ? -1 : 1)) {
+      if (spec.fits && item.slot !== spec.fits) continue;
+      // Inside a container, what the item's own FITS IN row names. An item
+      // that names no container is one the game only ever puts on the panel.
+      if (spec.holder && !fitsInside(item.id, spec.holder)) continue;
+      all.push({ id: item.id, label: titleCase(item.name) });
+      for (const v of item.variants || []) {
+        all.push({ id: v.id, label: `${titleCase(item.name)} +${v.plus}` });
+      }
+    }
+    const what = el("select", { className: "picker save-what" });
+    what.setAttribute("aria-label", "What to put in the slot");
+    const filter = el("input", { type: "search", className: "trainer-filter save-filter",
+                                 placeholder: `Filter ${all.length} items` });
+    filter.setAttribute("aria-label", "Filter items");
+    const fill = () => {
+      const q = filter.value.trim().toLowerCase();
+      const hits = q ? all.filter((i) => i.label.toLowerCase().includes(q)) : all;
+      const keep = what.value;
+      what.textContent = "";
+      for (const i of hits) {
+        what.append(el("option", { value: String(i.id), textContent: i.label }));
+      }
+      if (hits.some((i) => String(i.id) === keep)) what.value = keep;
+      what.disabled = !hits.length;
+      filter.classList.toggle("empty", !hits.length);
+    };
+    filter.oninput = fill;
+    fill();
+    const place = el("button", { type: "button", className: "toggle save-set",
+                                 textContent: "Place" });
+    place.disabled = !all.length;
+    place.onclick = () => placeItem(person, spec, Number(what.value) | 0);
+    const clear = el("button", { type: "button", className: "toggle save-clear",
+                                 textContent: "Clear" });
+    clear.onclick = () => placeItem(person, spec, 0);
+    row.append(el("span", { className: "note", textContent: spec.label }),
+               filter, what, place, clear);
+    return row;
+  }
+
+  /**
+   * Put an item in a slot, or empty it.
+   *
+   * The id, and beside it whatever the item's second word holds: a torch's is
+   * how much of it is left to burn and a container's is the record it was
+   * given, which the game allocates when it finds a zero there. A worn slot is
+   * a word on its own and has no second word at all.
+   *
+   * The one rule the game enforces in both directions is that a two-handed
+   * weapon and a shield cannot be worn together, so putting one in hand takes
+   * the shield off and sets the flag the shield branch reads.
+   */
+  function placeItem(person, spec, id) {
+    // What is leaving. A container takes its record with it, and the record
+    // goes back on the free list rather than being left where nothing can
+    // reach it. Putting one container in place of another keeps the record and
+    // what is in it, which the game would not do -- it would drop the first
+    // one -- but an editor swapping a bag for a backpack means to keep the
+    // contents, and the entries below say what is in there either way.
+    const had = sU16(spec.at);
+    if (!spec.word && isContainer(had) && !isContainer(id)) {
+      freeRecord(sU16(spec.at + 2));
+    }
+    sPut(spec.at, bytes16(id));
+    if (!spec.word) {
+      // The second word, and what it holds depends on the item: how much of a
+      // torch is left to burn, and for a container the record of section 2
+      // that its contents are in, which is allocated here exactly as the game
+      // allocates one when it equips a container with a zero there.
+      const kept = isContainer(had) && isContainer(id) ? sU16(spec.at + 2) : 0;
+      const state = !id ? 0
+        : isContainer(id) ? (kept || allocateRecord())
+        : itemCharge(id);
+      sPut(spec.at + 2, bytes16(state));
+    }
+    if (spec.at === person.at + HAND_AT) {
+      const two = Boolean(id) && itemTwoHanded(id);
+      const flags = sU16(person.at + WORN_FLAGS);
+      sPut(person.at + WORN_FLAGS,
+           bytes16(two ? flags | TWO_HANDED : flags & ~TWO_HANDED & 0xFFFF));
+      if (two) {
+        sPut(person.at + SHIELD_AT, bytes16(0));
+        sPut(person.at + SHIELD_AT + 2, bytes16(0));
+      }
+    }
+    drawSaveEditor();
+  }
+
+  /** The sheet, and the two numbers above it that are not part of it. */
+  function saveSheet(person) {
+    const box = el("div", { className: "trainer-stats" });
+    const head = el("div", { className: "picker-row" });
+    const level = el("input", { type: "number", min: "1", max: "99",
+                                className: "trainer-num save-level",
+                                value: String(person.level) });
+    level.setAttribute("aria-label", "level");
+    level.onchange = () =>
+      sPut(person.at + CHAR.level, bytes16(Number(level.value) | 0));
+    const xp = el("input", { type: "number", min: "0", max: String(PURSE_LIMIT),
+                             className: "trainer-num save-xp",
+                             value: String(sBcd(person.at + CHAR.experience)) });
+    xp.setAttribute("aria-label", "experience");
+    xp.onchange = () => sPut(person.at + CHAR.experience, bcdBytes(Number(xp.value)));
+    head.append(el("span", { className: "note", textContent: "Level" }), level,
+                el("span", { className: "note", textContent: "Exp." }), xp);
+    box.append(head);
+
+    const table = sheetTable((index, col, value) => {
+      sPut(person.at + CHAR[col] + index * CHAR.statStride, bytes16(value));
+    }, { hide: DERIVED, single: true });
+    for (const input of table.querySelectorAll("input.trainer-stat")) {
+      const at = CHAR[input.dataset.col] + Number(input.dataset.index) * CHAR.statStride;
+      input.value = String(sU16(person.at + at));
+    }
+    box.append(table);
+    return box;
+  }
+
+  /** Gold, food and nuore: three counters in the roster's header slot. */
+  function savePurse() {
+    const row = el("div", { className: "picker-row save-purse" });
+    for (const key of PURSE) {
+      const input = el("input", { type: "number", min: "0", max: String(PURSE_LIMIT),
+                                  className: "trainer-num save-coin",
+                                  dataset: { purse: key },
+                                  value: String(sBcd(HEADER[key])) });
+      input.setAttribute("aria-label", key);
+      input.onchange = () => sPut(HEADER[key], bcdBytes(Number(input.value)));
+      row.append(el("span", { className: "note", textContent: titleCase(key) }), input);
+    }
+    return row;
+  }
+
+  /** What the editor is, behind the same button the trainer's note is. */
+  function aboutSaves() {
+    const dialog = el("dialog", { className: "trainer-about" });
+    dialog.append(el("h3", { textContent: "The save editor" }));
+    for (const text of [
+      "Changes a game you have already saved. Pick the slot, change what you "
+      + "like, then Write. The game reads it the next time you load that slot.",
+      "Everything a character has is here: what they hold, wear and carry, "
+      + "what is in their bags, their level and experience, the numbers on "
+      + "their sheet, and the party's gold, food and nuore.",
+      "The game you are playing right now is not on the list. Save it first, "
+      + "and edit the slot you saved it to.",
+    ]) {
+      dialog.append(el("p", { className: "note", textContent: text }));
+    }
+    const close = el("button", { type: "button", className: "toggle", textContent: "Close" });
+    close.onclick = () => dialog.close();
+    dialog.append(close);
+    const open = el("button", { type: "button", className: "toggle trainer-about-open",
+                                textContent: "?" });
+    open.setAttribute("aria-label", "About the save editor");
+    open.title = "About the save editor";
+    open.onclick = () => dialog.showModal();
+    return [open, dialog];
+  }
+
+  /* --- cheats ----------------------------------------------------------- */
+  //
+  // Two ways to change the same numbers: in the game as it runs, and in the
+  // file it was written to. One tab with a selector rather than two tabs, the
+  // way the guides are one tab over four documents.
+
+  const CHEAT_VIEWS = [
+    ...(TRAINER ? [{ key: "trainer", label: "Trainer", render: renderTrainer }] : []),
+    { key: "saves", label: "Save editor", render: renderSaveEditor },
+  ];
+
+  function renderCheats(root) {
+    root.textContent = "";
+    if (!CHEAT_VIEWS.some((v) => v.key === ui.cheatPick)) {
+      ui.cheatPick = CHEAT_VIEWS[0].key;
+    }
+    const picker = el("div", { className: "view-picker" });
+    for (const v of CHEAT_VIEWS) {
+      const b = el("button", { type: "button", textContent: v.label,
+                               dataset: { view: v.key } });
+      b.setAttribute("aria-current", String(v.key === ui.cheatPick));
+      b.onclick = () => { ui.cheatPick = v.key; renderCheats(root); };
+      picker.append(b);
+    }
+    root.append(picker);
+    const view = CHEAT_VIEWS.find((v) => v.key === ui.cheatPick);
+    const body = el("div", { className: `cheat-view cheat-${view.key}` });
+    root.append(body);
+    view.render(body);
   }
 
   /* --- F3 spells -------------------------------------------------------- */
@@ -3276,7 +4099,7 @@
     // Which document is above the layout rather than inside it: at the width
     // the panel is docked beside the game there is one column, and anything in
     // the sidebar falls below the document it is meant to navigate.
-    const picker = el("div", { className: "guide-picker" });
+    const picker = el("div", { className: "view-picker" });
     for (const d of DOCS) {
       const b = el("button", { type: "button", textContent: d.label,
                                dataset: { doc: d.key } });
@@ -5438,8 +6261,8 @@
     // The planner needs the model tables, which a panel built from an older
     // decode does not carry; without them the tab would be an error message.
     ...(PLAN ? [{ key: "pl", label: "Planner", render: renderPlanner }] : []),
-    // Last, and only when the cabinet booted the hooked emulator for it.
-    ...(TRAINER ? [{ key: "tr", label: "Trainer", render: renderTrainer }] : []),
+    // Last, and only where the cabinet asked for it.
+    ...(CHEATS ? [{ key: "ch", label: "Cheats", render: renderCheats }] : []),
   ];
 
   // Number keys select a tab, the way a browser selects one of its own.

@@ -10,7 +10,7 @@ import { BUTTONS, DOM_BUTTONS } from "./keys.js";
 import { startAudio } from "./audio.js";
 import { calibrate, fallbackTransform, retryDelay } from "./mouse.js";
 import {
-  loadFiles, startAutosave, fingerprint, notKeptReason,
+  loadFiles, startAutosave, fingerprint, notKeptReason, putFile, diskPaths,
   loadRoster, saveRoster, requestPersistence, storageEstimate,
   exportBundle, importBundle, loadGame, saveGame, clearGame,
 } from "./persist.js";
@@ -30,23 +30,25 @@ import { decodedTables, asPanelPayload, patchedExecutable } from "./decode.js";
 // copies the files there. Neither side has to rewrite anything.
 const EMU = new URL("../emulators/", import.meta.url).href;
 
-// Off unless asked for by name, and off anyway where the hooked emulator was
-// not built. See tools/build_trainer.js.
+// Off unless asked for by name. `?cheats` opens the panel's Cheats tab, which
+// holds the trainer and the save editor.
 //
-// `?trainer` is a request, not a switch: the build it needs is a second copy
-// of js-dos's shim that `make trainer` writes beside the stock one, and
-// neither the static site nor the image has it: tools/build_pages.js filters
-// it out and the container installs js-dos from the lockfile. Asking for it
-// where it does not exist used to set the emulator to a filename that 404s and
-// put a Trainer tab in the panel with nothing behind it. So availability is
-// checked once, and everything downstream reads the answer rather than the
-// flag. The frame is told through showPanel(), because at this point it has no
-// src to rewrite: it is given one only when there is something to put in it.
-const TRAINER = new URLSearchParams(location.search).has("trainer");
+// The two are not available in the same places. The save editor reads the save
+// files this page is holding and needs nothing of the emulator, so it works
+// wherever the cabinet does. The trainer reads and writes the running game's
+// memory, which needs a second copy of js-dos's shim that `make trainer`
+// writes beside the stock one, and the container installs js-dos from the
+// lockfile without it. Asking for it where it does not exist used to set the
+// emulator to a filename that 404s and put a tab in the panel with nothing
+// behind it. So availability is checked once, and everything downstream reads
+// the answer rather than the flag. The frame is told both through showPanel(),
+// because at this point it has no src to rewrite: it is given one only when
+// there is something to put in it.
+const CHEATS = new URLSearchParams(location.search).has("cheats");
 let trainerReady = false;
 
 async function trainerAvailable() {
-  if (!TRAINER) return false;
+  if (!CHEATS) return false;
   try {
     if ((await fetch(EMU + TRAINER_X_JS, { method: "HEAD" })).ok) return true;
   } catch { /* fall through */ }
@@ -123,10 +125,119 @@ const PANEL = { text: null, worldMap: null };
 window.addEventListener("message", (e) => {
   const frame = $("#panel");
   if (!frame || e.source !== frame.contentWindow) return;
-  if (!e.data || e.data.type !== "restoration?") return;
-  e.source.postMessage(
-    { type: "restoration", text: PANEL.text, worldMap: PANEL.worldMap }, "*");
+  if (!e.data) return;
+  if (e.data.type === "restoration?") {
+    e.source.postMessage(
+      { type: "restoration", text: PANEL.text, worldMap: PANEL.worldMap }, "*");
+    return;
+  }
+  if (SAVE_ASKS[e.data.type]) answerSaveAsk(e.source, e.data);
 });
+
+// --- the save files, for the panel's save editor ---------------------------
+//
+// The editor is in the panel and the save files are here, so it asks. It could
+// open the same IndexedDB itself, since it is the same origin, but then two
+// files would know the store's name and the shape of what is in it, and only
+// this one owns the emulated disk. So the panel gets three asks and no
+// knowledge of where a save lives.
+//
+// Which copy of a save is the real one depends on whether the game is running.
+// The emulator's disk is what the game's LOAD reads, so while there is a game
+// that is the copy to edit; with none, storage holds what the next boot will
+// put on the disk. A write goes to both, so the edit survives either way.
+
+const SAVE_SLOTS = [1, 2, 3, 4, 5, 6];        // docs/saves.md: SAVGAME1-6
+const SAVE_PATH = /^SAVGAME[1-6]$/;
+
+/** The caption the player typed at the save, from the roster's header slot. */
+const saveCaption = (bytes) => {
+  const end = bytes.indexOf(0);
+  return new TextDecoder("latin1")
+    .decode(bytes.slice(0, end < 0 || end > 25 ? 25 : end))
+    .replace(/[^\x20-\x7e]/g, "").trim();
+};
+
+/** The save slots the emulated disk is holding, by name. */
+async function onDisk() {
+  if (!ci) return new Set();
+  try {
+    return new Set((await diskPaths(ci))
+      .map((path) => path.split("/").pop().toUpperCase())
+      .filter((name) => SAVE_PATH.test(name)));
+  } catch (err) {
+    console.warn("could not read the emulated disk:", err.message);
+    return new Set();
+  }
+}
+
+async function readSave(path) {
+  if ((await onDisk()).has(path)) return ci.fsReadFile(path);
+  const hit = (await loadFiles()).find((f) => f.path.toUpperCase() === path);
+  if (!hit) throw new Error(`${path} is not here`);
+  return hit.contents;
+}
+
+/** Every slot that exists, on the disk or in storage, with its caption. */
+async function listSaves() {
+  const stored = new Map((await loadFiles())
+    .map((f) => [f.path.toUpperCase(), f.contents]));
+  const disk = await onDisk();
+  const out = [];
+  for (const n of SAVE_SLOTS) {
+    const path = `SAVGAME${n}`;
+    const bytes = disk.has(path) ? await ci.fsReadFile(path) : stored.get(path);
+    if (!bytes) continue;
+    out.push({ path, size: bytes.length, caption: saveCaption(bytes),
+               where: disk.has(path) ? "on the disk" : "stored" });
+  }
+  return out;
+}
+
+/**
+ * Write a save back, to the disk the game reads and to the browser's storage.
+ *
+ * Both, because they answer different questions. The disk is what LOAD opens,
+ * so an edit that only reached storage would do nothing until the next boot;
+ * storage is what the next boot restores, so an edit that only reached the
+ * disk would be lost with the tab. The autosave copies the disk into storage
+ * anyway, and writing it here is what makes the editor work with the emulator
+ * switched off.
+ */
+async function writeSave(path, bytes) {
+  if (!SAVE_PATH.test(path)) throw new Error(`${path} is not a save slot`);
+  if (bytes.length !== SAVE_SIZE) {
+    throw new Error(`a save is ${SAVE_SIZE.toLocaleString()} bytes, not ${bytes.length}`);
+  }
+  const wrote = [];
+  if (ci) {
+    // A copy, because the emulator takes the buffer rather than borrowing it:
+    // js-dos transfers it into the worker, which detaches it here, and the
+    // write below would then be storing a buffer that is no longer there.
+    await ci.fsWriteFile(path, bytes.slice());
+    wrote.push("the disk");
+  }
+  await putFile(path, bytes);
+  wrote.push("storage");
+  return wrote.join(" and ");
+}
+
+const SAVE_ASKS = {
+  "saves?": async () => ({ type: "saves", saves: await listSaves() }),
+  "save-read": async (m) => ({ type: "save", bytes: await readSave(m.path) }),
+  "save-write": async (m) => ({ type: "saved", wrote: await writeSave(m.path, m.bytes) }),
+};
+
+/** Answer one ask, and answer it even when it failed: the panel is waiting. */
+async function answerSaveAsk(source, m) {
+  let reply;
+  try {
+    reply = await SAVE_ASKS[m.type](m);
+  } catch (err) {
+    reply = { type: "save-error", error: err.message };
+  }
+  source.postMessage({ ...reply, id: m.id }, "*");
+}
 
 /** Point the panel frame at the shell, or reload it if it is already there.
  *
@@ -139,9 +250,11 @@ function showPanel() {
   const frame = $("#panel");
   if (!frame) return;
   const url = new URL(frame.dataset.src, location.href);
-  // The trainer's panel lives in this frame and talks to the emulator over a
-  // channel both open, so the frame has to know, but only when there is an
-  // emulator behind it to talk to.
+  // The Cheats tab lives in this frame. It is told twice over, because its two
+  // halves need different things: the save editor asks this page for the save
+  // files, and the trainer talks to the emulator over a channel both open, so
+  // the second flag goes only where there is a hooked emulator to answer it.
+  if (CHEATS) url.searchParams.set("cheats", "1");
   if (trainerReady) url.searchParams.set("trainer", "1");
   url.searchParams.set("t", String(Date.now()));
   frame.src = url.pathname + url.search;
@@ -709,7 +822,7 @@ async function boot() {
     // without it.
     const backend = new URLSearchParams(location.search).get("backend") || "dosboxX";
     // The trainer needs to read and write the guest's memory, which the stock
-    // emulator offers no way to do. `?trainer` asks for the hooked build
+    // emulator offers no way to do. `?cheats` asks for the hooked build
     // instead, a second file beside the stock one, written by
     // `tools/build_trainer.js` and served from the same directory. It is never
     // the default: without the flag the cabinet runs js-dos as it ships.

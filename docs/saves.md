@@ -70,6 +70,8 @@ The first bytes ship holding `PRE-CREATED PARTY`, and the name typed at a save s
 | 184 | food, the same | screens: the F5 purse |
 | 188 | nuore, the same | screens: the F5 purse |
 | 310 | the sky ramp: 32 colors of three six-bit components | measured; shape: 96 bytes, every component 63 or below |
+| 430 | the next container record to hand out | code, `0x16044`; measured, 3 in every save |
+| 432 | the head of the free list of container records, 0 for none | code, `0x1600F` and `0x051E1`; measured, 0 in every save |
 | 492 | the roster slots that are playing, four words, 0 for an empty place | measured, against the party assembled |
 
 The facing values are the ones the look-ahead dispatch at image `0x112D6` tests, where `0x8000` steps `y` back and `0x4000` steps it on, `0x1000` steps `x` on and anything else steps it back.
@@ -98,7 +100,9 @@ A step costs the clock 2 or 3 minutes and a rest about 483. The clock wraps at 1
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
 | 280 | weight carried, in tenths | code, `0x05C44`; shape: `10 x` strength |
 | 282–313 | the eight panel slots, four bytes each | code, `0x0437E`, see [items.md](items.md) |
-| 314, 318, 322, 326, 330, 334, 338 | missile, container, hand, shield, two rings, worn | code, `0x04237`, see [items.md](items.md) |
+| 314, 318, 322, 326, 330, 334 | missile, container, hand, shield, two rings | code, `0x04237`, see [items.md](items.md) |
+| 338–346 | the worn slots, a word each: head, body, nothing, feet, hands | code, `0x0431D`, see [items.md](items.md) |
+| 348 | equipment flags; bit `0x20` is a two-handed weapon in hand | code, `0x06568` and `0x042D6` |
 
 The live block, in the order the F1 sheet prints it:
 
@@ -138,6 +142,14 @@ What a party lights is two rows of three: its own cell and the two beside it, an
 1,296 records of 34 bytes: a word, then eight four-byte entries. The reader at image `0xB323` walks the entries from record offset 2 and passes the first word of each to the item loader (`lcall 0x0F44C`), so an entry begins with an item id.
 
 A character reaches its own by number: the id of the container item is at character offset 318 and this record number at 320. Every panel slot works the same way, since a slot's second word is the item's state and a container's state is its record here. All 1,296 are empty in a fresh game.
+
+**Records are numbered from 1, and 0 means the container has none.** The two words at header offsets 430 and 432 are the allocator, and they travel with the roster like everything else in that slot.
+
+Image `0x1600E` hands one out. With the free list at 432 empty it takes the counter at 430 and increments it; otherwise it takes the record the list names and replaces the head with that record's own first word. Either way the record is zeroed before it is returned. Image `0x051C8` gives one back: it zeroes the record, writes the current head into the record's first word, and points the head at the record. **The first word of a record is therefore a free-list link while the record is free, and unused while it is in use.**
+
+The two are set by the `WORLD.DAT` template rather than by any code that resets them: every save carries 430 = 3 and 432 = 0, because the pre-created party holds two containers, SQUIRE's bag in record 1 and JOSEPHINE's in record 2. Nothing writes 430 but that increment, and nothing writes 432 but the two above and image `0x15196`, which clears it for a new game.
+
+The cabinet's save editor does the same arithmetic when it puts a container in a slot, and refuses past record 1,295, where the next record would be written over section 3.
 
 ## Sections 3 and 4, bundles and what has been taken from them
 
@@ -183,6 +195,8 @@ This is the one section that the game does not keep up to date as it plays. It i
 
     .venv/bin/python tools/saves.py SAVGAME1        # parse against this model
     .venv/bin/python tools/saves.py --layout        # the sections
+
+The cabinet's save editor writes one too: it opens a `SAVGAMEn` the cabinet is holding, edits the roster at the displacements above, and puts the bytes back. [panel.md](panel.md) has what it edits and where the bytes go.
 
 [tools/save_probe.js](../tools/save_probe.js) plays a scripted session and copies `CURGAME` after every step. [tools/save_map.py](../tools/save_map.py) compares consecutive copies and names the offsets that moved. `--load=DIR` with `--start=load` puts save files on the emulated disk and opens one of them, so a save made elsewhere can be read on the game's own screens. F1 to F4 are the character sheets, and F5 is gold, food and nuore.
 

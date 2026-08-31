@@ -534,15 +534,16 @@ body.embedded .guide-side { top: 3.2rem; }
               border-bottom: 1px dotted var(--amber); }
 .guide-link:hover, .guide-link:focus-visible { color: var(--amber-lit); }
 
-.guide-picker { display: flex; flex-wrap: wrap; gap: 2px;
-                margin: 0 0 .9rem; }
-.guide-picker button {
+/* The row that picks between one tab's subviews: the guides, and the two
+   halves of the Cheats tab. */
+.view-picker { display: flex; flex-wrap: wrap; gap: 2px; margin: 0 0 .9rem; }
+.view-picker button {
   background: var(--stone-200); border: 1px solid var(--stone-400);
   border-radius: 2px; color: var(--stone-700); font: inherit; font-size: 12px;
   padding: .25rem .6rem; cursor: pointer;
 }
-.guide-picker button:hover { color: var(--ink); }
-.guide-picker button[aria-current="true"] {
+.view-picker button:hover { color: var(--ink); }
+.view-picker button[aria-current="true"] {
   background: var(--stone-300); color: var(--amber-lit);
   border-color: var(--amber-dim);
 }
@@ -584,6 +585,11 @@ body.embedded .guide-side { top: 3.2rem; }
                font: inherit; font-size: 13px; padding: .1rem .3rem;
                font-variant-numeric: tabular-nums; }
 .trainer-num:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+/* A number the game works out rather than stores. Shown, because it is part of
+   the sheet, and not taken, because the next thing the character equips would
+   write over whatever was typed. */
+.trainer-num:disabled { color: var(--stone-700); background: var(--stone-200);
+                        border-style: dashed; cursor: not-allowed; }
 
 /* What the tab is, behind a button rather than across the top of it. */
 .trainer-head { display: flex; align-items: baseline; justify-content: space-between;
@@ -605,15 +611,23 @@ body.embedded .guide-side { top: 3.2rem; }
 /* The sheet: twenty-six numbers held twice, two to a row so the whole
    character fits without scrolling the tab. */
 .trainer-stats { margin-bottom: 1rem; }
-.trainer-sheet-table th[scope="row"] { font-weight: 400; color: var(--stone-700); }
-.trainer-sheet-table .trainer-num { width: 4.2rem; }
+.sheet-wrap { overflow-x: auto; }
+/* Six columns in a docked panel, so the spacing is the sheet's own rather
+   than the wider one the effects tables use. */
+.trainer-sheet-table { font-size: 12px; }
+.trainer-sheet-table th[scope="row"] { font-weight: 400; color: var(--stone-700);
+                                       white-space: nowrap; padding-right: .45rem; }
+.trainer-sheet-table th, .trainer-sheet-table td { padding-top: .12rem;
+                                                   padding-bottom: .12rem; }
+.trainer-sheet-table .trainer-num { width: 3.1rem; padding: .05rem .25rem; }
 /* The name is the control that opens the sheet, so it reads as a name until
    it is pointed at. */
 .trainer-sheet { background: none; border: 0; padding: 0; font: inherit;
                  color: inherit; cursor: pointer; }
 .trainer-sheet:hover, .trainer-sheet.on { color: var(--amber-lit); }
 .trainer-sheet:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
-.trainer-sheet-table td { padding-right: .7rem; }
+.trainer-sheet-table td { padding-right: .45rem; }
+.trainer-sheet-table td:last-child { padding-right: 0; }
 /* Whichever engaged monster the game has selected. */
 .trainer-mobs tr.on th[scope="row"] { color: var(--amber-lit); }
 .trainer-mobs .trainer-num { width: 5rem; }
@@ -637,6 +651,89 @@ body.embedded .guide-side { top: 3.2rem; }
               gap: .5rem; }
 .debug-pair .note { margin: 0; }
 .debug-field { width: 5.5rem; }
+
+/* --- the save editor's character panel ---------------------------------
+
+   The game draws one column per character: eight carried slots three across,
+   then the figure with what it holds down one side and what it carries down
+   the other, then the portrait over a health bar and a magic bar. This is the
+   same column with names where the game has artwork, so the worn pieces take
+   the figure's place rather than being drawn on it. */
+
+.cheat-panel { max-width: 26rem; margin: 0 0 .6rem;
+               border: 1px solid var(--stone-400); background: var(--stone-200); }
+.cheat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+              padding: 2px; }
+/* Three columns, and the middle one is the four worn pieces against the three
+   on either side, so every column is the same height whatever it holds. */
+.cheat-body { display: flex; gap: 2px; padding: 0 2px 2px; }
+.cheat-column { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.cheat-column .cheat-cell { flex: 1; }
+.cheat-worn { flex: 1.15; }
+
+.cheat-cell {
+  display: flex; flex-direction: column; gap: .1rem; min-height: 3.4rem;
+  padding: .3rem .4rem; text-align: left; cursor: pointer; font: inherit;
+  background: var(--stone-300); border: 1px solid var(--stone-500);
+  color: var(--ink-bright);
+}
+.cheat-cell:hover { border-color: var(--amber-dim); }
+.cheat-cell[aria-pressed="true"] { border-color: var(--amber); background: var(--stone-400); }
+.cheat-cell:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.cheat-cell.empty { color: var(--stone-700); }
+.cheat-slot { font-size: 11px; color: var(--stone-700); }
+.cheat-item { font-size: 12px; line-height: 1.25; overflow-wrap: anywhere; }
+
+.cheat-foot { padding: .4rem; border-top: 1px solid var(--stone-400); }
+.cheat-name { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap;
+              margin-bottom: .3rem; }
+.cheat-name .note { margin: 0; }
+.cheat-bar { height: .55rem; margin-top: 2px; background: var(--stone-400); }
+.cheat-bar i { display: block; height: 100%; }
+.cheat-bar-health i { background: var(--blood-lit); }
+.cheat-bar-magic i { background: var(--gold); }
+
+/* What is inside a container, under the panel rather than in it: the game
+   opens a container on its own rather than drawing it in the character's
+   column. Same cells, so a bag reads as the eight slots it is. */
+/* The editor takes the width it is given: what the character carries beside
+   the sheet where the panel is wide enough for both, one under the other where
+   it is not. Two columns and no more, since there are two things to put in
+   them; a third track would be a column of nothing. */
+.save-layout { display: grid; align-items: start; gap: 0 1.2rem;
+               grid-template-columns: minmax(0, 1fr); }
+.save-layout > .cheat-holders { grid-column: 1 / -1; }
+@media (min-width: 800px) {
+  .save-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.cheat-holders { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 1rem;
+                 align-content: start; }
+.cheat-holder { max-width: 26rem; flex: 1 1 18rem;
+                border: 1px solid var(--stone-400); background: var(--stone-200); }
+.cheat-holder-head { display: flex; gap: .5rem; align-items: baseline;
+                     flex-wrap: wrap; padding: .4rem .5rem;
+                     border-bottom: 1px solid var(--stone-400); }
+.cheat-holder-head .note { margin: 0; }
+.cheat-holder > .note { margin: .5rem; }
+
+/* Who the panel is of: the same control as the subview picker, with the class
+   and level under the name. A button lays its content out in one line unless
+   it is told otherwise, and clips what does not fit rather than growing. */
+.save-who button { display: flex; flex-direction: column; align-items: flex-start;
+                   text-align: left; }
+.save-who .save-name { display: flex; align-items: center; gap: .35rem;
+                       color: var(--ink-bright); }
+/* Filled for a character out adventuring, hollow for one left behind. */
+.save-mark { width: .45rem; height: .45rem; flex: none; border-radius: 50%;
+             border: 1px solid var(--stone-600); }
+.save-mark.on { background: var(--amber); border-color: var(--amber); }
+.save-who button[aria-current="true"] .save-name { color: inherit; }
+.save-who .note { margin: 0; }
+.save-coin, .save-xp { width: 7rem; }
+.save-level { width: 4.2rem; }
+.save-filter { width: 11rem; }
+.save-state { margin: 0; }
 
 /* The memory window. Monospace because the whole point is that the columns
    line up between one read and the next. */

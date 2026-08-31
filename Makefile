@@ -184,7 +184,7 @@ hosted:
 ##
 ## compose.dev.yml mounts the host's cabinet/ over the image's, node_modules
 ## included, so both have to be here before the container starts: the emulator
-## js-dos ships, and the hooked copy of it that ?trainer loads.
+## js-dos ships, and the hooked copy of it that ?cheats loads.
 hosted-dev: panel-shell cabinet-deps trainer
 	docker compose -f compose.hosted.yml -f compose.dev.yml up --build
 
@@ -200,10 +200,10 @@ serve: patched
 
 ## Build the emulator the trainer needs: a second copy of js-dos's shim with a
 ## hook that reads and writes the guest's memory, written beside the stock one.
-## Nothing serves it unless the page is opened with ?trainer, and the hosted
+## Nothing serves it unless the page is opened with ?cheats, and the hosted
 ## build does not ship it: it is for playing with your own copy, locally.
 ##
-##   make trainer && make serve      then http://localhost:8080/?trainer
+##   make trainer && make serve      then http://localhost:8080/?cheats
 trainer:
 	$(BUN) tools/build_trainer.js
 

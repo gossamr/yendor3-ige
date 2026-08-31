@@ -265,6 +265,21 @@ function flatten(node, prefix = "") {
 const normalize = (path) => path.replace(/^\.?\/+/, "");
 
 /**
+ * What is on the emulated disk, as paths.
+ *
+ * Asking for a file that is not there is not a safe way to find out whether it
+ * is: `fsReadFile` rejects from inside the worker's own message handling, and
+ * the caller's promise is left unsettled, so a probe for six save slots hangs
+ * on the first one that does not exist. Read the tree and ask for what it
+ * lists.
+ */
+export async function diskPaths(ci) {
+  return flatten(await ci.fsTree())
+    .map((f) => f.path)
+    .filter((path) => !path.includes(".jsdos/"));
+}
+
+/**
  * Content fingerprint: FNV-1a over the bytes, with the length mixed in.
  *
  * Comparing lengths is not enough. The game rewrites CURGAME in place at a
@@ -358,6 +373,22 @@ export const notKeptReason = (path) =>
  * 21 MB of that is game data the game never writes to.
  */
 export const isPersistable = (path) => !notKeptReason(path);
+
+/**
+ * Put one file into the stored record, as if the game had written it.
+ *
+ * The save editor's way onto the browser's disk: it hands back a save file
+ * the cabinet was holding. Merged into the record rather than written over it,
+ * for the reason saveNow() merges, and refused for a file the record does not
+ * keep, so an edited CURGAME cannot be stored under the impression that it
+ * will come back.
+ */
+export async function putFile(path, contents) {
+  if (!isPersistable(path)) throw new Error(`${notKeptReason(path)}: ${path}`);
+  const record = (await tx("readonly", (s) => s.get(KEY))) ?? {};
+  record[path] = contents;
+  await tx("readwrite", (s) => s.put(record, KEY));
+}
 
 /** The changed files that are worth writing to storage. */
 export async function persistableFiles(ci, originals) {

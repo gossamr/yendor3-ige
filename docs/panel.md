@@ -9,13 +9,13 @@ One CSS file and one JavaScript file produce both builds.
 | | Size | Tables | Distributable |
 |---|---|---|---|
 | `web/restoration.html` | 1.8 MB | inlined | no, because it holds the game's content |
-| `web/panel.html` | 379 kB | fetched at run time | yes |
+| `web/panel.html` | 418 kB | fetched at run time | yes |
 
 Both sizes are what `make panel` last wrote, and both move as the panel does. [tools/build_panel.py](../tools/build_panel.py) prints the byte count.
 
 Most of `restoration.html` is the packed map pages, and it opens from disk with no server. `panel.html` is the build that the cabinet loads into its iframe, both from [cabinet/serve.js](../cabinet/serve.js) and from the static `build/pages` site. A host page that sets `window.RESTORATION` before the panel runs suppresses the fetch.
 
-There are six tabs: Maps, Monsters, Spells, Items, Guides and Planner. The clue book's own F4 page, Magic Users, has no tab of its own. That page is an index of the spell list by class, which is what the class chips on the Spells tab already provide. No tab draws its own heading.
+There are six tabs: Maps, Monsters, Spells, Items, Guides and Planner, and a seventh, Cheats, where the page was asked for with `?cheats`. The clue book's own F4 page, Magic Users, has no tab of its own. That page is an index of the spell list by class, which is what the class chips on the Spells tab already provide. No tab draws its own heading.
 
 ## The invariants
 
@@ -44,6 +44,28 @@ There are six tabs: Maps, Monsters, Spells, Items, Guides and Planner. The clue 
 - The evidence names the monster every number came off. With bosses counted, level 40 is measured against Paltivar's accuracy of 240 and absorption of 170.
 - Absorption 186 shuts out freezing, paralysis and stoning, and the four monsters behind it are named.
 
+## The Cheats tab
+
+`?cheats` adds it, and it holds two things behind the same selector the Guides tab uses.
+
+**The trainer** reads and writes the running game's memory, which needs the hooked emulator that `make trainer` builds. Without it the tab holds the save editor alone. [README.md](../README.md) has what it edits.
+
+**The save editor** edits one of the cabinet's saved games. It needs no hook: a save is 81,037 bytes and its first 5,000 are the roster, which is the same 500-byte character record the trainer reads out of memory, at the same displacements ([saves.md](saves.md)). The panel does not reach for the file. The cabinet owns both places a save lives, so the panel asks it: which slots there are, the bytes of one, and the bytes back.
+
+The bytes go back to the emulated disk and to the browser's storage. The disk is what the game's LOAD opens, so an edit that only reached storage would do nothing until the next boot; storage is what the next boot restores, so an edit that only reached the disk would go with the tab. `CURGAME` is not offered, because the game truncates it and rewrites all 81,037 bytes at every launch and the edit would be destroyed unread.
+
+[tools/trainer_check.js](../tools/trainer_check.js) drives both halves in a browser against a running game. For the editor it saves a slot in the game, finds it in the list, places an item in a character's first empty slot, writes the file and reads it back off the emulated disk.
+
+**A write through the running emulator reaches the game.** `ci.fsWriteFile` was measured: a save was put on the disk before boot, loaded in the game, rewritten through the emulator with a character's eight carried slots and its shield cleared, and loaded again. The panel came back with those slots empty and the shield gone.
+
+**The panel is the one the game draws for P.** Eight carried slots three across, then what the character holds down one side, what it carries down the other, and what it wears between them. The game draws the worn pieces on the figure and has artwork for every item; the panel has names and no artwork, so the worn slots stand where the figure does. The ninth cell of the carried grid is drawn empty in the game and is not drawn at all here.
+
+An equipment slot offers the items whose own record names that slot, and a carried slot offers all of them, which is where the game's own equip dispatch puts an item it has nowhere else for. Placing an item writes the slot and its second word and nothing else: the game does its own arithmetic as a character equips something, adding a weapon's damage into the damage rows, and those rows are on the sheet beside the panel. The one rule that is enforced is the one the game enforces in both directions, that a two-handed weapon and a shield cannot be worn together.
+
+**A container is eight more slots.** A bag, a box or a backpack keeps its contents in a record of section 2, named by the slot's second word, and the editor draws that record as a grid of its own under the panel. The game opens a container on its own rather than in the character's column, and that panel is not reproduced: these are the same cells as the carried slots. A container inside a container gets a grid too, since a bag fits in a backpack.
+
+What a container's slot offers is what the item's own FITS IN row names, so a bag takes 201 of the 631 records and a backpack 615, which are the totals [items.md](items.md) reads off the container mask. Placing a container gives it a record the way the game does and clearing one hands the record back, so what was inside is gone with it ([saves.md](saves.md) has the allocator). The counter stops at record 1,295, where the next record would be written over section 3.
+
 ## The planner
 
 The Planner tab evaluates goals against one character, level by level. A goal is a number the character has to hold from a level on; the tab says where it holds, where it breaks, what it costs, and which monster set the bar.
@@ -64,7 +86,7 @@ For the rates, the other eleven shooters divide three ways. Six carry a shot no 
 
 Condition proof is therefore the cheaper goal at every level, since its monsters are a subset of untouchable's, and the two coincide wherever the worst thing met is one of the four. What it buys is different: untouchable is not being hit, condition proof is not losing a turn, and losing a turn is what ends a party. The alternative to two goals is a control for enumerating the monsters to be untouchable by, which is a worse question to ask of the player when the game already says which ones take a turn away.
 
-**Where the character comes from.** By hand it is the class as it rolls at the cap, wearing what the gold affords, planned from the first training. With `?trainer` it is read out of the running game, once, on the press, and planned forward from the level it is at, since the points it has already spent are in the numbers on its sheet and cannot be spent again.
+**Where the character comes from.** By hand it is the class as it rolls at the cap, wearing what the gold affords, planned from the first training. With `?cheats`, where the hooked emulator is there to answer, it is read out of the running game, once, on the press, and planned forward from the level it is at, since the points it has already spent are in the numbers on its sheet and cannot be spent again.
 
 A character read from the game is read out of both of its columns. The fight comes from CURRENT, which is what the game rolls with and what equipment is added into: worn armor is in its absorption and a ring that lifts casting is in its casting. The career comes from BASE, which is what the level-up formulas read: charisma decides the next grant, stamina the health it adds, intelligence and wisdom the pool. Health and magic are the pair whose two columns mean now and maximum instead, and the maximum is the one a plan is about.
 

@@ -22,7 +22,7 @@
 // deliberately runs without it.
 //
 // The transform itself is cabinet/trainer.js, because cabinet/serve.js
-// synthesizes the same thing on demand: `?trainer` needs no build step
+// synthesizes the same thing on demand: `?cheats` needs no build step
 // against a running server. This writes the files, which is what a driver
 // booting js-dos outside a browser needs (see tools/trainer_check.js).
 import { copyFileSync, readFileSync, writeFileSync, existsSync } from "fs";

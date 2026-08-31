@@ -73,7 +73,7 @@ await cp(EMU_DIST, join(OUT, "emulators"), {
   filter: (from) => !/-trainer\.(js|wasm)$/.test(from),
 });
 
-// The hooked emulator, which is what `?trainer` loads. Written here rather
+// The hooked emulator, which is what `?cheats` loads. Written here rather
 // than copied, because a static host cannot generate it and the page cannot
 // either: js-dos refuses an emulator whose filename does not start with "w"
 // after the last slash, so it has to be a real file with a real name.
@@ -81,7 +81,7 @@ await cp(EMU_DIST, join(OUT, "emulators"), {
 // The wasm goes with it: js-dos derives the wasm's URL from the shim's name,
 // in emulators.js and before the shim runs, so a renamed shim needs a renamed
 // wasm. That is 9 MB published a second time, identical to the first, and it
-// is what `?trainer` costs on a host that cannot generate anything.
+// is what `?cheats` costs on a host that cannot generate anything.
 for (const [stock, hooked] of TRAINER_BUILDS) {
   const src = await readFile(join(EMU_DIST, stock), "utf8");
   await writeFile(join(OUT, "emulators", hooked), trainerShim(src, stock));

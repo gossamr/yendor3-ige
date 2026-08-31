@@ -55,7 +55,7 @@ const DOCS = [
 ];
 
 const pickDoc = async (key) => {
-  await page.click(`.guide-picker button[data-doc="${key}"]`);
+  await page.click(`.view-picker button[data-doc="${key}"]`);
   await page.waitForTimeout(150);
 };
 
@@ -213,7 +213,7 @@ if (!(await xref.count())) {
   await xref.first().click();
   await page.waitForTimeout(200);
   const opened = await page.getAttribute(
-    '.guide-picker button[data-doc="strategy"]', "aria-current");
+    '.view-picker button[data-doc="strategy"]', "aria-current");
   if (opened !== "true") problems.push("guides: the cross-reference did not open strategy");
 }
 
@@ -415,7 +415,7 @@ if (storable) {
   await page.reload();
   await page.waitForSelector(".guide-doc", { timeout: 8000 });
   const selected = await page.getAttribute(
-    '.guide-picker button[data-doc="strategy"]', "aria-current");
+    '.view-picker button[data-doc="strategy"]', "aria-current");
   if (selected !== "true") problems.push("the chosen guide was lost on reload");
   const tab = await page.getAttribute('nav button[data-key="gd"]', "aria-selected");
   if (tab !== "true") problems.push("the chosen tab was lost on reload");
