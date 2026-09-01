@@ -168,11 +168,34 @@ def foe_resistance(foe: dict) -> int:
 def spell_blow(spell: dict) -> int:
     """The word a spell's blow carries, from its record at offset 76.
 
-    Across the 70 listed damage spells, 59 set bit 13 and are halved by a
-    spell-resistant monster. The four that set nothing deal 10 to 45 damage,
-    so there is no dodging this by spell choice.
+    Across the 70 listed damage spells, 59 set bit 13. The four that set
+    nothing deal 10 to 45 damage.
     """
     return spell.get("blow", (spell.get("unknown") or {}).get("u76", 0))
+
+
+# The two bits that divert a cast at image 0x1ccd5. The branch they lead to
+# drains the monster into the party. It runs neither the immunity nor the
+# resistance test (docs/combat.md). Only the four Life Force records set them.
+# All four also carry bit 13, which nothing on that branch reads.
+BLOW_DRAIN = 0x00C0
+
+
+def drains(spell: dict) -> bool:
+    """Whether this spell takes the branch that skips the resistance test."""
+    return bool(spell_blow(spell) & BLOW_DRAIN)
+
+
+def spell_resisted(spell: dict, monster_resistance: int) -> float:
+    """`resisted` for a spell. A spell is the one blow with a branch around it.
+
+    55 of the 70 listed damage spells are halved by a spell-resistant monster.
+    Reading the word alone gives 59. The gap is the Life Force line. It carries
+    bit 13 and is diverted before anything reads it.
+    """
+    if drains(spell):
+        return 1.0
+    return resisted(spell_blow(spell), monster_resistance)
 
 
 def resisted(blow: int, monster_resistance: int) -> float:

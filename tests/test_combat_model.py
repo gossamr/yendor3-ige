@@ -648,17 +648,27 @@ def test_the_level_forty_basis_monster_halves_spell_damage():
     assert not any(r["one_rounds"] for r in ladder.caster_rungs(ladder.folded, foe))
 
 
-def test_a_caster_cannot_dodge_resistance_by_spell_choice():
-    """59 of the 70 listed damage spells carry bit 13. The ones that do not are
-    weak enough that picking them is not a strategy."""
+def test_the_life_force_line_is_the_way_around_resistance():
+    """59 of the 70 listed damage spells carry bit 13. 55 are halved.
+
+    The gap is the Life Force line. It carries the bit and is diverted at image
+    0x1ccd5 before anything reads it. Every other spell that escapes carries no
+    word at all and deals 10 to 45. So the line is the only spell choice that
+    dodges resistance and still lands a figure worth landing.
+    """
     import json
 
     spells = json.loads((cm.ROOT / "data" / "spells.json").read_text())
     damage = [s for s in spells if s.get("listed") and s.get("damage")]
-    resisted = [s for s in damage if cm.spell_blow(s) & cm.BLOW_SPELL]
-    assert len(resisted) / len(damage) > 0.8
-    escapes = [s for s in damage if not cm.spell_blow(s)]
-    assert max(s["damage"] for s in escapes) < 50
+    carry = [s for s in damage if cm.spell_blow(s) & cm.BLOW_SPELL]
+    halved = [s for s in damage if cm.spell_resisted(s, cm.BLOW_SPELL) == 0.5]
+    assert len(carry) == 59
+    assert len(halved) == 55
+    assert {s["name"] for s in carry} - {s["name"] for s in halved} == {
+        "LIFE FORCE I", "LIFE FORCE II", "LIFE FORCE III", "LIFE FORCE IV"}
+    wordless = [s for s in damage if not cm.spell_blow(s)]
+    assert max(s["damage"] for s in wordless) < 50
+    assert max(s["damage"] for s in damage if cm.drains(s)) == 200
 
 
 def test_the_extracted_resistance_fields_match_the_record():

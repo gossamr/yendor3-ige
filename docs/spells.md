@@ -15,8 +15,8 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 | `24` | magic points | screens: F3, 98/98 |
 | `26` | nuore | screens: F3, 98/98 |
 | `30` | what the spell singles out: 9 insects, 13 undead, read with 76 bit 8 | screens: F3 AFFECTS, 98/98 |
-| `32` | 18 marks the restorative family | shape: 18 on 19 spells, none of which does damage |
-| `34` | amount, whose meaning follows the effect | shape: the six heal amounts, below |
+| `32` | attack table id, which says what the effect does | code, `0x1c5e1`, and seven further branches pass it the same way |
+| `34` | amount, whose meaning follows the effect | code, `0x1d9f1`, on the restorative branch; shape elsewhere, below |
 | `46` | damage | screens: the prose quotes it on 64 of 65 |
 | `68` | scroll mask, six bits | screens: F3 class rows, 224/224 |
 | `70` | bit 10 is the out-of-melee restriction | screens: F3 WHEN, 98/98 |
@@ -28,7 +28,7 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 
 **Damage** at 46 matches the number quoted in the description on 64 of the 65 spells that quote one.
 
-**Offset 32** holds 18 for every healing and every cure spell and for nothing that does damage. **Offset 34** is an amount rather than a healing field. For a heal it is the health restored, as HEAL 10, IMPROVE HEALTH 50, PARTY HEAL 100, RESTORE HEALTH 200, GREAT HEAL 500, and PERFECT HEALTH 9999, which means all health points. Damage spells carry unrelated values in the same offset, and FEET OF FEATHERS holds 5 there, which is its dexterity bonus. `extract` exposes `amount` and `restorative` raw.
+**Offset 32** holds 18 for every healing and every cure spell and for nothing that does damage. **Offset 34** is an amount rather than a healing field. For a heal it is the health restored, as HEAL 10 and GREAT HEAL 500. Damage spells carry unrelated values in the same offset. What a restorative spell does with 32, 34 and three more offsets is below. `extract` exposes `amount` and `restorative` raw.
 
 **Offset 22** is the lowest level at which any class can cast the spell, and that holds on 95 of the 98 listed spells. FIREBALL 14 is the Mage level, and ACID RAIN 17 is the Monk level. Offset 22 is also the level printed beside SCROLL for a class that learns the spell that way.
 
@@ -99,7 +99,103 @@ This was confirmed bit by bit against the game's prose. The field is never set o
 
 **Bits 5 to 8 are undecoded.** Four spells set one of them and nothing else: DWINDLING DAMAGE `0x0020`, THIN SKIN `0x0040`, FEET OF LEAD `0x0080` and BLIND `0x0100`. No monster's immunity word carries any of the four, so nothing in the game stops these four spells either, and they behave as untyped. Counting them that way makes 67 of the 98 untyped in play, which is the figure the panel uses. What the bits are *for* is not established.
 
-Offset 76 is also the spell's blow word, and a spell-resistant monster halves the damage on its bit 13. See [combat.md](combat.md). The AFFECTS row reads the low bits of that word, and the resolver reads the upper bits.
+Offset 76 is also the spell's blow word, and a spell-resistant monster halves the damage on its bit 13. That holds on 55 of the 59 records that set the bit. The other four are the LIFE FORCE line below. Their casts never reach the test. See [combat.md](combat.md). The AFFECTS row reads the low bits of that word, and the resolver reads the upper bits.
+
+## What a restorative spell does
+
+Record 72 picks the branch. `0x8000` sends the spell to one character, at `0x1c5b5`. `0x4000` sends it to the party, at `0x1c617`. All 19 restoratives carry one or the other.
+
+The party branch walks the four handles at `DS:0xd0c9`. It passes over an empty slot. It passes over a character carrying condition bit `0x40`. Past that the two branches do the same work. Each fills a readout slot. Each hands the slot to the effect applier. The applier routes attack table entry 18 to the handler at `0x037d9`.
+
+That handler is the whole effect, in two lines:
+
+    field = min(field + amount, character[maximum])   ; 0x037f6
+    condition word &= mask                            ; 0x03830
+
+The clamp is skipped where no maximum is named.
+
+| Offset | Field | Evidence |
+|---|---|---|
+| `32` | attack table id. 18 on all 19, the entry that adds. | code. `0x1c5e1` and `0x1c617` pass it to `0x0357e` |
+| `34` | the amount added | measured, 2 of 19, below; code at `0x1d9f1` and `0x037f0` |
+| `36` | the character field it is added to | measured, 2 of 19, below; code at `0x1d9f7` and `0x037f6` |
+| `38` | the field holding the maximum for 36. 0 means no maximum. | code. Written to readout `+0x12` at `0x1c5fd`, compared against at `0x037fd` |
+| `40` | a mask ANDed into the character's condition word. Its bit 6 also gates a dead target. | measured, 4 of 19, below; code at `0x03830` and `0x1d9ce` |
+
+The field numbers are offsets into the character record. 82 is health in the live block. 146 is health in the maximum block. 62 is dexterity and 60 is strength. [saves.md](saves.md) has the layout.
+
+The dead-target test reads `[0x537c]`. The single-character branch points that at the target, at `0x1c5c4`. The party branch leaves it pointing at the caster. It makes its own test instead, at `0x1c63b`. No party restorative clears bit 6, so the two rules never disagree.
+
+**Casting does not enter it.** Three checks, all negative.
+
+The record arrives by straight copy. `0x0bd72` computes `(spell number - 1) * 0x50`. It moves 80 bytes into the scratch buffer. No field is touched on the way.
+
+Nothing writes 34, 36 or 38 after that. A scan of every store form against all three addresses finds no writer.
+
+Four instructions read `+0x62` off a base register. Two are the spell attack rolls, at `0x1d60f` and `0x1d623`. One is the F1 sheet printer, at `0x149d8`. The fourth is at `0x1257f`, where the base is a monster and the same displacement is record 48. None of the four sits on this branch.
+
+Level stays out for a structural reason. `0x03622` tests the entry's flags. Anything carrying `0x180` goes straight to `0x037d9`. The level multiply is at `0x038f1`, on the branch that test skips. Entry 18 carries `0x0100`, so it never reaches that arithmetic.
+
+So the amount a character receives is record 34 and nothing else.
+
+A blank below is a zero.
+
+| Spell | 34 | 36 | 38 | 40 | What 40 clears |
+|---|---|---|---|---|---|
+| HEAL | 10 | 82, health | 146 | `0xffff` | nothing |
+| CURE POISON |  |  |  | `0x3fff` | sick, poison |
+| FEET OF FEATHERS | 5 | 62, dexterity |  | `0x0000` | everything |
+| IMPROVE HEALTH | 50 | 82, health | 146 | `0xffff` | nothing |
+| REMOVE JINX |  |  |  | `0xfdff` | jinxing |
+| PARTY HEAL | 100 | 82, health | 146 | `0xffff` | nothing |
+| DISEASE ANTIDOTE |  |  |  | `0xdfff` | disease |
+| THAW |  |  |  | `0xf7ff` | frozen |
+| RESTORE HEALTH | 200 | 82, health | 146 | `0xffff` | nothing |
+| ARMS OF GIANTS | 5 | 60, strength |  | `0x0000` | everything |
+| PARTY REJUVINATION | 200 | 82, health | 146 | `0xffff` | nothing |
+| REMOVE HEX |  |  |  | `0xfeff` | hexing |
+| GREAT HEAL | 500 | 82, health | 146 | `0xffff` | nothing |
+| CURE PARALYSIS |  |  |  | `0xefff` | paralyze |
+| UNSTONE |  |  |  | `0xfbff` | stoning |
+| PERFECT HEALTH | 9999 | 82, health | 146 | `0x007f` | sick, poison, disease, paralyze, frozen, stoning, jinxing, hexing, cursing |
+| REMOVE CURSE |  |  |  | `0xff7f` | cursing |
+| RESURRECT | 2 | 82, health |  | `0xffbf` | dead |
+| HARDY PARTY | 600 | 82, health | 146 | `0xffff` | nothing |
+
+**The mask and the bit agree.** Bit 6 of the condition word is set when health reaches zero ([combat.md](combat.md)). A mask that clears bit 6 marks a spell meant for a corpse. `0x1d9ce` reads the same bit to decide whether to pass a dead target over. RESURRECT is the one restorative that clears it. PERFECT HEALTH clears the nine conditions and keeps bit 6. It cures everything and leaves the dead dead.
+
+**Two records carry a mask of zero.** They are FEET OF FEATHERS and ARMS OF GIANTS. Both grant an attribute bonus rather than a cure. The AND at `0x03830` runs for every spell that reaches the handler. It makes no test for the spell being a cure. So each of the two clears the whole condition word, bit 6 included, and the target stops being dead.
+
+That one is **measured**. [tools/revive_probe.js](../tools/revive_probe.js) kills a party member in the running game, casts one restorative at the body, and reads the roster back out of the emulator. A level-6 Mage does the casting, standing in the Athaneum. No spell record is touched.
+
+| Spell | MP spent | Mask | Condition word | Health after the cast | After one rest |
+|---|---|---|---|---|---|
+| HEAL | 3 | `0xffff` | `0x0040`, unchanged | 0 | 0 |
+| FEET OF FEATHERS | 19 | `0x0000` | `0x0040` to `0x0000` | 0 | 13 of 13 |
+| ARMS OF GIANTS | 55 | `0x0000` | `0x0040` to `0x0000` | 0 | 13 of 13 |
+| RESURRECT | 400 | `0xffbf` | `0x0040` to `0x0000` | 2 | 13 of 13 |
+
+Every MP figure is the spell's own record 24, so each row is a cast that happened. RESURRECT moved health by 2, which is its record 34 into the field its record 36 names. FEET OF FEATHERS moved the target's dexterity from 59 to 64, which is its own 34 and 36. HEAL changed nothing, because its bit 6 is set and `0x1d9ce` zeroes the amount for a dead target.
+
+The probe exercised bit 6. The mask is zero, so every other bit goes on the same instruction.
+
+**A rest finishes the revival.** `0x0d6a6` passes over a character carrying `0x1c40`, so a corpse gets nothing from resting. Clear the bit and the character rests like any other. One rest took the body from 0 health to full. The dexterity went back to 59 at the same time, which is the revert at `0x0d7a1` writing the base column over the current one ([leveling.md](leveling.md)).
+
+So a level-6 Mage spell costing 19 magic points raises the dead, where the spell written to do it is a level-34 Monk spell costing 400.
+
+## The LIFE FORCE line
+
+Two bits in the low byte of 76 divert a cast at `0x1ccd5`. `0x40` sits on LIFE FORCE I, II and III. `0x80` sits on LIFE FORCE IV. No other record carries either.
+
+The diversion happens before the applier that reads element and blow. So three offsets carry a meaning on these four records alone. [combat.md](combat.md) has the branch.
+
+| Offset | Read as | Value on all four |
+|---|---|---|
+| `40` | the character field the transfer moves | 82, health |
+| `42` | attack table id used when the roll lands | 18, the entry that adds |
+| `44` | attack table id used when the roll misses | 20, the entry that subtracts |
+
+Every other spell reaching that handler reads 40 as the condition mask above. `0x03825` tests bits 6 and 7 of 76 to tell the two readings apart. Ten further records carry a non-zero 42 or 44. What reads them there is not established.
 
 ## Which classes can cast a spell
 

@@ -134,9 +134,14 @@ if (w98 !== "") {
   put(WORD98, Number(w98));
 }
 // Bits 13-15 of word 96 let two more of the monster join, which fills the
-// other buffers and makes a health reading ambiguous. Clear them: one
-// centipede, one buffer, one number to watch.
-put(WORD96, get(WORD96) & ~GROUP & 0xffff);
+// other buffers and makes a health reading ambiguous. Clear them by default:
+// one centipede, one buffer, one number to watch. `--group=3` sets them
+// instead. That is how a spell's scope is read: cast at three and count how
+// many buffers lose health.
+const group = arg("group", "1");
+const GROUP_BITS = { 1: 0, 2: 0xC000, 3: 0xA000 };
+put(WORD96, (get(WORD96) & ~GROUP & 0xffff) | (GROUP_BITS[group] || 0));
+say(`centipede group -> ${group}`);
 put(HEALTH, 30000);
 put(DAMAGE, 0);
 put(ACCURACY, 0);
@@ -164,7 +169,7 @@ say(`party armed: hand=${hand} missile=${missile}, damage forced to ${dmg}`);
 // list opens and nothing can be cast from it. Make it free and make it hurt.
 const SPELLS = 0x41B5BF, SPELL_RECORD = 80;
 const MAGIC_ATTACK = 1, SPELL_MP = 24, SPELL_NUORE = 26, SPELL_DAMAGE = 46;
-const SPELL_ELEMENT = 74;
+const SPELL_ELEMENT = 74, SPELL_BLOW = 76;
 const spell = SPELLS + MAGIC_ATTACK * SPELL_RECORD;
 for (const [off, v] of [[SPELL_MP, 0], [SPELL_NUORE, 0], [SPELL_DAMAGE, 200]]) {
   world.contents[spell + off] = v & 0xff;
@@ -181,6 +186,19 @@ if (element !== "") {
   world.contents[spell + SPELL_ELEMENT + 1] = (Number(element) >> 8) & 0xff;
   say(`MAGIC ATTACK element 0x${was.toString(16).padStart(4, "0")}`
     + ` -> 0x${Number(element).toString(16).padStart(4, "0")}`);
+}
+// The blow word's low bits are the scope the F3 page reads. Only bits 1 and
+// 2 are in the mask it tests. Turbulent Atmosphere is the one spell that
+// carries bit 0. Its own description says all visible monsters where the page
+// says one. `--blow` puts a word on MAGIC ATTACK to settle it.
+const blow = arg("blow", "");
+if (blow !== "") {
+  const was = world.contents[spell + SPELL_BLOW]
+    | (world.contents[spell + SPELL_BLOW + 1] << 8);
+  world.contents[spell + SPELL_BLOW] = Number(blow) & 0xff;
+  world.contents[spell + SPELL_BLOW + 1] = (Number(blow) >> 8) & 0xff;
+  say(`MAGIC ATTACK blow 0x${was.toString(16).padStart(4, "0")}`
+    + ` -> 0x${Number(blow).toString(16).padStart(4, "0")}`);
 }
 say("MAGIC ATTACK: free, 200 damage");
 
@@ -277,7 +295,8 @@ function monsters() {
         null, buf.slice(at + RECORD_AT, at + RECORD_AT + 9));
       if (name !== "CENTIPEDE") continue;
       out.push({
-        where: start === SPAWN ? "slot" + at / MONSTER : "engaged",
+        where: start === SPAWN ? "slot" + at / MONSTER
+          : "engaged" + (at / MONSTER),
         health: word(0x10),
         resist: word(RECORD_AT + RESISTANCE),
       });

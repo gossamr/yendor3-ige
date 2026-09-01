@@ -88,6 +88,25 @@ def census(d: S.Directory, enemies: list[dict]) -> dict:
     return pages
 
 
+def points(d: S.Directory, enemies: list[dict]) -> dict:
+    """Per map: where each monster stands, as the page's own column and row.
+
+    The cell event carries the world grid's x and y. A page is one block of
+    that grid. So `cell` and `band` are the column and row inside the page the
+    map tab draws. Kept apart from the census, which counts what is on a map
+    and not where.
+    """
+    names = {e["index"]: e["name"] for e in enemies}
+    titles = map_registry(d.world)
+    pages: dict[str, list] = {}
+    for p in placements(d):
+        title = (titles.get((p["area"], p["level"]))
+                 or f"area {p['area']} level {p['level']}")
+        pages.setdefault(title, []).append(
+            {"col": p["cell"], "row": p["band"], "name": names[p["enemy"]]})
+    return pages
+
+
 def gone(save) -> list[int]:
     """The spawn ids a `saves.Save` records as no longer on the map."""
     return save.bits_set(GONE_FLAGS)

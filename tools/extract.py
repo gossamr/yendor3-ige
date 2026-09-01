@@ -1107,6 +1107,8 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         # Which monsters stand on each map, and how many: the 0x0800 cell
         # events, resolved through section 30 (`tools/spawns.py`).
         "spawns": SP.census(d, enemies),
+        # Where each of them stands, for the map tab's overlay.
+        "spawn_points": SP.points(d, enemies),
         "items": extract_items(d),
         "leveling": extract_leveling(d),
         "enhancers": I.Items(d).enhancers(),

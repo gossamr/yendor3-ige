@@ -24,7 +24,11 @@ Everything here is **code**, read off the disassembly rather than off the runnin
 | Equipment assembly | `0x0649e` |
 | Attack/shoot routine | `0x0c13e` |
 | Volley shot | `0x0c75e` |
+| Cast dispatcher | `0x1c4e4` |
 | Spell on one monster | `0x1d93d` |
+| LIFE FORCE branch | `0x1d3d8` |
+| LIFE FORCE roll | `0x1d61c` |
+| Gain and lose handler | `0x037d9` |
 | Condition drain | `0x0af19` |
 | Monster condition tick | `0x12863` |
 | Kill rewards | `0x1270c` |
@@ -142,7 +146,7 @@ Printable keys are dispatched through a jump table at `0x777`, indexed `(ascii â
 | Key | Handler | | Key | Handler |
 |---|---|---|---|---|
 | `A` attack | `0x69e` | | `P` panels | `0x59e` |
-| `S` shoot | `0x671` | | `R` rest | `0x632` |
+| `S` shoot | `0x671` | | `R` rest | `0x632`, [encounters.md](encounters.md) |
 | `C` cast | `0x68d` | | `T` hourglass | `0x60a` |
 | `D` disk | `0x566` | | `K` keyring | `0x644` |
 | `M` map | `0x5d2` | | `V` version | `0x769` |
@@ -254,7 +258,45 @@ Casting charges the caster's current magic points by the spell's record 24 and t
 4. **Resistance halves it.** Record 76 masked with `0xFE00` is the spell's damage type. It is matched against the monster's resistance word at record 102, and a match shifts the damage right once (`0x1d72f`, and `0x1d8af` is the same test written as a loop). That mask only ever holds 0, `0x200` or `0x2000`, so of a monster's three resistance bits only `0x2000` is ever answered by a spell. This one is **measured**: [tools/fight_probe.js](../tools/fight_probe.js) sets a monster's resistance word before boot and reads its health between blows, and [monsters.md](monsters.md) has the readings.
 5. Each condition bit the spell carries is tested against the same immunity word and OR'd into the monster's flags if the monster is not immune (`0x1d649`). The condition then deals record 52's damage per turn for record 66 turns.
 
-Healing does not go through any of this: a heal spell carries damage 0, which the resolver refuses at its first test, and restores a fixed amount instead.
+Healing does not go through any of this. A restorative spell carries damage 0 and takes its own branch out of the cast dispatcher. On that branch the amount is a field of the record. The caster rolls nothing. [spells.md](spells.md) has the branch.
+
+### The LIFE FORCE line
+
+Four spells never reach `0x1d93d`. The chain at `0x1c4e4` runs on every cast. It tests record 72 bit by bit, in a fixed order. All four LIFE FORCE records hold `0x2000` there. None of them holds a bit tested ahead of it. So all four arrive at `0x1cccd`. That block reads record 76 first:
+
+    1ccd5  test word [0x5df2], 0xc0
+    1ccdb  je   0x1cce0                  ; ordinary spell, on to 0x1d93d
+    1ccdd  jmp  0x1d3d8                  ; LIFE FORCE
+
+No other record sets either bit. `0x1ccdd` is the only jump to `0x1d3d8`. Both callers of the dispatcher, `0x0ce3c` and `0x1dbd8`, pass through the chain.
+
+The roll is at `0x1d61c`. Its only caller is `0x1d3ea`. The roll hands the resolver the same three numbers a damage spell gets: casting, record 38 for absorption, record 46 for damage. Then it reads back what landed.
+
+    1d62a  mov  word [0x53e0], 0
+    1d630  lcall 0x1586f
+    1d635  cmp  word [0xf36], 0
+    1d63a  jne  0x1d648                  ; landed, and pct(damage, margin) stands
+    1d63c  mov  word [0x53e0], 1         ; missed
+    1d642  mov  ax, [0x5dd4]
+    1d645  mov  [0xf36], ax              ; the amount becomes record 46 whole
+
+A hit delivers `pct(damage, margin)`, like any other spell. What comes off the monster is what the characters gain.
+
+**A miss runs the transfer backwards, at record 46 whole.** `0x1d3f7` adds that figure to the monster's health. Each character then loses it.
+
+Record 76 bit 6 picks who gains or loses. Set, and `0x1d49d` fills the caster's readout slot alone. Clear, and `0x1d44a` walks all four handles at `DS:0xd0c9`. That walk passes over an empty slot, and over any character whose condition word carries `0x40`. LIFE FORCE I to III take the first path. LIFE FORCE IV takes the second. So IV moves its figure once against the monster, and once for each character still standing.
+
+The transfer runs off two entries of the attack table. Record 42 holds the id used on a hit. Record 44 holds the id used on a miss. `0x0357e` turns an id into a pointer into the table at `DS:0x96da`. All four records hold 42 = 18 and 44 = 20. Entry 18 carries flag `0x0100`, and entry 20 carries `0x0080`. `0x037d9` reads `0x0100` as add and `0x0080` as subtract. Both act on the character field that record 40 names. Record 40 is 82 on all four, which is the health word.
+
+The add is bounded by whatever field readout `+0x12` names. Nothing on this path writes `+0x12`. It stays 0, so `0x037f8` skips the bound. Health goes past its maximum. The subtract floors at zero, at `0x03816`.
+
+**Immunity and resistance are not tested.** Both live in `0x1d649`. Its only caller is `0x1d973`, inside the applier this branch skips.
+
+The immunity test would have matched nothing anyway. All four records hold element 0.
+
+The resistance test is the one that changes an outcome. All four set `0x2000` in record 76, which is the bit a magic-resistant monster answers. No cast of theirs reaches the test. So 55 of the 70 listed damage spells are halved, not 59.
+
+`[0x5370]` bit `0x80` is not read here either. These four always roll.
 
 ## Damage, death and rewards
 

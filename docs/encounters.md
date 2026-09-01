@@ -16,6 +16,32 @@ The section 28 cell-event table ([map.md](map.md)) has six kinds. The `0x0800` k
     0x12602  read section 30 record `id`  -> the enemy record's number
     0x1261D  read section 29 record that  -> the monster itself
 
+## Resting
+
+`R` reaches image `0x0d358` through the key table at `0x632` ([combat.md](combat.md)). The routine refuses, rests, or is interrupted. The three outcomes have their own messages in the executable: `YOU CAN NOT / REST HERE.` at `0x29e00` and `YOUR REST IS / INTERRUPTED.` beside it.
+
+**Two things refuse the rest before it starts.** `[0x43ec]` non-zero returns immediately with no message at all. Otherwise image `0x0d7f2` writes a reason into `[0x53e0]`: 2 when `[0xcef9]` bit 0 is set, and 4 when the party is standing somewhere the rest is not allowed. The second reads a table at `0xb71f` through image `0x0ae45`, walking 20-byte entries until one holds `-1`. Bit 15 of an entry's word at `+2` picks which coordinate it is about. The routine compares the entry's own word at `+0` against the party's y when the bit is clear, against its x when it is set. A non-zero reason prints and returns.
+
+**A rest is eight hours, taken one at a time.** With `[0x53e0]` at zero the routine loops `cx = 8` from image `0xd45e`. Each pass calls image `0x128c2`, adds `0x3c` to the clock at `[0xcf7f]` and counts the hour into `[0x53f0]`. It then tests `[0x5370]` bit 12 and leaves the loop when the bit is set. `[0x53f0]` is therefore the hours the party actually had. An early exit leaves fewer than eight.
+
+**The hourly call is the ordinary monster pass.** Image `0x128c2` walks `si = 0x122c` for `cx = 0x50` entries of `0x9c` bytes, which is the eighty monster slots of section 6 ([saves.md](saves.md)). It is the same pass that moves monsters while the party walks around, not a check written for resting.
+
+**Bit 12 of `[0x5370]` is the combat flag.** It is set at image `0x12b6a`, inside the group assembly at `0x12B5C` to `0x12CA4` that [monsters.md](monsters.md) describes. The same bit refuses `S` at `0x671` in hand-to-hand. A rest therefore ends because a monster closed and combat began.
+
+**A monster approaches along the party's own row or column and nowhere else.** The tick reads its x and y from `[si+2]` and `[si+4]` and compares them against the party's at `[0xcf75]` and `[0xcf77]`. Sharing the y takes image `0x129a6` and sharing the x takes `0x1295e`. Anything on neither takes the exit at `0x12a35` and does not move at all. There is no diagonal approach and no pathfinding around a corner.
+
+**It closes at most five cells per hour.** Both branches load `cx = 5` and step by `[0x53ee]`, which is 1 or -1 depending on which side of the party the monster is on. Each step writes the new coordinate and calls image `0x02f2b`. That reads the map cell the monster would move into and refuses the step when the terrain says so, leaving a reason in `[0x53e0]`. A refused step abandons the approach for that hour.
+
+**Reaching the party is not the same as engaging it.** A monster that closes the whole distance lands at image `0x129ed`. That rolls `rand(100)` and compares it against a threshold its own `[si+0x94]` picks: `0x1000` gives 90, `0x800` gives 75, `0x400` gives 50 and `0x200` gives 25. Rolling above the threshold does nothing that hour.
+
+**So the distance that matters is not a radius.** Eight hours of five cells is forty. That is wider than the forty-column maps. A monster that shares a row or column with the party and has clear ground between arrives before the rest is over, whatever the gap. What buys an undisturbed rest is standing on no monster's row and no monster's column. Terrain the approach cannot step through does the same. That is what the game means by SAFE HAVEN's `IF YOU REST WHILE A MONSTER IS NEAR, IT WILL ATTACK`: near is aligned and unobstructed, not close.
+
+**One flag banks the whole rest. SAFE HAVEN sets it.** `[0x536a]` bit 1, tested at `0xd45e`, skips the loop, adds `0x1e0` to the clock in one step and writes 8 into `[0x53f0]`. The hourly monster pass never runs. Nothing can interrupt.
+
+The chain to it is short. A cast reaches the effect dispatcher at image `0x1c4e4`, which switches on the bits of the spell's record 72. The printer beside it tests `[0x5dee]` against `0xff` and `0x5E00`, that record's own blank-row and scope masks. So `[0x5dee]` is record 72. The buffer's base is `0x5da6`. Bit 1 of it takes the arm at `0x1cb51`, which does three things in a row: `or [0x536a], 2`, a far call to the rest routine at `0x0d358`, and `and [0x536a], 0xfffd`. Set, rest, clear.
+
+**One spell in the game sets that bit.** Across all 107 records, record 72 bit 1 is SAFE HAVEN's alone. Its word is `0x0002` and nothing else. That is also why its AFFECTS row is blank: any low bit of 72 blanks the row. So 35 magic and 22 nuore buys a full eight hours wherever the party stands, on any monster's row, with nothing in the way. The executable's `FOR UNDISTURBED REST.` at `0x2a084` sits with the service prompts and is a second way to the same state.
+
 **Section 30 is the spawn table.** One `uint16` per spawn id, holding the number of the enemy record that id stands for. Its loader stub is image `0x1807E`, which sets a record length of 2 and takes the record number from `bx`, the id the cell carried. The section is 10,000 bytes and the table is only the head of it. Ids run 1 to 1,862, and what follows the last one is other data, a run of section sizes among it.
 
 A spawn id is therefore a monster's identity for the whole game. It names the enemy record through section 30, it carries the monster's own bit in the save, and image `0x126EE` matches a live slot on it.

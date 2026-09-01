@@ -236,7 +236,7 @@ class Member:
                                                    "visible monsters") else 1)
             # A monster that resists this kind of spell halves what lands.
             per = (odds(margin) * LD.per_hit(spell["damage"], margin)
-                   * C.resisted(C.spell_blow(spell), C.foe_resistance(foe)))
+                   * C.spell_resisted(spell, C.foe_resistance(foe)))
             if per <= 0:
                 continue
             # Rounds for `casters` of these to clear the group, and what that
