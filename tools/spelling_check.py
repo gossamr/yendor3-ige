@@ -196,8 +196,8 @@ def match_case(found: str, replacement: str) -> str:
     return replacement
 
 
-def whole_word(line: str, at: int) -> str:
-    """The whole word `line[at]` sits inside.
+def word_at(line: str, at: int) -> tuple[int, int]:
+    """Where the whole word `line[at]` sits inside starts and ends.
 
     A stem matches inside a word, so the match alone cannot say whether it
     landed in `SPECTRE` or in `RANGED_RECOLOUR_BYTES`. The word around it can.
@@ -208,6 +208,12 @@ def whole_word(line: str, at: int) -> str:
     end = at
     while end < len(line) and (line[end].isalnum() or line[end] == "_"):
         end += 1
+    return start, end
+
+
+def whole_word(line: str, at: int) -> str:
+    """The whole word `line[at]` sits inside."""
+    start, end = word_at(line, at)
     return line[start:end]
 
 
@@ -224,11 +230,18 @@ def hits_in_text(text: str) -> list[tuple[int, str, str, str]]:
     found = []
     for n, line in enumerate(text.splitlines(), 1):
         for m in PATTERN.finditer(line):
-            word = m.group(0)
-            if whole_word(line, m.start()) in GAME_WORDS:
+            stem = m.group(0)
+            start, end = word_at(line, m.start())
+            word = line[start:end]
+            if word in GAME_WORDS:
                 continue
-            found.append((n, word, match_case(word, GROUP[m.lastgroup][1]),
-                          line))
+            # The word as written and the word meant, rather than the stem the
+            # pattern matched: `travelled -> traveled` is what to type, where
+            # `travell -> travel` names a word nobody wrote.
+            fixed = (line[start:m.start()]
+                     + match_case(stem, GROUP[m.lastgroup][1])
+                     + line[m.end():end])
+            found.append((n, word, fixed, line))
     return found
 
 

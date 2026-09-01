@@ -38,7 +38,7 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data panel test test-py test-js test-panel test-persist test-cabinet test-mobile test-offline \
+.PHONY: all data expected panel test test-py test-js test-panel test-persist test-cabinet test-mobile test-offline \
         serve serve-byo serve-stock serve-headless session clean patched patched-debug \
         pages panel-shell trainer test-trainer test-decode test-away \
         hosted hosted-dev cabinet-deps test-hosted-trainer \
@@ -60,6 +60,11 @@ data:
 	PYTHONPATH=tools $(PY) tools/pack_maps.py
 	PYTHONPATH=tools $(PY) tools/extract.py
 	PYTHONPATH=tools $(PY) tools/world_map.py
+
+## Record what this build decodes the panel's source data to, which the page
+## holds a decode in the player's browser to. Run after any change to a decoder.
+expected: data
+	$(BUN) tools/write_expected.js
 
 ## Crop the captured clue-book map pages into web/maps/
 maps:

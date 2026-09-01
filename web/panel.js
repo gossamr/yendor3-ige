@@ -7022,11 +7022,11 @@
       }
     }
     table.append(body);
-    // A column a goal, so the table is as wide as the plan is ambitious. In
-    // the cabinet's frame that is wider than the panel, so it scrolls in its
-    // own column rather than pushing the page sideways -- the same wrapper the
-    // guides put round their wide tables.
-    box.append(el("div", { className: "md-table-wrap" }, [table]));
+    // No wrapper of its own. The table used to sit in the one the guides put
+    // round their wide tables, which gave the tab a second scrollbar to find
+    // and drag before a plan's later levels could be read. Spend wraps
+    // instead, and the columns before it are a figure or a glyph wide.
+    box.append(table);
     return box;
   }
 

@@ -245,6 +245,10 @@ def render(page) -> tuple[int, int, bytes]:
 def fidelity(page, loc, world=None, shot_dir="tmp/maps4") -> float | None:
     """What fraction of the game's own page the packed one reproduces.
 
+    The score goes to `data/map_fidelity.json`, beside the payload, which
+    `tests/test_extract.py` reads. It is a fact about a capture run, and a page
+    is drawn from the game's own files.
+
     Measured over the window the clue book prints, which is the only part there
     is a picture of, and cell by cell rather than pixel by pixel so the two
     things a still cannot be compared against directly can be excluded:
@@ -307,13 +311,13 @@ def _phase(page, n):
     return read
 
 
-def main(out="data/map_pages.json") -> list[dict]:
+def main(out="data/map_pages.json", scores="data/map_fidelity.json") -> list[dict]:
     world = Path("game/WORLD.DAT").read_bytes()
     pics = (ROOT / "game" / "PICTURES.VGA").read_bytes()
     exe = (ROOT / "game" / "REGISTER.EXE").read_bytes()
     pal = T.palette(SEC.load("game"))
     names = map_registry(world)
-    booked = {(c["area"], c["level"]): c for c in registry.captures(world)}
+
 
     # Every slot the registry names, drawn the same way: there is nothing a
     # page the clue book prints can be given that the others cannot.
@@ -327,9 +331,6 @@ def main(out="data/map_pages.json") -> list[dict]:
     pages = []
     for (area, level), title in sorted(names.items()):
         page = pack_page(world, pics, exe, pal, area, level, title)
-        page["in_book"] = (area, level) in booked
-        page["fidelity"] = fidelity(page, booked[(area, level)], world) \
-            if (area, level) in booked else None
         page["markers"] = marks[(area, level)]
         pages.append(page)
 
@@ -346,6 +347,22 @@ def main(out="data/map_pages.json") -> list[dict]:
     path = ROOT / out
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(pages, separators=(",", ":")))
+
+    # The scores go in a file of their own, keyed by title. What `out` holds
+    # is a function of the game's own files: this tree and a player's browser
+    # write the same bytes for the same copy of the game, which is what lets a
+    # decode be checked against a published hash. A score is measured against a
+    # photograph, so it belongs beside the payload rather than in it.
+    packed = {(p["area"], p["level"]): p for p in pages}
+    scored = {}
+    if registry.INDEX.exists():
+        for loc in registry.captures(world):
+            page = packed.get((loc["area"], loc["level"]))
+            score = fidelity(page, loc, world) if page else None
+            if score is not None:
+                scored[page["title"]] = score
+    (ROOT / scores).write_text(json.dumps(scored, sort_keys=True,
+                                          separators=(",", ":")))
     return pages
 
 

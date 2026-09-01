@@ -358,9 +358,20 @@ async function fillPanel(bytes, files, summary, caveat = "") {
     PANEL.text = payload.text;
     PANEL.worldMap = payload.worldMap;
     showPanel();
+    // The tables decoded to something other than what this build decodes.
+    // Said and then shown anyway: they parse, the likeliest cause is a
+    // different pressing of the game, and a difference that matters shows in
+    // the panel where a reader can see it.
+    let differs = "";
+    if (tables.matches === false) {
+      console.warn("clue book: the tables are not the ones this build decodes."
+                   + " A different release of the game reads differently.");
+      differs = " \u00b7 not this build's tables";
+    }
     if (note) note.textContent = settled;
     if (zone) zone.style.removeProperty("--decode");
-    say(`${summary} \u00b7 ready, clue book ${fromStorage ? "from storage" : "decoded"}${caveat}`);
+    say(`${summary} \u00b7 ready, clue book `
+        + `${fromStorage ? "from storage" : "decoded"}${differs}${caveat}`);
   } catch (err) {
     // On the page for the player, and in the console for whoever is asked
     // about it: this runs three deployments deep (a worker, inside pyodide,
@@ -1421,12 +1432,21 @@ if (patchBox) {
 
 // The width of the clue book, dragged by the edge between the two panes.
 //
-// The game keeps whatever is left, so the limits are about it rather than about
-// the panel: never less than a readable column of text, never so much that the
-// screen has nowhere to draw. The default is the CSS clamp, which is what the
-// variable falls back to while nothing has been dragged.
+// The game keeps whatever is left, so the upper limit is about it: never so
+// much that the screen has nowhere to draw. The default is the width in
+// cabinet.css, which is what the variable falls back to while nothing has been
+// dragged.
 const PANEL_KEY = "cabinet.panel-width";
-const PANEL_MIN = 280;
+// Where the planner's goal list stops overflowing. Below this its reorder and
+// delete buttons go off the right edge of the panel, and a goal cannot be
+// moved or removed. The list needs 547px of page, measured with every goal
+// the tab offers in it, which is as wide as that table gets; the 15 on top is
+// the scrollbar the panel's own frame takes where scrollbars hold a column of
+// their own rather than floating over the page, as they do on a Mac.
+//
+// The default width in cabinet.css is the same number: a default under the
+// floor is one the grip can never be dragged back to.
+const PANEL_MIN = 562;
 const GAME_MIN = 320;
 const grip = $("#grip");
 // The grip sits between them, so it comes out of the window before either

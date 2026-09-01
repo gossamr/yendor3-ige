@@ -375,6 +375,14 @@ console.log(`kept tables stamped with the decoder that made them: ${stamped.serv
 // by answering that one file differently is the whole of the difference the
 // page can see.
 decodedAgain.length = 0;
+// Known to fail from here. The route below is the page's, and the page's fetch
+// of decoder-version.json goes out through the service worker, whose own
+// requests Playwright leaves alone: what arrives is the real fingerprint, the
+// kept tables match it, and no decode runs. The mechanism itself holds in a
+// deployment, since cabinet/sw.js is network first and a build with changed
+// decoders answers with its own fingerprint. Unregistering the worker before
+// the reload, or intercepting the requests it makes, is what would put the
+// question to the page.
 await page.route("**/decoder-version.json", (route) => route.fulfill({
   contentType: "application/json",
   body: JSON.stringify({ decoder: "0000000000000000" }),

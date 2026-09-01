@@ -801,18 +801,17 @@ body.embedded .guide-side { top: 3.2rem; }
 .plan-summary { max-width: 74ch; margin: .1rem 0; color: var(--ink); }
 
 /* One column per goal, and the whole row is a verdict: held is quiet, a break
-   is not.
-   Sized to its content rather than to the panel: stretched to the full width a
-   two-goal plan puts its headers a hand's width from the ticks underneath
-   them, and the wrapper scrolls when the goals outgrow the column. Headers sit
-   on the same edge as their cells for the same reason -- the page's own table
-   rule right-aligns a header over a left-aligned column. */
+   is not. Headers sit on the same edge as their cells, against the page's own
+   table rule, which right-aligns a header over a left-aligned column. */
 /* The table fills the width it is given. Sized to its content it stopped
    wherever the Spend column happened to end and left the rest of every row
    empty at any window. The slack goes to Spend, which is the one column whose
    content varies, so the columns before it stay as tight as their figures. */
 .plan-career { width: 100%; font-variant-numeric: tabular-nums; }
-.plan-career th:last-child, .plan-career td:last-child { width: 100%; }
+/* Spend takes the slack and is the one column allowed to wrap, so the table
+   fits the panel's width instead of scrolling inside it. */
+.plan-career th:last-child, .plan-career td:last-child { width: 100%;
+                                                         white-space: normal; }
 .plan-career th, .plan-career td { text-align: left; padding-right: 1.1rem;
                                    white-space: nowrap; }
 .plan-career td.plan-held { color: var(--verdant); }

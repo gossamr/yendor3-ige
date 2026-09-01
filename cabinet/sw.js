@@ -34,6 +34,7 @@ const SHELL = [
   "./cabinet/icon-512.png", "./cabinet/icon-maskable-512.png",
   "./cabinet/cabinet.css", "./cabinet/cabinet.js", "./cabinet/audio.js",
   "./cabinet/decode.js", "./cabinet/decode.worker.js", "./cabinet/dosbox.conf.js",
+  "./cabinet/expected.js",
   "./cabinet/keymap.js", "./cabinet/keys.js", "./cabinet/mouse.js", "./cabinet/persist.js",
   "./cabinet/png.js", "./cabinet/roster.js", "./cabinet/touch.js", "./cabinet/trainer.js",
   "./cabinet/zip.js",

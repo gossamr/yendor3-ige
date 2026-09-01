@@ -9,6 +9,7 @@
 //
 // Nothing is uploaded. The zip is read in the page, decoded in a worker in the
 // page, and the result is kept in the browser's own storage.
+import { EXPECTED } from "./expected.js";
 import {
   fingerprint, loadDecoded, saveDecoded, loadPatched, savePatched,
 } from "./persist.js";
@@ -143,27 +144,62 @@ async function decoderBuild() {
 export async function decodedTables(bytes, files, onProgress = () => {}) {
   const key = fingerprint(bytes);
   const decoder = await decoderBuild();
-  const kept = await loadDecoded(key, decoder);
-  if (kept) {
+  let tables = await loadDecoded(key, decoder);
+  if (tables) {
     onProgress({ type: "progress", stage: "cached", label: "from storage",
                  fraction: 1, cached: true });
-    return kept;
+  } else {
+    const out = await run({ files }, onProgress);
+    tables = {
+      restoration: out["data/restoration.json"],
+      worldMap: out["data/world.png"],
+    };
+    // A failure here is why a reload would decode again, so it is worth saying
+    // out loud rather than only in a console warning: the tables are 1.2 MB on
+    // top of the archive, and a browser short of room refuses the second write
+    // while accepting the first.
+    const kept2 = await saveDecoded(key, tables, decoder);
+    if (!kept2) {
+      onProgress({ type: "progress", stage: "unkept", fraction: 1,
+                   label: "decoded, but too large to keep \u2014 this will run again" });
+    }
   }
-  const out = await run({ files }, onProgress);
-  const tables = {
-    restoration: out["data/restoration.json"],
-    worldMap: out["data/world.png"],
-  };
-  // A failure here is why a reload would decode again, so it is worth saying
-  // out loud rather than only in a console warning: the tables are 1.2 MB on
-  // top of the archive, and a browser short of room refuses the second write
-  // while accepting the first.
-  const kept2 = await saveDecoded(key, tables, decoder);
-  if (!kept2) {
-    onProgress({ type: "progress", stage: "unkept", fraction: 1,
-                 label: "decoded, but too large to keep \u2014 this will run again" });
-  }
+  // Held to the build after storage as well as after a decode: what the panel
+  // is handed is what this checks, wherever it came from.
+  tables.matches = await matchesBuild(tables, decoder);
   return tables;
+}
+
+
+const hex = (buf) => [...new Uint8Array(buf)]
+  .map((b) => b.toString(16).padStart(2, "0")).join("");
+
+/**
+ * Whether the tables are the bytes this build decodes, or null where the
+ * question cannot be put.
+ *
+ * The player decodes their own copy, so the panel is filled from data this
+ * page never saw made. cabinet/expected.js carries what the build decoded the
+ * same two files to, and matching them says the copy and the decoders both
+ * agree with it.
+ *
+ * Two answers are null rather than false. A decoder no build was recorded
+ * under is being asked a question about numbers nobody wrote down. And
+ * `crypto.subtle` is a secure context away: it is there over https and on
+ * localhost, and a cabinet served over plain http from somewhere else has no
+ * digest to offer.
+ *
+ * A false is not a reason to withhold the panel. The likeliest cause is a
+ * different pressing of the game, and the tables parse either way, so the
+ * panel fills and whatever the difference amounts to shows there.
+ */
+async function matchesBuild(tables, decoder) {
+  const want = EXPECTED[decoder];
+  if (!want || !globalThis.crypto?.subtle) return null;
+  const [restoration, worldMap] = await Promise.all(
+    [tables.restoration, tables.worldMap].map(
+      async (b) => hex(await crypto.subtle.digest("SHA-256", b))));
+  return restoration === want.restoration && worldMap === want.worldMap;
 }
 
 /**

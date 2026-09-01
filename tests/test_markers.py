@@ -42,14 +42,11 @@ def test_every_group_falls_on_exactly_one_page():
     assert not spread, f"groups spanning several slots: {spread}"
 
 
-def test_the_records_place_most_of_the_printed_pages():
+def test_the_records_place_almost_every_page():
     marks = markers.by_page(WORLD, PAGES)
-    printed = {p["title"] for p in PAGES if p.get("in_book")}
-    assert len(marks.keys() & printed) >= 34, \
-        "the records should place 35 of the 37 printed pages"
-    # The maps the book leaves out take markers too, which is how they were
-    # found: a legend line naming a place the book never shows.
-    assert len(marks) > 35
+    titles = {p["title"] for p in PAGES}
+    assert set(marks) <= titles, sorted(set(marks) - titles)
+    assert len(marks) >= 53, f"markers reach {len(marks)} of {len(PAGES)} pages"
 
 
 def test_positions_land_inside_the_printed_page():
@@ -62,8 +59,7 @@ def test_positions_land_inside_the_printed_page():
     gave all seven a square.
     """
     marks = markers.by_page(WORLD, PAGES)
-    printed = {p["title"] for p in PAGES if p.get("in_book")}
-    off = [(t, m["label"]) for t, ms in marks.items() if t in printed
+    off = [(t, m["label"]) for t, ms in marks.items()
            for m in ms if not m["shown"]]
     assert off == [], off
 

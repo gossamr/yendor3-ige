@@ -37,11 +37,18 @@ body {
    quietly hands the panel more and more of the window the further the user
    zooms in, which is the opposite of giving the game priority. */
 /* The width is a variable so that the grip between the two can set it, and the
-   clamp is the default it starts at rather than the only value it takes. A
-   player who wants the clue book wide enough for a plan's whole table can have
-   it; the game keeps whatever is left. */
+   number is the default it starts at rather than the only value it takes. A
+   player who wants the clue book wider than this can have it; the game keeps
+   whatever is left.
+
+   One width rather than a fraction of the window. It used to be
+   clamp(280px, 38%, 560px), and the floor the grip enforces is now 562: the
+   width the planner's goal list needs, PANEL_MIN in cabinet.js. Every value
+   that clamp could produce is under it, so the fraction decided nothing and a
+   window under about 1480px opened the panel narrower than it could be dragged
+   to. The two numbers are one number and have to stay equal. */
 #app { display: grid;
-       grid-template-columns: minmax(0, 1fr) 6px var(--panel, clamp(280px, 38%, 560px));
+       grid-template-columns: minmax(0, 1fr) 6px var(--panel, 562px);
        min-height: 0; }
 #app.panel-hidden { grid-template-columns: 1fr 0 0; }
 #app.panel-hidden #panel, #app.panel-hidden #grip { display: none; }

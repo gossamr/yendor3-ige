@@ -926,13 +926,18 @@ def test_map_pages_are_drawn_not_shipped(data):
     markers the game paints over the tiles come as their own small layer.
     """
     pages = data["map_pages"]
-    # Every slot the registry names is packed, and all of them the same way --
-    # out of the game's files. 37 of the 54 also have a capture, which is used
-    # to measure fidelity and for nothing else.
-    # (was: 36 have a capture whose slot the registry agrees with; 16 more pack
-    # artwork, and two are held back because the captures have never shown some
-    # of their tiles.
-    assert sum(1 for p in pages if p.get("in_book")) == 37
+    # Every page the clue book indexes is packed, and nothing else. List 1 of
+    # REGISTER.EXE's list registry is the book's own map list: 54 entries, each
+    # the 1-based slot the page is stored in. Read out of the game rather than
+    # counted off the captures, so a decode that dropped a page fails here.
+    import sys
+    sys.path.insert(0, "tools")
+    import items as _items
+    import registry as _registry
+    listed = {i - 1 for i in _items.book_list(
+        Path("game/REGISTER.EXE").read_bytes(), _items.MAP_LIST)}
+    assert {p["area"] * _registry.SLOTS_PER_AREA + p["level"]
+            for p in pages} == listed
     assert len(pages) == 54
     titles = [p["title"] for p in pages]
     assert len(set(titles)) == len(titles), "a page was packed twice"
@@ -940,8 +945,7 @@ def test_map_pages_are_drawn_not_shipped(data):
     # The level numbers are learned glyphs, not counted positions: a page that
     # fails to open leaves a hole, and counting would renumber past it.
     assert "CASTLE OF BARIAG LEVEL 2" in titles
-    booked = [p["title"] for p in pages if p.get("in_book")]
-    areas = {t.split(" LEVEL ")[0].split(" MAP ")[0] for t in booked}
+    areas = {p["title"].split(" LEVEL ")[0].split(" MAP ")[0] for p in pages}
     known = {m.replace("~", "'") for m in data["maps"]}
     assert areas <= known, areas - known
     # The rest are titled by their storage slot, because nothing in the file
@@ -958,29 +962,28 @@ def test_map_pages_are_drawn_not_shipped(data):
 
 
 def test_the_registry_names_every_slot_the_book_prints():
-    """The registry is checked against the book, and against a walk.
+    """The registry is checked against the book's own index of its maps.
 
-    36 of its 54 entries are pages the clue book prints, and the title it gives
-    matches the one read off the game's own frame for every one of them, two
-    independent routes to the same string. The 18 it names that the book does
-    not print include area 2 level 1, which is where walking through Athaneum's
-    Exit to Yendor door lands: the registry calls it YENDOR.
+    Two routes to the same 54 slots. The registry is read out of WORLD.DAT at
+    0x83400; list 1 of REGISTER.EXE's list registry is what the Restoration
+    map screen pages through, and holds the 1-based slot of each page. One of
+    them is area 2 level 1, where walking through Athaneum's Exit to Yendor
+    door lands: the registry calls it YENDOR.
     """
-    import json as _json
     import sys
     sys.path.insert(0, "tools")
+    import items
     import pack_maps as P
+    import registry as R
 
     world = Path("game/WORLD.DAT").read_bytes()
+    exe = Path("game/REGISTER.EXE").read_bytes()
     registry = P.map_registry(world)
     assert len(registry) == 54
     assert registry[(2, 1)] == "YENDOR"
 
-    book = {(g["area"], g["level"]): g["title"]
-            for g in []}
-    agree = [k for k, v in book.items() if registry.get(k) == v]
-    assert len(agree) == len(book), \
-        [(k, book[k], registry.get(k)) for k in book if registry.get(k) != book[k]]
+    listed = {i - 1 for i in items.book_list(exe, items.MAP_LIST)}
+    assert {a * R.SLOTS_PER_AREA + l for a, l in registry} == listed
     # Areas 0 and 6 hold no maps at all, which the variety heuristic that
     # preceded the registry got wrong for four slots.
     assert not [k for k in registry if k[0] in (0, 6)]
@@ -1464,15 +1467,13 @@ def test_every_scroll_spell_has_a_scroll_to_learn_it_from(data):
 
 
 def test_the_book_pages_still_reproduce_exactly(data):
-    """Widening the page and adding the object layer must not disturb the 37.
+    """Widening the page and adding the object layer must not disturb the 54.
 
     Inside the window the clue book actually prints, a packed page is the
     game's own pixels, which is the check that the decode is right rather than
     merely plausible, and it has to keep holding as the margins are filled in.
     """
     for page in data["map_pages"]:
-        if not page.get("in_book"):
-            continue
         assert page["cols"] == 40
         # The overlay never lands outside the page it belongs to.
         for r, c, _ in page["overlay"]:
@@ -1487,17 +1488,20 @@ def test_every_clue_book_page_reproduces_the_game_exactly(data):
     one. What is left is a real difference: eight cells over three pages, none
     of them looked into.
     """
-    booked = [p for p in data["map_pages"] if p.get("in_book")]
-    assert len(booked) == 37
-    if all(p["fidelity"] is None for p in booked):
+    # Beside the payload rather than in it: a page is drawn from the game's
+    # files, so what it packs must not depend on who photographed what.
+    scores = Path("data/map_fidelity.json")
+    measured = json.loads(scores.read_text()) if scores.exists() else {}
+    if not measured:
         pytest.skip("no map captures in tmp/maps4; run tools/capture_maps.js")
-    exact = [p for p in booked if p["fidelity"] == 1]
+    # One measurement per capture the index holds.
+    assert len(measured) == 37
+    titles = {p["title"] for p in data["map_pages"]}
+    assert set(measured) <= titles, sorted(set(measured) - titles)
+    exact = [t for t, v in measured.items() if v == 1]
     assert len(exact) >= 34, sorted(
-        (p["fidelity"], p["title"]) for p in booked if p["fidelity"] != 1)
-    assert all(p["fidelity"] > 0.99 for p in booked)
-    # A page with no capture makes no claim rather than claiming zero.
-    assert all(p.get("fidelity") is None for p in data["map_pages"]
-               if not p.get("in_book"))
+        (v, t) for t, v in measured.items() if v != 1)
+    assert all(v > 0.99 for v in measured.values())
 
 
 def test_every_capture_sits_on_the_slot_the_registry_names():
