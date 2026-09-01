@@ -106,6 +106,13 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 const problems = [];
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 page.on("console", (m) => { if (m.type() === "error") problems.push(`console: ${m.text()}`); });
+// cabinet/decode.js warns here when the tables it decoded are not the bytes
+// cabinet/expected.js records for this build. Against the game this check
+// decodes, and the decoders it was written from, they are.
+const mismatched = [];
+page.on("console", (m) => {
+  if (/not the ones this build decodes/.test(m.text())) mismatched.push(m.text());
+});
 
 // Anything leaving this page with the game in it would be the one thing the
 // hosted deployment must never do, so watch for it rather than trusting it.
@@ -118,11 +125,19 @@ const uploads = [];
 // Locally that fetch finds them.
 const localData = [];
 const LOCAL = /\/(game-files\.json|game\/|data\/)/;
+// Every decoder the worker pulls in, with the stamp it asked for it under.
+const DECODERS = /\/(tools\/.+\.py|decoder-files\.json)$/;
+const decoderStamps = [];
 page.on("request", (r) => {
   if (["POST", "PUT", "PATCH"].includes(r.method())) {
     uploads.push(`${r.method()} ${r.url()}`);
   }
-  if (LOCAL.test(new URL(r.url()).pathname)) localData.push(r.url());
+  const at = new URL(r.url());
+  if (LOCAL.test(at.pathname)) localData.push(r.url());
+  if (DECODERS.test(at.pathname)) {
+    decoderStamps.push([at.pathname.split("/").pop(),
+                        at.searchParams.get("v")]);
+  }
 });
 
 // The panel is reached through the parent document, not through a frame
@@ -368,6 +383,29 @@ if (stamped.kept !== stamped.served) {
     + `the decoder that produced them ${JSON.stringify(stamped.served)}`);
 }
 console.log(`kept tables stamped with the decoder that made them: ${stamped.served}`);
+
+// And the modules have to be asked for under that same stamp. A static host
+// serves them with a max-age while the page reads the version revalidated, so
+// unstamped URLs let a fresh fingerprint sit over decoders out of the
+// browser's cache: the page decodes with code the deployment no longer has,
+// and says it is the build that no longer contains it.
+if (!decoderStamps.length) {
+  await fail("the worker fetched no decoders, so the decode did not run here");
+}
+const unstamped = decoderStamps.filter(([, v]) => v !== stamped.served);
+if (unstamped.length) {
+  await fail(`${unstamped.length} of ${decoderStamps.length} decoder requests `
+    + `were not stamped ${stamped.served}: `
+    + unstamped.slice(0, 3).map(([n, v]) => `${n}?v=${v}`).join(", "));
+}
+console.log(`all ${decoderStamps.length} decoder requests stamped `
+  + `${stamped.served}`);
+
+if (mismatched.length) {
+  await fail("the decode did not match cabinet/expected.js for this build. "
+    + "`make expected` records what the decoders here produce");
+}
+console.log("the decode matches what this build records");
 
 // And the stamp has to be acted on. A deployment whose decoders have changed
 // serves a different one, and the kept tables are then not what this build

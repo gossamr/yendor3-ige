@@ -65,8 +65,13 @@ let queue = Promise.resolve();
  * The worker is kept between calls: starting pyodide costs about as much as
  * the decode, and a player comparing two copies should pay it once.
  */
-function run(message, onProgress = () => {}) {
-  const mine = queue.then(() => send(message, onProgress));
+async function run(message, onProgress = () => {}) {
+  // The decoders are fetched under this, so the modules and the number that
+  // says which build they are come from one place. Read here rather than in
+  // the worker because this is where it is already read, and a second reader
+  // of the same file could answer differently.
+  const stamped = { ...message, decoder: await decoderBuild() };
+  const mine = queue.then(() => send(stamped, onProgress));
   // The queue never rejects. One failed message does not strand the messages
   // behind it. The caller still sees its own failure.
   queue = mine.then(() => {}, () => {});

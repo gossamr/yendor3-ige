@@ -82,22 +82,40 @@ async function get(url) {
  * decode, so a player who drops a second zip does not pay for it twice.
  * Two overlapping callers wait on the one start rather than racing it.
  */
-function runtime() {
-  if (!starting) starting = startRuntime();
+function runtime(decoder) {
+  if (!starting) starting = startRuntime(decoder);
   return starting;
 }
 
-async function startRuntime() {
+/**
+ * The decoders' URLs, stamped with the build they belong to.
+ *
+ * A static host serves these with a max-age, and the page reads
+ * decoder-version.json revalidated, so without a stamp the two disagree for
+ * the length of that age: a fresh fingerprint over decoders out of the
+ * browser's cache, which is how a traceback arrives from code the deployment
+ * does not have. A new build asks for new URLs instead.
+ *
+ * cabinet/sw.js drops the query when it keys its cache, so a file offline is
+ * one entry however many builds have asked for it.
+ */
+const at = (path, decoder) => {
+  const url = new URL(path, import.meta.url);
+  if (decoder) url.searchParams.set("v", decoder);
+  return url;
+};
+
+async function startRuntime(decoder) {
   post({ type: "progress", stage: "runtime", label: "starting the decoder",
          fraction: 0 });
   const { loadPyodide } = await import(PYODIDE);
   const pyodide = await loadPyodide({ indexURL: new URL("../pyodide/", import.meta.url).href });
 
-  const names = await get(new URL("../decoder-files.json", import.meta.url)).then((r) => r.json());
+  const names = await get(at("../decoder-files.json", decoder)).then((r) => r.json());
   pyodide.FS.mkdir(ROOT);
   pyodide.FS.mkdir(`${ROOT}/tools`);
   const sources = await Promise.all(names.map(async (name) => [
-    name, await get(new URL(`../tools/${name}`, import.meta.url))
+    name, await get(at(`../tools/${name}`, decoder))
             .then((r) => r.arrayBuffer()),
   ]));
   for (const [name, body] of sources) {
@@ -131,8 +149,8 @@ const PATCH_DIR = `${ROOT}/patch`;
  * is the whole reason to run the project's own patcher here rather than
  * reimplementing three byte writes in JavaScript.
  */
-async function patch(exe) {
-  const py = await runtime();
+async function patch(exe, decoder) {
+  const py = await runtime(decoder);
   ensure(py, PATCH_DIR);
   py.FS.writeFile(`${PATCH_DIR}/REGISTER.EXE`, exe);
   py.runPython(`
@@ -179,8 +197,8 @@ function ensure(py, path) {
  * `files` is what cabinet/zip.js hands back: the game's own directory, flat,
  * with the paths made relative to wherever SW.BAT sat in the archive.
  */
-async function decode(files) {
-  const py = await runtime();
+async function decode(files, decoder) {
+  const py = await runtime(decoder);
   const by = new Map(files.map((f) => [f.path.toUpperCase(), f.contents]));
   const missing = NEEDED.filter((n) => !by.has(n));
   if (missing.length) throw new Error(`this copy is missing ${missing.join(", ")}`);
@@ -210,13 +228,13 @@ async function decode(files) {
 }
 
 self.onmessage = async (e) => {
-  const { id, op, files, exe } = e.data;
+  const { id, op, files, exe, decoder } = e.data;
   try {
     if (op === "patch") {
-      const out = await patch(exe);
+      const out = await patch(exe, decoder);
       return post({ type: "done", id, out }, [out.buffer]);
     }
-    const out = await decode(files);
+    const out = await decode(files, decoder);
     post({ type: "done", id, out }, Object.values(out).map((v) => v.buffer));
   } catch (err) {
     post({ type: "failed", id, message: describe(err) });
