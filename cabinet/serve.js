@@ -113,6 +113,9 @@ const TYPES = {
   ".py": "text/x-python; charset=utf-8",
   ".png": "image/png",
   ".woff": "font/woff",
+  ".webmanifest": "application/manifest+json",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
 };
 
 const server = Bun.serve({
@@ -130,6 +133,22 @@ const server = Bun.serve({
       const html = await Bun.file(join(ROOT, "cabinet/index.html")).text();
       return new Response(withoutComments(html),
                           { headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+
+    // The service worker, at the root: a worker controls what is under it
+    // and nothing else, so one kept in cabinet/ would cover only cabinet/.
+    if (path === "/sw.js") {
+      return new Response(Bun.file(join(ROOT, "cabinet/sw.js")), {
+        headers: { "content-type": TYPES[".js"], "cache-control": "no-store" },
+      });
+    }
+
+    // Asked for at the root by name, by browsers and bookmarks that read no
+    // link tag.
+    if (path === "/favicon.ico") {
+      return new Response(Bun.file(join(ROOT, "cabinet/favicon.ico")), {
+        headers: { "content-type": TYPES[".ico"] },
+      });
     }
 
     if (path === "/events") {

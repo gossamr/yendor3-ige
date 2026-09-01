@@ -38,11 +38,11 @@ BROWSERS ?= chromium firefox webkit
 # these are a supported code path and do not hang the game on its splash.
 TEST_ARGS ?= /NOM /NOS
 
-.PHONY: all data panel test test-py test-js test-panel test-persist test-cabinet \
+.PHONY: all data panel test test-py test-js test-panel test-persist test-cabinet test-mobile test-offline \
         serve serve-byo serve-stock serve-headless session clean patched patched-debug \
         pages panel-shell trainer test-trainer test-decode test-away \
         hosted hosted-dev cabinet-deps test-hosted-trainer \
-        characters
+        characters icons
 
 all: data panel
 
@@ -127,6 +127,23 @@ test-away: patched panel
 	kill `cat tmp/away.pid` 2>/dev/null; rm -f tmp/away.pid; \
 	exit $$status
 
+## Lay the cabinet out as a phone and play it by touch: taps, holds, double
+## taps, the on-screen keys and the device's keyboard, in portrait and on its
+## side. Starts and stops its own server.
+MOBILE_PORT ?= 8084
+test-mobile: patched panel
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(MOBILE_PORT) & echo $$! > tmp/mobile.pid; \
+	sleep 2; \
+	$(BUN) tools/mobile_check.js --url=http://localhost:$(MOBILE_PORT)/; \
+	status=$$?; kill `cat tmp/mobile.pid` 2>/dev/null; rm -f tmp/mobile.pid; \
+	exit $$status
+
+## Prove the installed cabinet runs with no network: build the static site,
+## serve it with no game, drop a copy in, decode and boot it, then stop the
+## server and reload. Starts and stops its own server.
+test-offline: panel-shell cabinet-deps
+	$(BUN) tools/offline_check.js
+
 ## Prove the browser's storage is on disk: write, quit the browser, start a new
 ## one against the same profile, read back. Also round-trips an export.
 test-persist: patched
@@ -166,8 +183,8 @@ test-hosted-trainer: patched panel-shell trainer
 	status=$$?; kill `cat tmp/ht.pid` 2>/dev/null; rm -f tmp/ht.pid; \
 	exit $$status
 
-test: test-py test-js test-panel test-persist test-cabinet test-away \
-      test-decode test-hosted-trainer
+test: test-py test-js test-panel test-persist test-cabinet test-mobile test-away \
+      test-decode test-hosted-trainer test-offline
 
 ## The hosted cabinet in Docker: no game on the server, each player brings
 ## their own copy and it is decoded and patched in their browser.
@@ -197,6 +214,11 @@ cabinet-deps:
 ## Serve the cabinet for interactive use, against the patched build
 serve: patched
 	$(BUN) cabinet/serve.js --port=$(PORT)
+
+## The home-screen icons, from cabinet/icon.svg. Committed, so this runs only
+## when the drawing changes.
+icons:
+	$(BUN) tools/build_icons.js
 
 ## Build the emulator the trainer needs: a second copy of js-dos's shim with a
 ## hook that reads and writes the guest's memory, written beside the stock one.

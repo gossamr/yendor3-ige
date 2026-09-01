@@ -55,9 +55,14 @@ await mkdir(join(OUT, "web"), { recursive: true });
 }
 
 for (const name of await readdir(join(ROOT, "cabinet"))) {
-  if (SERVER_ONLY.test(name) || !/\.(js|css)$/.test(name)) continue;
+  if (SERVER_ONLY.test(name) || !/\.(js|css|webmanifest|svg|png|ico)$/.test(name)) continue;
+  if (name === "sw.js") continue;   // the root, below
   await cp(join(ROOT, "cabinet", name), join(OUT, "cabinet", name));
 }
+// The service worker at the root, where it controls the whole site, and the
+// favicon, where browsers ask for it by name.
+await cp(join(ROOT, "cabinet/sw.js"), join(OUT, "sw.js"));
+await cp(join(ROOT, "cabinet/favicon.ico"), join(OUT, "favicon.ico"));
 
 for (const name of ["panel.html", "panel.css", "panel.js"]) {
   await cp(join(ROOT, "web", name), join(OUT, "web", name));
