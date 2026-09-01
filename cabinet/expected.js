@@ -10,4 +10,8 @@ export const EXPECTED = {
     restoration: "471e19dc815c0c3706b67dd4b4b09856314bff76aa6a25502bf4d7abac70a57f",
     worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
   },
+  "3489d6b137c71db7": {
+    restoration: "77a929dcc2dc28ae383fe6e5973498f6d6cece2b721660eac83d9963ac3cc630",
+    worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
+  },
 };

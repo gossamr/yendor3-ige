@@ -1,18 +1,12 @@
 # Encounters
 
-Where every monster in the game stands, which monster it is, and what happens
-to it once it is killed. [monsters.md](monsters.md) has the enemy record and
-[combat.md](combat.md) what a monster does with it; this file is about the
-1,862 of them the maps place.
+Where every monster in the game stands, which monster it is, and what happens to it once it is killed. [monsters.md](monsters.md) has the enemy record and [combat.md](combat.md) what a monster does with it; this file is about the 1,862 of them the maps place.
 
-The chain is **code**, and the addresses are below. The counts are **shape**.
-Three of them have to agree, and they do. The save-file reading is
-**measured**, against six saves from the user's own playthrough.
+The chain is **code**, and the addresses are below. The counts are **shape**. Three of them have to agree, and they do. The save-file reading is **measured**, against six saves from the user's own playthrough.
 
 ## A monster is a cell event
 
-The section 28 cell-event table ([map.md](map.md)) has six kinds. The `0x0800`
-kind is a monster, and its argument is a **spawn id**:
+The section 28 cell-event table ([map.md](map.md)) has six kinds. The `0x0800` kind is a monster, and its argument is a **spawn id**:
 
     0x10CB4  the cell carries kind 0x0800 -> test the spawn id's flag
     0x127FB  save section 5, bit `id`: set means the monster is not there
@@ -22,32 +16,21 @@ kind is a monster, and its argument is a **spawn id**:
     0x12602  read section 30 record `id`  -> the enemy record's number
     0x1261D  read section 29 record that  -> the monster itself
 
-**Section 30 is the spawn table.** One `uint16` per spawn id, holding the
-number of the enemy record that id stands for. Its loader stub is image
-`0x1807E`, which sets a record length of 2 and takes the record number from
-`bx`, the id the cell carried. The section is 10,000 bytes and the table is
-only the head of it. Ids run 1 to 1,862, and what follows the last one is other
-data, a run of section sizes among it.
+**Section 30 is the spawn table.** One `uint16` per spawn id, holding the number of the enemy record that id stands for. Its loader stub is image `0x1807E`, which sets a record length of 2 and takes the record number from `bx`, the id the cell carried. The section is 10,000 bytes and the table is only the head of it. Ids run 1 to 1,862, and what follows the last one is other data, a run of section sizes among it.
 
-A spawn id is therefore a monster's identity for the whole game. It names the
-enemy record through section 30, it carries the monster's own bit in the save,
-and image `0x126EE` matches a live slot on it.
+A spawn id is therefore a monster's identity for the whole game. It names the enemy record through section 30, it carries the monster's own bit in the save, and image `0x126EE` matches a live slot on it.
 
 **Three counts agree.** That is what fixes the reading.
 
-- The 1,862 `0x0800` events carry the arguments 1 to 1,862 with no gap and no
-  repeat.
-- Every one of those resolves through section 30 to an enemy record between 1
-  and 72, never to record 0 (the sentinel) and never to record 62 (`NOT USED`).
+- The 1,862 `0x0800` events carry the arguments 1 to 1,862 with no gap and no repeat.
+- Every one of those resolves through section 30 to an enemy record between 1 and 72, never to record 0 (the sentinel) and never to record 62 (`NOT USED`).
 - Every one of the 71 monsters the clue book lists is placed somewhere.
 
-[tools/spawns.py](../tools/spawns.py) decodes it and prints the census;
-[tests/test_spawns.py](../tests/test_spawns.py) asserts all three.
+[tools/spawns.py](../tools/spawns.py) decodes it and prints the census; [tests/test_spawns.py](../tests/test_spawns.py) asserts all three.
 
 ## A monster is killed once
 
-Save section 5's flag says whether a monster is still on its cell. Three
-instructions touch it:
+Save section 5's flag says whether a monster is still on its cell. Three instructions touch it:
 
 | Image | What | When |
 |---|---|---|
@@ -55,44 +38,19 @@ instructions touch it:
 | `0x1276B` | clear the bit | the monster drifts out of the window, `0x100B8` |
 | `0x127FB` | test the bit | the cell is looked up, `0x10CC3` |
 
-Set means the monster is not standing on its cell. Until it is killed, that is
-because it is in one of the eighty live slots instead. The pair of states is
-what makes a monster persist. Walk away and image `0x100B8` clears the bit and
-zeroes the slot, so the monster is back on its own cell, at the position the
-cell event gives it rather than wherever it had wandered to.
+Set means the monster is not standing on its cell. Until it is killed, that is because it is in one of the eighty live slots instead. The pair of states is what makes a monster persist. Walk away and image `0x100B8` clears the bit and zeroes the slot, so the monster is back on its own cell, at the position the cell event gives it rather than wherever it had wandered to.
 
-**Death leaves the bit set.** Image `0x0C57A` finds a slot whose health has
-reached zero, pays the party at `0x1270C` and frees the slot at `0x12CA6`. That
-routine clears the world cell's `0x400` bit and its `+4` word and zeroes the
-156-byte slot, and it does not touch the flag. Nothing else clears it. Image
-`0x1276B` has one caller, and it is the drift-out-of-window path, so a killed
-monster does not come back.
+**Death leaves the bit set.** Image `0x0C57A` finds a slot whose health has reached zero, pays the party at `0x1270C` and frees the slot at `0x12CA6`. That routine clears the world cell's `0x400` bit and its `+4` word and zeroes the 156-byte slot, and it does not touch the flag. Nothing else clears it. Image `0x1276B` has one caller, and it is the drift-out-of-window path, so a killed monster does not come back.
 
-The game therefore holds a fixed population. Each of the 1,862 monsters
-pays out once, and the whole game is worth 13,322,378 experience, 10,989,385
-gold and 66,180 nuore. Nothing regenerates and nothing is farmable.
+The game therefore holds a fixed population. Each of the 1,862 monsters pays out once, and the whole game is worth 13,322,378 experience, 10,989,385 gold and 66,180 nuore. Nothing regenerates and nothing is farmable.
 
-**Measured.** Six saves from a playthrough have between 52 and 131 of these
-flags set. Every set flag in all six names a monster standing on a map that
-party had reached, which is Yendor, Thaine 6, 9 and 10, Kingdom of Bariag, the
-Keep and the Sewers of Bariag. None falls outside the range the maps use. The
-two the Athaneum's south gate sets, 37 and then 36, are the pair of centipedes
-on adjacent cells of Yendor, where that gate leads. They are monsters coming
-off the map as the party sees them, not gate state.
-[tools/saves.py](../tools/saves.py) prints the flags and `spawns.gone` names the
-monsters behind them.
+**Measured.** Six saves from a playthrough have between 52 and 131 of these flags set. Every set flag in all six names a monster standing on a map that party had reached, which is Yendor, Thaine 6, 9 and 10, Kingdom of Bariag, the Keep and the Sewers of Bariag. None falls outside the range the maps use. The two the Athaneum's south gate sets, 37 and then 36, are the pair of centipedes on adjacent cells of Yendor, where that gate leads. They are monsters coming off the map as the party sees them, not gate state. [tools/saves.py](../tools/saves.py) prints the flags and `spawns.gone` names the monsters behind them.
 
 ## Which monsters stand where
 
-47 of the 54 map slots hold monsters. The seven that hold none are ATHANEUM,
-THE HOLY ORDER, ELFIN CITY, VISHAN'S STRONGHOLD LEVEL 1, DELIA'S ISLAND, GOLD
-MINE and THE WAY OF THE ORDER. A map holds one to four kinds, and on 26 of
-the 47 it holds two. Eleven monsters are placed once each: ACOKNIGHT, BLAZIOS,
-CHAOTIC MINOTAUR, KING BARIAG, KING SLATOR, PALTIVAR, PIXIE LEADER, QUEEN
-OBVERSIA, TITAN LORD, VISHAN and WASP QUEEN.
+47 of the 54 map slots hold monsters. The seven that hold none are ATHANEUM, THE HOLY ORDER, ELFIN CITY, VISHAN'S STRONGHOLD LEVEL 1, DELIA'S ISLAND, GOLD MINE and THE WAY OF THE ORDER. A map holds one to four kinds, and on 26 of the 47 it holds two. Eleven monsters are placed once each: ACOKNIGHT, BLAZIOS, CHAOTIC MINOTAUR, KING BARIAG, KING SLATOR, PALTIVAR, PIXIE LEADER, QUEEN OBVERSIA, TITAN LORD, VISHAN and WASP QUEEN.
 
-Slot is `(area, level)`, the block of the world grid [map.md](map.md)
-describes.
+Slot is `(area, level)`, the block of the world grid [map.md](map.md) describes.
 
 | Map | Slot | Monsters | What stands there |
 |---|---|---|---|
@@ -220,5 +178,4 @@ describes.
 | BLAZIOS | 42 | 1 | 500,000 | 500,000 |
 | PALTIVAR | 45 | 1 | 1,000,000 | 1,000,000 |
 
-The next smallest counts after the eleven singletons are SNOW GIANT at four and
-FROST DWARF TOWER at six.
+The next smallest counts after the eleven singletons are SNOW GIANT at four and FROST DWARF TOWER at six.

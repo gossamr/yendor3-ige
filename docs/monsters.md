@@ -74,25 +74,23 @@ Four values appear: `0x8000` on 13 monsters, `0x4000` on 8, `0x2000` on 12, `0x6
 
 **The word is the set of damage types a monster resists.** Every blow builds a word describing itself. The applier ANDs that word with the monster's word and halves the damage once for each bit that survives. Image `0x0C690` does this for a blow and image `0x1D8AF` for a spell, and the chain at `0x1D72F` is the same test written out bit by bit.
 
-**The game sorts the bits into its two rows itself.** The F2 page's twelve rows are twelve calls to two helpers, each passing the row's mask in `ax` and its label in `bx`. The ten immunity rows pass one bit each, exactly as the table above has them. The two resistance rows do not:
+A shot's word is built at image `0x0C746` from the weapon's own properties, so a plain LONG BOW gives `0x8000` and a LONG BOW +3 gives `0x8800`, which is physical and magical together. Bit 11 is what the enchantment adds, and a monster carrying bit 11 halves the shot for it, measured below. No monster in the game carries bit 11, so in play an enchanted shot is halved by bit 15 exactly as a plain one is. A spell's word is record 76 masked with `0xFE00`, bit 8 being the family restriction rather than a damage type. Across all 107 spells that mask takes three values: 0, `0x200` and `0x2000`.
 
-| Row | Mask | Bits |
-|---|---|---|
-| MAGIC DAMAGE (`0x07E6A`) | `0x3A00` | 13, 12, 11, 9 |
-| PHYSICAL DAMAGE (`0x07E9C`) | `0xC000` | 15, 14 |
+**The clue book's two damage rows are wrong about ten of the thirty-six monsters they light.** They are worth writing down only for that reason. The page lights PHYSICAL DAMAGE for 22 monsters and 13 of those halve a shot; it lights MAGIC DAMAGE for 16 and 13 of those halve a spell. CHAMELEON MAN, FIRE DWARF, GHOST, KING BARIAG, KING SLATOR, KNIGHT, QUEEN OBVERSIA, SORCERER, SPECTRE and TITAN LORD are printed RESISTANT and reduce nothing at all.
 
-Which gives the vocabulary its shape:
+The rows come from a different test than the applier runs. The page's twelve rows are twelve calls to two helpers, each passing the row's mask in `ax` and its label in `bx`. The ten immunity rows pass one bit each, exactly as the table above has them. The two damage rows pass a mask over the resistance word, MAGIC DAMAGE `0x3A00` at image `0x07E6A` and PHYSICAL DAMAGE `0xC000` at `0x07E9C`, and the magic row is printed a second time from bit 4 of the *immunity* word at `0x07E6D`. Four of those seven sources are answered by no blow in the game, and the applier reads the resistance word and never the immunity one:
 
-| Bit | Row | Set on a blow when | Monsters |
-|---|---|---|---|
-| 15 | physical | it is a shot, or the fixed item damage (`0x0C8E4`) | 13 |
-| 14 | physical | never | 9 |
-| 13 | magic | the spell is one of the 63 ordinary damage spells | 13 |
-| 12 | magic | never | 0 |
-| 11 | magic | the weapon behind the shot is enchanted (`0x0C752`) | 0 |
-| 9 | magic | the spell is one of the 7 anti-undead spells | 0 |
+| Source | Row it prints | Set on a blow when | Monsters | What it does |
+|---|---|---|---|---|
+| resistance 15 | physical | it is a shot, or the fixed item damage (`0x0C8E4`) | 13 | halves the shot |
+| resistance 14 | physical | never | 9 | nothing |
+| resistance 13 | magic | the spell is one of the 59 ordinary damage spells | 13 | halves the spell |
+| resistance 12 | magic | never | 0 | nothing |
+| resistance 11 | magic | the weapon behind the shot is enchanted (`0x0C752`) | 0 | halves the shot, but nothing carries it |
+| resistance 9 | magic | the spell is one of the 4 anti-undead spells | 0 | halves the spell, but nothing carries it |
+| immunity 4 | magic | never, no spell carries element bit 4 | 4 | nothing |
 
-An enchanted weapon is filed under *magic*, which is the grouping explaining itself. The blow is partly magical, so magic resistance halves it. A shot's word is built at image `0x0C746` from the weapon's own properties, so a plain LONG BOW gives `0x8000` and a LONG BOW +3 gives `0x8800`, which is physical and magical together. A spell's word is record 76 masked with `0xFE00`, bit 8 being the family restriction rather than a damage type. Across all 107 spells that mask takes three values: 0, `0x200` and `0x2000`.
+Two sources do the whole of the work, resistance 15 and resistance 13, and they print on different rows. ACOKNIGHT carries 15 and KING BARIAG carries 14; both read RESISTANT on PHYSICAL DAMAGE, and only the first halves anything. FIRE DWARF, SORCERER and CHAMELEON MAN read RESISTANT on MAGIC DAMAGE off immunity bit 4 alone, all three carrying `0x001B` there. BLAZIOS reads on both rows out of three sources, resistance 14, resistance 13 and immunity 4, and only the middle one reaches a blow.
 
 **Measured.** [tools/fight_probe.js](../tools/fight_probe.js) sets a centipede's resistance word before boot, walks a party out to it and reads its health out of the emulator between blows. With the party's accuracy at the resolver's maximum margin every swing lands for the same number, so one blow shows a halving:
 
@@ -106,11 +104,31 @@ An enchanted weapon is filed under *magic*, which is the grouping explaining its
 
 Bit 13 halves the spell. Bit 14 changes nothing. Bit 15 changes nothing against these two blows, neither of which is a shot. With every bit set at once a melee swing still lands in full, which is `0x00E73` and `0x00EC8` from the other side: a swing builds no word, so no resistance reaches it. The `0xFFFF` row also shows the chain halving once rather than once per bit.
 
-**Bit 14 is the one physical bit that no blow sets.** Nine monsters carry it, and eight of those carry nothing else. Bit 12 is set by nothing and carried by no monster. Bits 11 and 9 are set by something and carried by no monster.
+**Measured.** [tools/fight_probe.js](../tools/fight_probe.js) again, with `--immunity` setting record 100 and `--element` setting the spell's record 74. The party's weapon damage is forced to 0 so the three swings ahead of the cast contribute nothing and the reading is the cast alone. MAGIC ATTACK at 200 damage, five rounds per run, every round identical:
 
-**Bits 15 and 14 print on the same row.** ACOKNIGHT carries bit 15 and KING BARIAG carries bit 14, and both show `RESISTANT` on PHYSICAL DAMAGE. BLAZIOS carries 14 and 13, and shows it on both rows.
+| Spell element | Monster immunity | Cast lands | |
+|---|---|---|---|
+| `0x0000` | `0x0000` | 124 | the baseline |
+| `0x0004` cold | `0x0004` cold | **0** | a matching bit zeroes it |
+| `0x0008` fire | `0x0004` cold | 124 | a bit that does not match does nothing |
+| `0x0000` | `0x0010` magic | 124 | bit 4 against a spell that does not carry it |
+| `0x0010` magic | `0x0010` magic | **0** | bit 4 zeroes like any other bit |
+| `0x0000` | `0x001B` | 124 | the SORCERER's own word, whole |
 
-Magic resistance has a second source, which is bit 4 of the immunity word, tested at image `0x07E6D` immediately after the magic row's own mask. Four monsters carry it: BLAZIOS, CHAMELEON MAN, FIRE DWARF and SORCERER. All four read `0x001B` there, which is power, electric, fire and magic together. On three of them bit 4 is the whole of the magic row, because their resistance word holds nothing the row's `0x3A00` mask tests. BLAZIOS carries bit 13 as well, so its magic row has both sources.
+Row five is why bit 4 is not a special case in the code: the machinery fires on it exactly as it fires on cold. Row four and row six are why it does nothing in play. Immunity zeroes, and it never halves.
+
+**Measured.** A volley, which needs the party through the gate with the monster still at range. The probe searches the heap from the Athaneum, before the walk rather than after it, and walks in 300ms steps; the monster is in hand-to-hand by the end of that first round, so each run throws one volley and it is round zero. Four characters shoot at damage 100:
+
+| Missile | Resistance | Volley | Per shot |
+|---|---|---|---|
+| LONG BOW | `0x0000` | 976 | 244 |
+| LONG BOW | `0x8000` | 488 | **122** |
+| LONG BOW | `0x0800` | 976 | 244 |
+| LONG BOW +3 | `0x0000` | 976 | 244 |
+| LONG BOW +3 | `0x0800` | 488 | **122** |
+| LONG BOW +3 | `0x8000` | 488 | **122** |
+
+Rows three and five are the pair. The same resistance word halves the enchanted bow and leaves the plain one whole, so the enchantment does put bit 11 on the blow and a monster carrying bit 11 does answer it. Rows two and six are bit 15 answering both bows for being shots. Nothing carries bit 11, so the third column of the table above is what a player meets and this pair is what the record means.
 
 ## Word 96
 

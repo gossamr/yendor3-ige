@@ -25,6 +25,24 @@
 // `*` click the first row of a list, `s` shoot. `aaac_` is three swings and a
 // spell, which measures both paths at once.
 //
+// A volley needs the party through the gate with the monster still at range,
+// and everything before the first key press is time the monster spends closing.
+// So the heap search runs from the Athaneum rather than at the gate, and
+// `--step` shortens the walk. One volley per run, on round zero; by round one
+// the monster is in hand-to-hand and `S` is refused. `--how=ssss --engage=''`
+// is the shape of it.
+//
+//   missile       resistance   volley   per shot
+//   LONG BOW      0x0000        976      244
+//   LONG BOW      0x8000        488      122     bit 15, it is a shot
+//   LONG BOW      0x0800        976      244
+//   LONG BOW +3   0x0000        976      244
+//   LONG BOW +3   0x0800        488      122     bit 11, the weapon is enchanted
+//   LONG BOW +3   0x8000        488      122
+//
+// The third and fifth rows are the pair: one resistance word, halving the
+// enchanted bow and leaving the plain one whole. No monster carries bit 11.
+//
 // Two traps this fell into, both worth knowing before the next probe:
 //
 //   * The executable's own image sits in the emulator's memory beside the live
@@ -60,8 +78,21 @@ const arg = (n, d) => {
 };
 const outDir = arg("out", "tmp/fight-probe");
 const resist = Number(arg("resist", "0"));
+// The monster's immunity word at record 100, and the spell's element word at
+// record 74. Immunity is the other of the two tests: the applier ANDs these
+// two words and a match sets the damage to zero (docs/combat.md, image
+// 0x1d6f0), where resistance ANDs the blow word against record 102 and
+// halves. Both default to "leave the record alone".
+const immunity = arg("immunity", "");
+const element = arg("element", "");
 const blows = Number(arg("blows", "12"));
 const how = arg("how", "a");            // a attack, s shoot, c cast
+// What a swing lands for. Forced to 100 by default, which is what measures a
+// melee blow. Set it to 0 to measure a cast instead: a round is one action per
+// character and only the fourth of them casts, so the three swings in front of
+// it have to contribute something known. A landed hit always does at least 1
+// (image 0x1589f), so at 0 damage they contribute exactly one each.
+const dmg = Number(arg("dmg", "100"));
 const hand = Number(arg("hand", "560"));    // 2-HANDED SWORD +10 by default
 const missile = Number(arg("missile", "525"));  // plain CROSSBOW
 mkdirSync(outDir, { recursive: true });
@@ -71,7 +102,7 @@ const say = (s) => { console.log(s); appendFileSync(log, s + "\n"); };
 
 // The enemy table: 73 records of 106 bytes; the centipede is record 2.
 const ENEMIES = 0x417075, RECORD = 106, CENTIPEDE = 2;
-const HEALTH = 30, DAMAGE = 40, ACCURACY = 34, RESISTANCE = 102;
+const HEALTH = 30, DAMAGE = 40, ACCURACY = 34, RESISTANCE = 102, IMMUNITY = 100;
 const WORD96 = 96, WORD98 = 98, GROUP = 0xE000;
 
 buildTracedEmulator("/workspace/tmp/fight-fsops.json", true, true, "wdosbox-x.js");
@@ -89,6 +120,11 @@ const get = (off) => world.contents[rec + off] | (world.contents[rec + off + 1] 
 say(`centipede resistance 0x${get(RESISTANCE).toString(16).padStart(4, "0")}`
   + ` -> 0x${resist.toString(16).padStart(4, "0")}`);
 put(RESISTANCE, resist);
+if (immunity !== "") {
+  say(`centipede immunity 0x${get(IMMUNITY).toString(16).padStart(4, "0")}`
+    + ` -> 0x${Number(immunity).toString(16).padStart(4, "0")}`);
+  put(IMMUNITY, Number(immunity));
+}
 // A monster with eight health dies in four blows, which is too few readings
 // to see a halving in. Give it more health than the run can spend, and take
 // its own attack away so the party is never interrupted.
@@ -119,19 +155,32 @@ for (const slot of [6, 7, 8, 9]) {
     world.contents[base + off + 1] = (v >> 8) & 0xff;
   };
   set(HAND, hand); set(MISSILE, missile);
-  set(HIT_ACC, 250); set(HIT_DMG, 100);
-  set(SHOT_ACC, 250); set(SHOT_DMG, 100);
+  set(HIT_ACC, 250); set(HIT_DMG, dmg);
+  set(SHOT_ACC, 250); set(SHOT_DMG, dmg);
 }
-say(`party armed: hand=${hand} missile=${missile}, damage forced to 100`);
+say(`party armed: hand=${hand} missile=${missile}, damage forced to ${dmg}`);
 
 // MAGIC ATTACK costs two nuore and the party starts with none, so the spell
 // list opens and nothing can be cast from it. Make it free and make it hurt.
 const SPELLS = 0x41B5BF, SPELL_RECORD = 80;
 const MAGIC_ATTACK = 1, SPELL_MP = 24, SPELL_NUORE = 26, SPELL_DAMAGE = 46;
+const SPELL_ELEMENT = 74;
 const spell = SPELLS + MAGIC_ATTACK * SPELL_RECORD;
 for (const [off, v] of [[SPELL_MP, 0], [SPELL_NUORE, 0], [SPELL_DAMAGE, 200]]) {
   world.contents[spell + off] = v & 0xff;
   world.contents[spell + off + 1] = (v >> 8) & 0xff;
+}
+// MAGIC ATTACK's element word is zero, so no immunity can reach it as it
+// ships. Setting it is what turns the immunity test from an assertion into a
+// measurement: a run that gives the spell a bit and the monster the same bit
+// says whether the zeroing fires at all.
+if (element !== "") {
+  const was = world.contents[spell + SPELL_ELEMENT]
+    | (world.contents[spell + SPELL_ELEMENT + 1] << 8);
+  world.contents[spell + SPELL_ELEMENT] = Number(element) & 0xff;
+  world.contents[spell + SPELL_ELEMENT + 1] = (Number(element) >> 8) & 0xff;
+  say(`MAGIC ATTACK element 0x${was.toString(16).padStart(4, "0")}`
+    + ` -> 0x${Number(element).toString(16).padStart(4, "0")}`);
 }
 say("MAGIC ATTACK: free, 200 damage");
 
@@ -166,14 +215,7 @@ for (const k of "6789") { await tap(ci, A(k), 120); await sleep(700); }
 await tap(ci, A("d"), 120); await sleep(3000);
 await tap(ci, A("e"), 120); await sleep(13000);
 await tap(ci, A("r"), 120); await sleep(2500);
-// Up to the gate and through it, and no further: the monster is a step or
-// two beyond, and it gets a move for every one the party spends.
 const KEY = { "^": KEYS.up, v: KEYS.down, "<": KEYS.left, ">": KEYS.right, " ": KEYS.space };
-for (const m of arg("walk", "<<^^^^^^^^^^^^ ")) {
-  await tap(ci, KEY[m], 120); await sleep(1300);
-}
-shot("00-gate");
-
 const peek16 = (a) => { const b = globalThis.__peek(a, 2); return b[0] | (b[1] << 8); };
 const str = (a, n) => String.fromCharCode.apply(null, globalThis.__peek(a, n));
 // The data segment, anchored on two strings the game keeps at known offsets in
@@ -203,6 +245,17 @@ const ds = globalThis.__find("PICTURES.VGA", 32)
   .find((base) => str(base + WORLD, 9) === "WORLD.DAT" && peek16(base + CURRENT) !== 0);
 if (ds === undefined) { say("could not find the data segment"); await ci.exit(); process.exit(1); }
 say(`data segment at heap 0x${ds.toString(16)}`);
+
+// The walk comes after the search, not before it. The search reads the whole
+// 64 MB heap and takes seconds, and the monster closes while the party stands,
+// so a walk that finishes first has spent its distance by the time the first
+// key is pressed. Searching from the Athaneum, where nothing is closing,
+// leaves the party through the gate with the monster still at range, which is
+// the only place a volley can be thrown: `S` is refused in hand-to-hand.
+for (const m of arg("walk", "<<^^^^^^^^^^^^ ")) {
+  await tap(ci, KEY[m], 120); await sleep(Number(arg("step", "1300")));
+}
+shot("00-gate");
 // Reading eighty-three slots one at a time is that many calls across the
 // emulator boundary, and it costs enough time for the monster to close before
 // the first shot. Two bulk reads cost nothing: the engaged buffers are
@@ -269,7 +322,10 @@ for (let i = 0; i < blows; i++) {
     + (i === 0 ? `  resist=0x${(after[0] || {}).resist?.toString(16)}` : ""));
   if (i < 3) shot(`blow-${String(i).padStart(2, "0")}`);
 }
-say(`RESULT resist=0x${resist.toString(16)} how=${how} hits=${hits}/${blows} total=${total}`
+say(`RESULT resist=0x${resist.toString(16)}`
+  + ` immunity=${immunity === "" ? "stock" : "0x" + Number(immunity).toString(16)}`
+  + ` element=${element === "" ? "stock" : "0x" + Number(element).toString(16)}`
+  + ` how=${how} hits=${hits}/${blows} total=${total}`
   + ` mean=${hits ? (total / hits).toFixed(2) : "-"}`);
 await ci.exit();
 process.exit(0);

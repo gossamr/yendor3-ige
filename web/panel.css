@@ -34,6 +34,13 @@
   --venom:     #8ec63f;
   --rot:       #a08a3c;
   --force:     #b06ef2;
+  /* The two damage types that are not elements, each needing a hue no element
+     is using. Holy is pale rather than yellow, since gold and --spark are a
+     shade apart and a holy spell must not read as a lightning one. Nothing
+     else in the panel is rose. Both sit further from every other hue than the
+     closest existing pair does from itself. */
+  --hallowed:  #efe7cf;
+  --typeless:  #e05fa8;
 }
 
 * { box-sizing: border-box; }
@@ -395,6 +402,17 @@ ol.map-own li::marker { color: var(--gold); font-variant-numeric: tabular-nums; 
 /* --- spells ------------------------------------------------------------ */
 
 .chipbar { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0 0 .8rem; }
+/* What a spell does, the tab's second axis. Written as plain filters rather
+   than as the bordered buttons the class row uses, so two rows of controls do
+   not read as one control repeated. */
+.spell-types { display: flex; flex-wrap: wrap; gap: .1rem 1.1rem;
+               margin: 2.45rem 0 0; }
+.spell-types .type-filter { background: none; border: 0; padding: 0 0 .1rem;
+                            font: inherit; font-size: 12px; cursor: pointer;
+                            color: var(--stone-700);
+                            border-bottom: 1px solid transparent; }
+.spell-types .type-filter[aria-pressed="true"] { color: var(--amber-lit);
+                                                 border-bottom-color: var(--amber-dim); }
 
 .spell { border-bottom: 1px solid var(--stone-300); padding: .6rem 0; }
 .spell:last-child { border-bottom: 0; }
@@ -406,6 +424,14 @@ ol.map-own li::marker { color: var(--gold); font-variant-numeric: tabular-nums; 
 .chip.harm   { color: var(--blood-lit); }
 .chip.heal   { color: var(--moss); }
 .chip.util   { color: var(--stone-700); }
+/* What a monster's resistance can answer. Magic is the arcane the spell tab
+   already uses for casting; the two that nothing halves take the quieter ink,
+   since the reader's question is which spells are cut. */
+/* The mark on a damage chip, for the eleven spells nothing halves. Drawn like
+   an element glyph and inheriting the chip's color, so the shape adds a
+   channel without spending a second one. */
+.icon.mark-glyph { width: 1.15em; height: 1.15em; vertical-align: -.22em;
+                   margin-left: .3rem; }
 /* The scope chip is colored by side: amber lands on the enemy, green on your
    own party. The word says how many, the color says who. */
 .icon { width: 1em; height: 1em; vertical-align: -.15em; }
@@ -441,6 +467,11 @@ ol.map-own li::marker { color: var(--gold); font-variant-numeric: tabular-nums; 
 .chip.magic,
 .chip.hexing,
 .chip.cursing   { color: var(--arcane); }
+/* The damage type, which is the other axis: an element says what immunity
+   zeroes, a type says what resistance halves. Four spells are holy and seven
+   carry no type at all, and each set takes a hue of its own. */
+.chip.holy      { color: var(--hallowed); }
+.chip.typeless  { color: var(--typeless); }
 
 .spell-meta { display: flex; flex-wrap: wrap; gap: .1rem .9rem; margin: .3rem 0 0;
               color: var(--stone-700); font-size: 12px; }

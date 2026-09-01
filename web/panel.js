@@ -199,6 +199,25 @@
   const FAMILY_INSECT = 9, FAMILY_UNDEAD = 13;
   const FAMILIES = { [FAMILY_INSECT]: "insect", [FAMILY_UNDEAD]: "undead" };
 
+  /**
+   * What this monster actually reduces, which is not what the game's own page
+   * says it reduces.
+   *
+   * The clue book's two damage rows are lit by seven sources and only three of
+   * them reach a blow, so the page prints RESISTANT for ten monsters that
+   * reduce nothing at all (docs/monsters.md measures it). The panel exists to
+   * say what happens, so these read the monster's resistance word against the
+   * bits a blow can actually carry, and the card prints from these rather than
+   * from the `resist_*` booleans beside them, which are the page's rows.
+   *
+   * A spell's blow carries bit 13 when it is one of the ordinary damage spells
+   * and bit 9 when it is one of the anti-undead ones. A shot carries bit 15,
+   * and bit 11 as well when the weapon behind it is enchanted.
+   */
+  const SPELL_BLOWS = 0x2200, SHOT_BLOWS = 0x8800;
+  const halvesSpells = (m) => !!((m.resistance || 0) & SPELL_BLOWS);
+  const halvesShots = (m) => !!((m.resistance || 0) & SHOT_BLOWS);
+
   const REWARDS = ["experience", "gold", "food", "nuore"];
 
   function statList(m, fields) {
@@ -224,9 +243,13 @@
     const body = el("tbody");
     for (const effect of D.labels.effects) {
       let value = "", cls = "none";
+      /* Resistant where something is halved, blank where nothing is. The
+         game's own page lights this row for ten monsters that reduce nothing,
+         and the panel is here to say what happens rather than what it says. */
       if (immune.has(effect)) { value = "Immune"; cls = "immune"; }
-      else if (effect === "MAGIC DAMAGE" && m.resist_magic) { value = "Resistant"; cls = "resist"; }
-      else if (effect === "PHYSICAL DAMAGE" && m.resist_physical) {
+      else if (effect === "MAGIC DAMAGE" && halvesSpells(m)) {
+        value = "Resistant"; cls = "resist";
+      } else if (effect === "PHYSICAL DAMAGE" && halvesShots(m)) {
         value = "Resistant"; cls = "resist";
       }
       body.append(el("tr", { className: cls }, [
@@ -268,18 +291,10 @@
     card.append(el("h5", { textContent: "Immunities and resistances",
                            style: "margin-top:1.1rem" }));
     card.append(effectTable(m));
-    // What a resistance is worth, which the game's own page does not say. Each
-    // one answers a damage type and halves damage of that type; a melee swing
-    // carries no type and is never halved. Two types share the physical row,
-    // and one of them is carried by nothing in the game.
+    // What a resistance is worth, in the terms a player fights in.
     const worth = [];
-    if (m.resist_shot) worth.push("Halves a shot.");
-    if (m.resist_magic) worth.push("Halves a damage spell.");
-    if (worth.length) worth.push("A melee swing is unaffected.");
-    if (m.resist_unmatched) {
-      worth.push("The physical row also stands for a damage type nothing in "
-        + "the game carries, so that part of it never applies.");
-    }
+    if (halvesShots(m)) worth.push("Halves a shot.");
+    if (halvesSpells(m)) worth.push("Halves a damage spell.");
     if (worth.length) {
       card.append(el("p", { className: "note", style: "margin:.5rem 0 0",
                             textContent: worth.join(" ") }));
@@ -2626,6 +2641,106 @@
   /** What a spell does, in one word: the thing you scan the list for. */
   // Harm and heal are both a magnitude; the color says which, so the chip only
   // needs the number. PERFECT HEALTH stores 9999 to mean "all health points".
+  /**
+   * The mark a damage spell needs beyond its number, which is none for most of
+   * them.
+   *
+   * Record 76 under `0xFE00` is the blow's damage type, and it decides what a
+   * monster's resistance can answer. 59 of the 70 damage spells carry the
+   * ordinary one and are halved by a magic-resistant monster, so that is the
+   * case a reader can assume and marking it would mark almost everything.
+   *
+   * The other eleven are the ones worth marking. Four are holy, which is the
+   * anti-undead bit, and seven carry no type at all. No monster in the game
+   * answers either, so both land whole. That is the whole difference between
+   * two spells of the same size: Turbulent Atmosphere at 450 lands whole where
+   * Earthquake at 350 is halved, and the game's own page says neither.
+   */
+  const BLOW_MAGIC = 0x2000, BLOW_UNDEAD = 0x0200, SPELL_BLOW_MASK = 0xfe00;
+  /* Drawn in the chip beside the figure, the same way an element is: a cross
+     for holy and a ring for the ones that carry no type at all, each hue its
+     own. */
+  const MARK_ICONS = {
+    holy: ({ line }) => line("M6 1.4v9.2M3.1 4.6h5.8"),
+    untyped: ({ line }) => line("M6 2.1a3.9 3.9 0 1 0 .01 0z"),
+  };
+  /** Whether a magic-resistant monster halves this spell. */
+  const halvedByResistance = (s) => !!((s.blow || 0) & SPELL_BLOW_MASK & BLOW_MAGIC);
+
+  /* What a spell does, as the tab's second filter. Unresistable is a subset of
+     damage rather than a category beside it, so it never sweeps in a heal. */
+  const SPELL_TYPES = [
+    [null, "All types", () => true],
+    ["damage", "Damage", (s) => !!s.damage],
+    ["unresistable", "Unresistable", (s) => !!s.damage && !halvedByResistance(s),
+     "damage no magic-resistant monster halves"],
+    ["heal", "Heal", (s) => !s.damage && spellKind(s).cls === "heal"],
+    ["util", "Utility", (s) => !s.damage && spellKind(s).cls === "util"],
+  ];
+  const spellTypeTest = () =>
+    (SPELL_TYPES.find(([v]) => v === (ui.spellType || null)) || SPELL_TYPES[0])[2];
+
+  /**
+   * The description with any sentence the record contradicts taken out.
+   *
+   * A spell is zeroed when its element word at record 74 shares a bit with the
+   * monster's immunity word at record 100, and nothing else does it. Two of the
+   * clue book's descriptions name an immunity their record does not carry.
+   * Sword of Ice says cold stops it and carries no element at all, so every
+   * monster takes its 75 whole. Freeze says cold and carries FREEZING, a
+   * different bit: ten monsters are immune to cold and twenty-two to freezing,
+   * three to both, so the sentence is wrong in both directions.
+   *
+   * A third names a figure the record does not carry: Eradicate's text says 400
+   * points where its damage field holds 480, and the field is what the resolver
+   * reads (docs/monsters.md measures a blow against it).
+   *
+   * Each is corrected where the record says what the right answer is, and only
+   * dropped where it does not. Freeze names freezing, Eradicate names 480.
+   * Sword of Ice carries no element at all, so its claim has nothing to be
+   * restated as and the sentence goes.
+   */
+  const NAMED_ELEMENTS = { cold: "COLD", fire: "FIRE", electricity: "ELECTRIC",
+                           electric: "ELECTRIC", power: "POWER" };
+  const QUOTED_POINTS = /((?:up to|of)\s+)(\d{1,4})(\s*points?)/i;
+  function trueDescription(s) {
+    const carried = (s.element || []).map((e) => e.toUpperCase());
+    const figure = s.damage || s.amount || 0;
+    const sentences = String(s.description || "").match(/[^.]+\.?\s*/g);
+    if (!sentences) return s.description || "";
+    const kept = [];
+    for (let sentence of sentences) {
+      const text = sentence.toLowerCase();
+      const named = Object.entries(NAMED_ELEMENTS).find(
+        ([word, element]) => text.includes(`immune to ${word}`)
+          && !carried.includes(element));
+      if (named) {
+        // Nothing to name in its place, so the claim goes with it.
+        if (!carried.length) continue;
+        sentence = sentence.replace(new RegExp(`immune to ${named[0]}`, "i"),
+                                    `immune to ${carried[0]}`);
+      }
+      const quoted = QUOTED_POINTS.exec(sentence);
+      if (quoted && figure && Number(quoted[2]) !== figure) {
+        sentence = sentence.replace(QUOTED_POINTS, `$1${figure}$3`);
+      }
+      kept.push(sentence);
+    }
+    return kept.join("").trim();
+  }
+
+  function damageMark(s) {
+    if (!s.damage) return null;
+    const word = (s.blow || 0) & SPELL_BLOW_MASK;
+    if (word & BLOW_MAGIC) return null;
+    if (word & BLOW_UNDEAD) {
+      return { kind: "holy", cls: "holy",
+               note: "holy damage, so nothing halves it" };
+    }
+    return { kind: "untyped", cls: "typeless",
+             note: "no damage type, so nothing halves it" };
+  }
+
   function spellKind(s) {
     if (s.damage) {
       return {
@@ -2845,7 +2960,9 @@
     //
     // Each chip carries its own count, under whatever is in the search box. So
     // the row says where the hits are before you press anything, so search for
-    // "fire" and the classes that have none read (0).
+    // "fire" and the classes that have none read (0). Both rows count against
+    // the search box and not against each other, so each says what it would
+    // give on its own.
     const found = D.spells.filter((s) => s.listed
       && (matches(s.name) || matches(s.description)));
     const countFor = (c) => (c
@@ -2863,6 +2980,7 @@
     };
     addClass("All classes", null);
     for (const c of MAGIC_CLASSES) addClass(titleCase(c), c);
+
 
     // What the costs are worth, folded into this tab rather than given one of
     // its own: it is the same six classes seen a second way, and it is scoped
@@ -2882,7 +3000,26 @@
     root.append(costs);
     root.append(filter);
 
-    let hits = found;
+    /* The other axis, what a spell does. Its own row and its own look: the
+       class chips are bordered buttons, and a second row of those would read
+       as the same control repeated rather than as a different question.
+       Unresistable belongs here because it is a kind of damage, not a kind of
+       caster: 59 of the 70 damage spells are halved by a magic-resistant
+       monster and these eleven are the rest. */
+    const kinds = el("div", { className: "spell-types" });
+    for (const [value, label, test, hint] of SPELL_TYPES) {
+      const b = el("button", { type: "button", className: "type-filter",
+                               title: hint || "" });
+      b.append(document.createTextNode(label));
+      b.append(el("span", { className: "count",
+                            textContent: ` (${found.filter(test).length})` }));
+      b.setAttribute("aria-pressed", String((ui.spellType || null) === value));
+      b.onclick = () => { ui.spellType = value; renderSpells(root); };
+      kinds.append(b);
+    }
+    root.append(kinds);
+
+    let hits = found.filter(spellTypeTest());
     if (ui.spellClass) {
       hits = hits.filter((s) => s.classes.some((c) => c.class === ui.spellClass));
       // Sorted by the level that class needs, which is the order you learn them.
@@ -2908,13 +3045,19 @@
       head.append(name);
       const kind = spellKind(s);
       const element = (s.element || [])[0];
+      /* On the damage chip rather than beside it: how much a spell does and
+         what a monster can take off it are one reading. */
+      const mark = damageMark(s);
       const chip = el("span", {
-        className: `chip ${kind.cls}${element ? " " + elementClass(element) : ""}`,
-        title: element ? `${kind.title}, ${elementNote(element)}` : (kind.title || ""),
+        className: `chip ${kind.cls}${element ? " " + elementClass(element) : ""}`
+          + (mark && mark.cls ? " " + mark.cls : ""),
+        title: [kind.title, element && elementNote(element), mark && mark.note]
+          .filter(Boolean).join(", "),
         textContent: kind.label,
       });
       const glyph = element && ELEMENT_ICONS[element];
       if (glyph) chip.append(icon("element-glyph", glyph));
+      if (mark) chip.append(icon(`mark-glyph ${mark.kind}`, MARK_ICONS[mark.kind]));
       head.append(chip);
       const reach = spellReach(s);
       if (reach) {
@@ -2945,9 +3088,12 @@
       card.append(meta);
 
       if (s.classes.length) card.append(castRow(s));
-      const desc = el("p", { className: "spell-desc" });
-      desc.append(highlight(sentenceCase(s.description)));
-      card.append(desc);
+      const text = trueDescription(s);
+      if (text) {
+        const desc = el("p", { className: "spell-desc" });
+        desc.append(highlight(sentenceCase(text)));
+        card.append(desc);
+      }
       root.append(card);
     }
   }
@@ -3765,7 +3911,7 @@
     root.append(el("p", { className: "note", textContent:
       `One training costs ${lv.train_base} gold, times the price factor below, `
       + `times the level you are training away from. A factor of 5 is therefore `
-      + `${lv.train_base * 5} gold a level and a factor of 10 is `
+      + `${lv.train_base * 5} gold per level and a factor of 10 is `
       + `${(lv.train_base * 10).toLocaleString()}. The ladder above is priced at `
       + `the cheapest factor available to you at each level.` }));
 
@@ -3795,7 +3941,7 @@
     root.append(el("h4", { className: "curve-sub", textContent: "Bonus points" }));
     root.append(el("p", { className: "note", textContent:
       `Each training hands you 13% of your base charisma, rounded, up to `
-      + `${lv.bonus_cap}. Charisma rises 2 a level on its own, so the payout `
+      + `${lv.bonus_cap}. Charisma rises 2 per level on its own, so the payout `
       + `climbs with you and stops climbing here.` }));
 
     // The payout is a staircase, and only the steps are worth showing.
@@ -4174,7 +4320,7 @@
   // the level's hardest monster and misses the one wearing the most armor has
   // not met the goal, so each stat comes from whichever monster carries the
   // most of it and the evidence rows name them. Bosses are left out until
-  // asked for; a monster above the cap is one a character at the cap meets,
+  // asked for; a monster above the cap is one that a character at the cap meets,
   // which is how Paltivar enters a level-40 plan.
   //
   // The trainer is not needed. With it on, the character is read out of the
@@ -4227,11 +4373,6 @@
   /* --- what you are up against ------------------------------------------ */
 
   const CAP = PLAN ? K.level_cap : 40;
-  const GROUP_BITS = 0xe000;
-  const groupSize = (e) => {
-    const bits = (e.masks || {}).w96 & GROUP_BITS;
-    return !bits ? 1 : (bits === 0xa000 ? 3 : 2);
-  };
 
   // A boss carries food -- the ten named individuals -- or stands above the
   // cap, which is Paltivar. Neither is what a character meets on an ordinary
@@ -4262,6 +4403,26 @@
   // the cap fights.
   const facedAt = (e) => Math.min(e.level, CAP);
 
+  const GROUP_BITS = 0xe000;
+  /**
+   * How many of this monster the plan is fought against.
+   *
+   * The record says how many can engage at once, 1, 2 or 3 (docs/monsters.md,
+   * word 96 bits 13 to 15). A party meets that cap when nothing is in its way.
+   * It meets one when it takes them one at a time. `groups` picks between the
+   * two, and off, every fight is one monster.
+   *
+   * A boss is one either way. The bits belong to the monster type, and eight
+   * of the eleven bosses carry room for two or three. But `data/spawns.json`
+   * places exactly one of each, in the whole game. A second Paltivar is a
+   * fight nobody has.
+   */
+  const groupSize = (e, groups) => {
+    if (!groups || isBoss(e)) return 1;
+    const bits = (e.masks || {}).w96 & GROUP_BITS;
+    return !bits ? 1 : (bits === 0xa000 ? 3 : 2);
+  };
+
   const ADVERSARY = ["absorption", "accuracy", "dexterity", "damage", "health"];
   // Absorption, dexterity and health are the monster's. Accuracy and damage
   // are an attack's, and a shooter has two attacks.
@@ -4271,7 +4432,7 @@
    * A monster's attacks, each kept whole.
    *
    * Accuracy and damage come twice in the record: 34 and 40 for the blow, 50
-   * and 52 for the shot. Which one a monster uses is settled by distance
+   * and 52 for the shot. Which one a monster throws is settled by distance
    * rather than chosen: it shoots only while it has not closed, in a phase of
    * its own that walks the spawn slots, and once it is engaged it swings. The
    * two never land in the same round. So the pairs come back whole -- melee
@@ -4305,15 +4466,15 @@
   const APART = new Set(["WISP"]);
   const TO_HIT = new Set(["dexterity", "accuracy"]);
 
-  function worstAt(level, bosses, skip) {
-    const key = `${level}:${bosses}:${!!skip}`;
+  function worstAt(level, bosses, skip, groups) {
+    const key = `${level}:${bosses}:${!!skip}:${!!groups}`;
     if (worstCache.has(key)) return worstCache.get(key);
     /* Skipping the resistant takes them out of everything at once: they set no
        bar, they are no goal's monster, and no rate is counted against one.
        That is what makes it a switch on the character rather than on a goal --
        it is a statement about which fights the plan is about. */
     const counted = D.enemies.filter(
-      (e) => e.listed && (bosses || !isBoss(e)) && !(skip && e.resist_magic));
+      (e) => e.listed && (bosses || !isBoss(e)) && !(skip && halvesSpells(e)));
     /* An ordinary monster keeps standing on its map, so a character of this
        level meets it from its own level onward. A boss is one fight, at the
        level it is met: carrying it forward left every later level priced
@@ -4326,24 +4487,28 @@
                                                  : facedAt(e) <= level));
     const rows = met.length ? met
       : counted.filter((e) => facedAt(e) === Math.min(...counted.map(facedAt)));
-    const out = barsOf(rows, level, bosses, skip);
+    const out = barsOf(rows, level, bosses, skip, groups);
     worstCache.set(key, out);
     return out;
   }
 
+  /** The level a plan is measured against, under the switches it carries. */
+  const planAt = (plan, level) =>
+    worstAt(level, plan.bosses, plan.skipResistant, plan.groups);
+
   /** One monster shaped like a level's bars, so a goal can be asked of it. */
   const soloCache = new Map();
   function soloAt(foe, at) {
-    const key = `${foe.name}:${at.level}:${!!at.skip}`;
+    const key = `${foe.name}:${at.level}:${!!at.skip}:${!!at.groups}`;
     if (!soloCache.has(key)) {
-      soloCache.set(key, barsOf([foe], at.level, false, at.skip));
+      soloCache.set(key, barsOf([foe], at.level, false, at.skip, at.groups));
     }
     return soloCache.get(key);
   }
 
   /** The highest of each stat over these monsters, and which one carried it. */
-  function barsOf(rows, level, bosses, skip) {
-    const out = { level, bosses, skip: !!skip,
+  function barsOf(rows, level, bosses, skip, groups) {
+    const out = { level, bosses, skip: !!skip, groups: !!groups,
                   group: { value: 1, monster: null },
                   attacks: { value: 0.25, monster: null } };
     for (const e of rows) {
@@ -4360,7 +4525,7 @@
         }
       }
       if (apart) continue;
-      const size = groupSize(e);
+      const size = groupSize(e, groups);
       if (size > out.group.value) out.group = { value: size, monster: e };
       const rate = aimedHere(e);
       if (!out.attacks || rate > out.attacks.value) {
@@ -4578,7 +4743,7 @@
    * The points one training hands over, level by level.
    *
    * A level-up grants 13% of base charisma, capped at 15, and charisma climbs
-   * 2 a level on its own. Charisma bought reaches the base column when the
+   * 2 per level on its own. Charisma bought reaches the base column when the
    * screen closes (docs/leveling.md, the commit at image 0x0a631), so it
    * raises every grant after it, which is what the first few levels are for.
    *
@@ -4591,7 +4756,7 @@
    * Where to stop buying charisma.
    *
    * Not a constant: the best stop depends on the charisma the character has,
-   * because the climb of 2 a level only ever lands on values of one parity and
+   * because the climb of 2 per level only ever lands on values of one parity and
    * buying past what it will reach is spent twice. A roll of 60 reaches 96 at
    * level 5 on its own, so a plan that buys to 100 pays 4 points for what was
    * coming anyway and holds 8 at level 5 instead of 12.
@@ -4648,7 +4813,7 @@
 
   /* --- the projection ---------------------------------------------------- */
 
-  // Every attribute and every skill climbs 2 a level whatever else happens, so
+  // Every attribute and every skill climbs 2 per level whatever else happens, so
   // a character at a later level is itself, plus the climb, plus whatever the
   // schedule has bought by then. Armor and weapon are the better of what it
   // carries now and what the gold affords by then: nobody sells their armor.
@@ -4946,7 +5111,7 @@
       describe: (t) => `One-round kill, ${t} focus-firing`,
       /* Their armor decides what a swing lands and their health decides
          whether it was enough, so both come off the one monster. */
-      fight: true,
+      fight: true, ordinary: true,
       tightness: (plan, me, at, target) =>
         (target * output(plan, me, at)) / Math.max(1, at.health.value),
       against: (plan, me, at, target) =>
@@ -5030,7 +5195,7 @@
       describe: () => "One-cast kill",
       /* The armor the cast has to get through and the health it has to clear
          are the same monster's, or the answer is about a fight nobody has. */
-      fight: true,
+      fight: true, ordinary: true,
       tightness(plan, me, at) {
         const cast = bestCast(plan, me, at);
         return cast ? cast.landed / Math.max(1, at.health.value) : 0;
@@ -5098,7 +5263,7 @@
         /* The fight is one monster's, so it is named once, on the first row
            it appears in rather than against every number it carries. */
         const rounds = roundsToKill(foe, output);
-        const engaged = engagedAgainst(foe, rounds);
+        const engaged = engagedAgainst(plan, foe, rounds);
         /* Read down: they have this much health, the four of us do this much
            to it, so a kill is this many rounds; this many of them are in by
            then and they do this much to me over the kill; my health and my
@@ -5214,7 +5379,7 @@
     const tight = goal.tightness
       || ((plan, me, at, t) => (against(plan, me, at, t) ? 1 : 0));
     const pick = (plan, me, at, t) =>
-      fightAt(plan, tight, me, at, t, goal.rate);
+      fightAt(plan, tight, me, at, t, goal.rate || goal.ordinary);
     goal.holds = (plan, me, at, t) => against(plan, me, pick(plan, me, at, t), t);
     goal.rows = (plan, me, at, t) => rows(plan, me, pick(plan, me, at, t), t);
     if (nearness) {
@@ -5265,7 +5430,7 @@
 
   /** The same level with the bosses taken back out, for the rates. */
   const ordinaryAt = (at) =>
-    (at.bosses ? worstAt(at.level, false, at.skip) : at);
+    (at.bosses ? worstAt(at.level, false, at.skip, at.groups) : at);
 
   /**
    * A rate is priced against one real monster, not against the worst of every
@@ -5285,11 +5450,10 @@
    * the worst case, and it is a fight that exists.
    *
    * Never a boss, though, even with bosses counted: there is one Paltivar, and
-   * how many of him fit between two rests is not a question. The switch is
-   * about the thresholds, which are promises about a single fight and do have
-   * to answer him, so a rate reads the same level with the bosses taken back
-   * out rather than dropping whichever bar one of them happened to set. Nor a
-   * wisp, which is a fight this plan's weapon does not take.
+   * how many of him fit between two rests is not a question. A rate therefore
+   * reads the same level with the bosses taken back out rather than dropping
+   * whichever bar one of them happened to set, which is what `ordinaryFoes`
+   * is. Nor a wisp, which is a fight this plan's weapon does not take.
    */
   function extremeFoes(at) {
     const seen = new Map();
@@ -5300,7 +5464,8 @@
     return [...seen.values()];
   }
 
-  function restFoes(at) {
+  /** The level's extremes with the bosses taken back out. */
+  function ordinaryFoes(at) {
     return extremeFoes(ordinaryAt(at)).filter((e) => !isBoss(e));
   }
 
@@ -5315,11 +5480,19 @@
    *
    * So the goal is asked of each monster that is extreme in something, and the
    * worst answer is the answer -- the same rule the rates follow, and for the
-   * same reason. Bosses stay in when they are counted, since one cast against
-   * Paltivar is a fair question where his kills a rest is not.
+   * same reason.
+   *
+   * Bosses stay in for the goals that read one of their stats against one of
+   * the character's: Untouchable is bought against Paltivar's accuracy, and a
+   * swing has to get through his absorption. They come out of the goals that
+   * have to clear a boss's health. Bosses carry 30 to 3,400 of it. Ordinary
+   * monsters of the same level carry 16 to 635. At the cap the health bar is
+   * therefore 5.4 times the one the career is fought against, and no point
+   * total buys a one-round kill or a one-cast kill against it. A goal marks
+   * itself `ordinary` to say so.
    */
-  function fightAt(plan, tight, me, at, target, rate) {
-    const foes = rate ? restFoes(at) : extremeFoes(at);
+  function fightAt(plan, tight, me, at, target, ordinary) {
+    const foes = ordinary ? ordinaryFoes(at) : extremeFoes(at);
     if (!foes.length) return at;
     let worst = null, least = Infinity;
     for (const foe of foes) {
@@ -5363,7 +5536,8 @@
    * deep from the first round, which is not a standard encounter but a party
    * that cannot kill anything, surrounded.
    */
-  const engagedAgainst = (foe, rounds) => Math.min(groupSize(foe), rounds);
+  const engagedAgainst = (plan, foe, rounds) =>
+    Math.min(groupSize(foe, plan.groups), rounds);
 
   /**
    * Rounds the party takes to kill one of a monster.
@@ -5461,7 +5635,7 @@
        kill costs `swingsBefore` of those, so their quotient is kills and the
        rounds cancel. A monster that never swings gives no denominator, which
        is the first-strike one-round kill costing nothing. */
-    const engaged = engagedAgainst(foe, rounds);
+    const engaged = engagedAgainst(plan, foe, rounds);
     const swings = swingsBefore(me, foe, rounds);
     const byHealth = swings > 0
       ? roundsStanding(me, foe, engaged) / swings : Infinity;
@@ -5479,7 +5653,7 @@
      is kept for anything choosing between purchases, and the floor is what the
      goal and the evidence read. */
   function killsRate(plan, me, at, exact) {
-    const foes = restFoes(at);
+    const foes = ordinaryFoes(at);
     if (!foes.length) return 0;
     return Math.min(...foes.map((foe) => killsAgainst(plan, me, foe, exact)));
   }
@@ -5488,7 +5662,7 @@
   /** The monster a rate is worst against, for the evidence to name. */
   function worstRestFoe(plan, me, at) {
     let worst = null, least = Infinity;
-    for (const foe of restFoes(at)) {
+    for (const foe of ordinaryFoes(at)) {
       const kills = killsAgainst(plan, me, foe);
       /* `worst === null` first: a character that takes nothing back and spends
          no pool kills without limit against every one of them, and Infinity is
@@ -5508,9 +5682,32 @@
     return cast ? cast.landed : 0;
   }
 
-  // A spell's blow carries bit 13 when it is the kind a spell-resistant
-  // monster halves, which is 59 of the 70 damage spells.
-  const BLOW_SPELL = 0x2000;
+  /**
+   * What a blow and a monster test against each other, bit for bit.
+   *
+   * The applier builds a word for every blow and ANDs it against the
+   * monster's resistance word at record 102, halving once if anything
+   * survives (docs/monsters.md, image `0x1D8AF` for a spell). A spell's word
+   * is its record 76 under `0xFE00`; the bits below that mask say what the
+   * AFFECTS row reaches and are not damage types.
+   *
+   * Immunity is the other word and the other test: the spell's element word
+   * at record 74 against the monster's immunity word at record 100, and a
+   * match sets the damage to zero (docs/combat.md, image `0x1d6f0`).
+   *
+   * Both are done here on the words themselves. The decode also carries
+   * `resist_magic` and `immune`, and neither can stand in: `resist_magic` is
+   * the F2 page's MAGIC DAMAGE row, which merges resistance bit 13 with
+   * immunity bit 4, and `immune` is a list of names with MAGIC DAMAGE
+   * dropped out of it. Reading the booleans halved a spell against the three
+   * monsters whose bit 4 is their whole magic row -- Fire Dwarf, Sorcerer and
+   * Chameleon Man -- where the arithmetic halves nothing at all.
+   */
+  const BLOW_MASK = 0xfe00;
+  const halvedBy = (spell, foe) =>
+    !!(foe && ((spell.blow || 0) & BLOW_MASK) & (foe.resistance || 0));
+  const zeroedBy = (spell, foe) =>
+    !!(foe && (spell.element_word || 0) & (foe.immunity || 0));
 
   /** The best spell the character knows here, and what it delivers.
    *
@@ -5525,7 +5722,7 @@
    * The damage spells a class has learned by a level.
    *
    * Kept, because the whole spell table was being walked and every entry's
-   * class list rebuilt for each of the many thousand casts a career weighs,
+   * class list rebuilt for each of the many thousand casts that a career weighs,
    * and neither the table nor what a class knows moves while one is walked.
    */
   const learned = new Map();
@@ -5582,22 +5779,21 @@
     const cls = classAt(plan.character.code);
     if (!cls.magic_blend.length) return null;
     const name = cls.name.toUpperCase();
-    const immune = new Set((foe && foe.immune) || []);
     const margin = me.casting
       - (absorption === undefined ? (foe ? foe.absorption : 0) : absorption);
     let lethal = null, fallback = null;
     for (const s of learnedBy(name, me.level)) {
-      // A monster immune to the spell's element takes nothing at all from it,
-      // so the spell is not an option rather than a halved one. The 39 damage
-      // spells that carry no element cannot be shut out this way.
-      if ((s.element || []).some((e) => immune.has(e.toUpperCase()))) continue;
+      // A monster whose immunity word shares a bit with the spell's element
+      // word takes nothing at all from it, so the spell is not an option
+      // rather than a halved one. The damage spells whose element word is zero
+      // cannot be shut out this way.
+      if (zeroedBy(s, foe)) continue;
       /* Inert once a monster has closed, which is the fight being modeled.
          It rules out the two most efficient spells a mage has, Finger of
          Flame and Power Surge. */
       if (s.when === "out of hand to hand") continue;
       if (!affects(s, foe)) continue;
-      const halved = !unresisted
-        && !!(foe && foe.resist_magic && (s.blow & BLOW_SPELL));
+      const halved = !unresisted && halvedBy(s, foe);
       const landed = rollOdds(margin) * perHit(s.damage, margin) * (halved ? 0.5 : 1);
       if (landed <= 0) continue;
       const cast = { spell: s, landed, margin, halved };
@@ -5783,8 +5979,7 @@
         byLever.set(lever, curve);
         for (let level = start; level <= CAP; level += 1) {
           const points = pointsNeeded(plan, goal, g, level, zero,
-                                      worstAt(level, plan.bosses,
-                                              plan.skipResistant), lever);
+                                      planAt(plan, level), lever);
           if (points === null) continue;
           curve.set(level, points);
           reach.add(g);
@@ -5864,10 +6059,10 @@
     const rows = [];
     // What the last level is measured against, for the one choice that is
     // about the whole of the career rather than about this level.
-    const capAt = worstAt(CAP, plan.bosses, plan.skipResistant);
+    const capAt = planAt(plan, CAP);
 
     for (let level = c.level; level <= CAP; level += 1) {
-      const at = worstAt(level, plan.bosses, plan.skipResistant);
+      const at = planAt(plan, level);
       const training = granted.get(level) || { granted: 0, charisma: 0, free: 0 };
       const spent = training.charisma ? [["charisma", training.charisma]] : [];
       let purse = training.free;
@@ -5896,9 +6091,7 @@
       const feed = (g) => {
         const due = Math.max(level, g.from);
         const then = project(plan, due, bought);
-        if (!GOALS[g.type].holds(plan, then,
-                                 worstAt(due, plan.bosses, plan.skipResistant),
-                                 g.target)) {
+        if (!GOALS[g.type].holds(plan, then, planAt(plan, due), g.target)) {
           buy("pool", purse);
         }
       };
@@ -6239,7 +6432,8 @@
        goals of their own, and keying on the rows alone hands the second one
        the first one's answer. */
     const key = JSON.stringify([settings, stored.archetype, stored.goals,
-                                stored.bosses, stored.ignoreResist,
+                                stored.bosses, stored.groups,
+                                stored.ignoreResist,
                                 stored.skipResistant,
                                 stored.code, stored.armorShare,
                                 stored.weaponShare, stored.source, stored.who,
@@ -6308,6 +6502,11 @@
         ? stored.goals : archetypeGoals(archetype),
       code: stored.code || 1,
       bosses: !!stored.bosses,
+      /* How many of a monster a fight is against: as many as its record lets
+         engage, or one of it. On by default. That prices the worse of the two
+         fights, and every figure the tab has ever quoted was measured under
+         it. */
+      groups: stored.groups === undefined ? true : !!stored.groups,
       /* Whether the monsters that halve a spell are in the plan at all. */
       skipResistant: !!stored.skipResistant,
       /* Whether a kills-per-rest goal is asked of the resisted count or of
@@ -6643,6 +6842,19 @@
     switches.append(el("label", { className: "plan-switch" },
                        [bosses, document.createTextNode("Bosses")]));
 
+    /* How many of a monster the fight is against. The record caps it at one,
+       two or three, and this switch prices the plan against that cap or
+       against meeting one at a time. It reads on the two goals that count
+       incoming blows: surviving a round, and kills before a rest. */
+    const groups = el("input", { type: "checkbox", id: "plan-groups" });
+    groups.checked = plan.groups;
+    groups.onchange = () => { savePlan({ groups: groups.checked }); renderPlanner(root); };
+    switches.append(el("label", {
+      className: "plan-switch",
+      title: "As many of a monster as its record lets engage, up to three. "
+        + "Off, one at a time. A boss is one either way.",
+    }, [groups, document.createTextNode("Groups")]));
+
     /* Which fights the plan is about, so it sits with the character and reads
        on every goal. Only for a class with a blow to be halved. */
     if (classAt(c.code).magic_blend.length) {
@@ -6807,7 +7019,13 @@
       if (g.on) column += 1;
       tr.append(el("td", { className: "plan-key",
                            textContent: g.on ? String(column) : "\u2014" }));
-      tr.append(el("td", { textContent: goal.label }));
+      /* A goal that leaves the bosses out says so on its own row. The switch
+         above says they are counted, and this row does not count them. */
+      const name = el("td", {}, [document.createTextNode(goal.label)]);
+      if (plan.bosses && (goal.ordinary || goal.rate)) {
+        name.append(el("span", { className: "note", textContent: " no bosses" }));
+      }
+      tr.append(name);
 
       const from = el("input", { type: "number", min: "1", max: String(CAP),
                                  className: "trainer-num plan-from",
@@ -7106,7 +7324,7 @@
       };
       /* Each side its own list, not two lists forced into shared rows. What
          the character brings and what it is up against are two readings of
-         different lengths, and pairing them line by line put "rounds a kill"
+         different lengths, and pairing them line by line put "RNDs/kill"
          opposite "per hit", which are not two halves of anything, and left a
          hole in one column wherever the other had a line to itself.
          A block that is only its verdict has no columns to head, and a goal

@@ -99,6 +99,7 @@ FIELD_CONFIDENCE = {
     "absorption": "verified", "damage": "verified", "family": "inferred",
     "experience": "verified", "gold": "verified", "food": "verified",
     "nuore": "verified", "immune": "verified", "resist_magic": "verified",
+    "resistance": "verified", "immunity": "verified",
     "resist_physical": "verified", "resist_shot": "verified",
     "resist_unmatched": "verified",
     "ranged_accuracy": "verified",
@@ -368,6 +369,13 @@ def extract_enemies(d: S.Directory) -> list[dict]:
         e.update({k: bcd(rec, off, n) for k, (off, n) in REWARD_FIELDS.items()})
         e["immune"] = [name_ for bit, name_ in sorted(IMMUNITY_BITS.items(), reverse=True)
                        if immunity >> bit & 1 and name_ != "MAGIC DAMAGE"]
+        # The two words themselves, for anything doing the game's own
+        # arithmetic. The applier ANDs a blow's word against `resistance` and
+        # a spell's element word against `immunity` (docs/monsters.md), and
+        # neither test can be reconstructed from the booleans below: `immune`
+        # drops MAGIC DAMAGE and `resist_magic` merges two different bits.
+        e["resistance"] = resistance
+        e["immunity"] = immunity
         e["resist_magic"] = bool(resistance & RESIST_MAGIC_ROW
                                  or immunity & MAGIC_VIA_IMMUNITY_BIT)
         # The game prints one row for two bits; what sets them differs.
@@ -730,6 +738,10 @@ def extract_spells(d: S.Directory) -> list[dict]:
         element = u16(rec, SPELL_ELEMENT)
         s["element"] = [n for bit, n in sorted(IMMUNITY_BITS.items(), reverse=True)
                         if element >> bit & 1]
+        # The word itself, which is what a monster's immunity word is ANDed
+        # against. The names above drop nothing today, but they are names and
+        # the test is bits.
+        s["element_word"] = element
         s["restorative"] = rec[SPELL_FAMILY] == SPELL_FAMILY_RESTORATIVE
         s["amount"] = u16(rec, SPELL_AMOUNT) or None
         # The blow word, which says both what a resistant monster halves and

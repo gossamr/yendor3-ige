@@ -241,7 +241,7 @@ await page.click('nav button[data-key="pl"]');
 await page.waitForTimeout(300);
 const planner = page.locator('section[data-key="pl"]');
 
-// A row a level, from where the character stands to the cap.
+// A row per level, from where the character stands to the cap.
 const careerRows = await planner.locator(".plan-career tbody tr[data-level]").count();
 if (careerRows !== 40) {
   problems.push(`planner: ${careerRows} levels in the career, expected 40`);
@@ -270,7 +270,7 @@ if (misspent.length) {
 const career = spend.reduce((n, r) => n + (r.grant || 0), 0);
 if (career < 400) {
   problems.push(`planner: a whole career grants ${career} points, short of the `
-    + "450 a middling charisma roll pays out");
+    + "450 that a middling charisma roll pays out");
 }
 
 // The character the tab projects has to be the one the offline model builds.
@@ -301,6 +301,27 @@ if (!/Health\s*\n?1162\b/.test(atForty)) {
   problems.push("planner: a level-40 character does not hold the 1162 health "
     + `combat_model computes: ${JSON.stringify(atForty)}`);
 }
+
+// Groups says whether a fight is against as many of a monster as its record
+// lets engage or against one of it. The Black Dragon's bits allow three, so
+// surviving a round at the cap prices three of it with the switch on and one
+// with it off, and the working states the count it used.
+const engagedAtForty = async () => planner
+  .locator('.plan-career tbody tr[data-level="40"] + tr .plan-evidence-block',
+           { hasText: "Survive a round" }).first()
+  .innerText().catch(() => "");
+if (!/Engaged\s*\n?3\b/.test(atForty)) {
+  problems.push("planner: the cap is not priced against the three Black "
+    + `Dragons its record allows: ${JSON.stringify(atForty)}`);
+}
+await page.uncheck("#plan-groups");
+await page.waitForTimeout(600);
+const alone = await engagedAtForty();
+if (!/Engaged\s*\n?1\b/.test(alone)) {
+  problems.push(`planner: Groups off still prices more than one: ${JSON.stringify(alone)}`);
+}
+await page.check("#plan-groups");
+await page.waitForTimeout(600);
 
 // Absorption 186 shuts out freezing, paralysis and stoning, and the four
 // monsters behind it are named. That number is read off their own records by
@@ -358,7 +379,7 @@ if (!/Accuracy\s*\n?160\b/.test(tower)
 // With bosses counted, a character at the cap is measured against Paltivar,
 // which is the basis every endgame figure in STRATEGY.md is quoted against:
 // accuracy 240, absorption 170. It is level 45 and reaches a level-40 plan
-// only through the rule that a monster above the cap is one a character at
+// only through the rule that a monster above the cap is one that a character at
 // the cap meets.
 await page.click(".plan-evidence");
 await page.check("#plan-bosses");
@@ -381,8 +402,54 @@ for (const [what, expected] of [["Accuracy", "240"], ["Absorption", "170"]]) {
   }
 }
 await page.screenshot({ path: `${outDir}/planner.png`, fullPage: false });
+
+// A boss's health is not a bar any purchase reaches: Paltivar carries 3,400 of
+// it where the Black Dragon met at the same level carries 635. So the goals
+// that have to clear it are asked of the ordinary monsters even with bosses
+// counted, and the row of each says so.
+await page.selectOption(".plan-archetype", "berserker");
+await page.waitForTimeout(700);
+const oneRound = await planner
+  .locator('.plan-career tbody tr[data-level="40"] + tr .plan-evidence-block',
+           { hasText: "One-round kill" }).first().innerText().catch(() => "");
+if (!/needs 635\b/.test(oneRound) || !names(oneRound).includes("BLACK DRAGON")) {
+  problems.push("planner: the one-round kill at the cap is not measured against "
+    + `the Black Dragon with bosses counted: ${JSON.stringify(oneRound)}`);
+}
+const goalRows = await planner.locator(".plan-goals tbody").innerText();
+if (!/One-round kill\s*no bosses/.test(goalRows)) {
+  problems.push("planner: the one-round kill row does not say the bosses are "
+    + `out of it: ${JSON.stringify(goalRows)}`);
+}
+
 await page.uncheck("#plan-bosses");
 await page.waitForTimeout(200);
+
+// Resistance and immunity are two words and two tests, and the planner does
+// both on the bits. The Sorcerer arrives at 21 with resistance 0x0000 and
+// immunity 0x001B, so it halves nothing: an ordinary damage spell lands on it
+// whole. Reading the decode's `resist_magic` instead halved it, because that
+// boolean is the game's MAGIC DAMAGE row and merges resistance bit 13 with
+// immunity bit 4, which prints and does nothing (docs/monsters.md measures it).
+// Icy Stare is cold and the Sorcerer is not cold-immune, so the spell is on the
+// list and its damage is not cut.
+await page.selectOption(".plan-class", "7");            // mage
+await page.waitForTimeout(400);
+await page.selectOption(".plan-archetype", "caster");
+await page.waitForTimeout(700);
+const sorcerer = await planner
+  .locator('.plan-career tbody tr[data-level="21"] + tr .plan-evidence-block',
+           { hasText: "One-cast kill" }).first().innerText().catch(() => "");
+// Asserted on the number, not on the absence of a row: an empty block would
+// pass a test that only looked for "Resisted". Icy Stare is 65 base at margin
+// 219, which is 142, and the halving the old code applied made it 71.
+if (!names(sorcerer).includes("SORCERER")) {
+  problems.push("planner: level 21 does not measure the one-cast kill against "
+    + `the Sorcerer, so the halving is untested here: ${JSON.stringify(sorcerer)}`);
+} else if (!/Damage dealt\s*\n?142\b/.test(sorcerer) || /Resisted/i.test(sorcerer)) {
+  problems.push("planner: the Sorcerer's resistance word is 0x0000 and halves "
+    + `nothing, so Icy Stare has to land its whole 142: ${JSON.stringify(sorcerer)}`);
+}
 
 // Number keys select a tab, and must not fire while a field has focus.
 await page.click(`nav button[data-key="f2"]`);
