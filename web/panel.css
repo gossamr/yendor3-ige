@@ -197,6 +197,11 @@ h2 { font-size: 15px; letter-spacing: .06em; color: var(--ink-bright);
 .chip.census { background: none; font: inherit; font-size: 11px;
                letter-spacing: .08em; color: var(--amber); cursor: pointer; }
 .chip.census:hover, .chip.census:focus-visible { color: var(--amber-lit); }
+/* Keyed to the map overlay, so the swatch is the only saturated thing on the
+   chip. The amber comes back on hover, where it means the chip is a control. */
+.chip.census.keyed { color: var(--ink); border-color: var(--stone-500); }
+.chip.census.keyed:hover, .chip.census.keyed:focus-visible {
+  color: var(--amber-lit); border-color: var(--amber-dim); }
 .census-n { margin-left: .35rem; color: var(--gold);
             font-variant-numeric: tabular-nums; }
 
@@ -295,6 +300,20 @@ details.curve-box[open] > summary { color: var(--amber-lit);
 .map-canvas { display: block; width: 100%; height: auto;
               image-rendering: pixelated;
               border: 1px solid var(--stone-400); background: var(--stone-000); }
+/* One dot per monster the map places, positioned the way a legend badge is so
+   it tracks the scaled bitmap. It takes no pointer events, because the badges
+   over it are what a reader clicks. The edge is thin and dark for shape and
+   nothing more. An outline heavy enough to rescue a badly chosen ink would be
+   hiding it. The fill carries the reading. */
+.map-spawn { position: absolute; transform: translate(-50%, -50%);
+             width: .5rem; height: .5rem; border-radius: 50%;
+             pointer-events: none;
+             box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
+.map-spawns { margin-left: .6rem; vertical-align: middle; }
+.census-dot { display: inline-block; width: .5rem; height: .5rem;
+              border-radius: 50%; margin-right: .45rem;
+              box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
+
 /* A marker's number, over the gold square it belongs to. */
 .map-mark { position: absolute; transform: translate(-50%, -50%);
             min-width: 1.15em; padding: 0 .15em; border-radius: 999px;
@@ -818,6 +837,20 @@ body.embedded .guide-side { top: 3.2rem; }
    there as a threat. These are the player's own numbers, so they take the same
    gold every other figure in the panel uses. */
 .plan-sheet dd { margin: 0; color: var(--gold); }
+/* Where the career leaves the stat, beside where it stands. The gold is for
+   what the character holds, so the projection takes the page's own text color:
+   as readable as the figure it follows, and telling the two apart at a glance. */
+.plan-at-cap { margin-left: .4rem; color: var(--ink);
+               font-variant-numeric: tabular-nums; }
+
+/* The sheet's columns, filled rather than fitted: a career that buys four
+   levers takes the first four of the sheet's tracks instead of stretching four
+   of its own to the width of the panel. */
+.plan-sublabel { color: var(--stone-700); font-size: 12px; margin: 0 0 .2rem; }
+.plan-bought { grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+               gap: .35rem 1.2rem; margin: 0 0 1rem; }
+.plan-bought > div { display: flex; flex-direction: column; }
+.plan-bought dd { margin: 0; color: var(--gold); }
 .plan-note { color: var(--amber-lit); }
 
 /* Every cell here is a control or the name of one, so the row reads left to

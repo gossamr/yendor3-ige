@@ -173,9 +173,20 @@
   }
 
   /** A chip that carries you to a map or a monster, with how many there are. */
-  function censusChip(label, count, onGo, hint) {
-    const b = el("button", { type: "button", className: "chip census",
-                             title: hint });
+  function censusChip(label, count, onGo, hint, kind) {
+    /* A chip carrying a swatch gives up the amber it is normally drawn in.
+       The panel is already mostly amber. A saturated ink beside an amber
+       label and an amber border is the one thing on the row that is not
+       telling the reader anything. */
+    const b = el("button", { type: "button", title: hint,
+                             className: `chip census${kind === undefined ? "" : " keyed"}` });
+    /* The swatch the map draws this monster in, so the census doubles as the
+       overlay's key. Only where the overlay can tell them apart. */
+    if (kind !== undefined) {
+      const dot = el("span", { className: "census-dot" });
+      dot.style.background = kind;
+      b.append(dot);
+    }
     b.append(highlight(titleCase(label)),
              el("span", { className: "census-n",
                           textContent: `×${count}` }));
@@ -2646,26 +2657,36 @@
    * them.
    *
    * Record 76 under `0xFE00` is the blow's damage type, and it decides what a
-   * monster's resistance can answer. 59 of the 70 damage spells carry the
+   * monster's resistance can answer. 55 of the 70 damage spells carry the
    * ordinary one and are halved by a magic-resistant monster, so that is the
    * case a reader can assume and marking it would mark almost everything.
    *
-   * The other eleven are the ones worth marking. Four are holy, which is the
-   * anti-undead bit, and seven carry no type at all. No monster in the game
-   * answers either, so both land whole. That is the whole difference between
-   * two spells of the same size: Turbulent Atmosphere at 450 lands whole where
-   * Earthquake at 350 is halved, and the game's own page says neither.
+   * The other fifteen are the ones worth marking. Four are holy, the
+   * anti-undead bit. Seven carry no type at all. Four are the Life Force
+   * line, which carries the ordinary type and is never asked about it. No
+   * monster answers any of the three, so all fifteen land whole. That is the
+   * whole difference between two spells of the same size: Turbulent
+   * Atmosphere at 450 lands whole where Earthquake at 350 is halved, and the
+   * game's own page says neither.
    */
   const BLOW_MAGIC = 0x2000, BLOW_UNDEAD = 0x0200, SPELL_BLOW_MASK = 0xfe00;
+  /* The two bits that divert a cast at image `0x1ccd5`. The branch they lead
+     to drains the monster into the party. It tests neither immunity nor
+     resistance, so the damage type these spells carry is inert
+     (docs/combat.md). Only the four Life Force records set them. `0x40`
+     drains to the caster and `0x80` to the whole party. */
+  const BLOW_DRAIN = 0x00c0;
+  const drains = (s) => !!((s.blow || 0) & BLOW_DRAIN);
   /* Drawn in the chip beside the figure, the same way an element is: a cross
-     for holy and a ring for the ones that carry no type at all, each hue its
-     own. */
+     for holy and a ring for everything else a monster cannot halve, each hue
+     its own. */
   const MARK_ICONS = {
     holy: ({ line }) => line("M6 1.4v9.2M3.1 4.6h5.8"),
     untyped: ({ line }) => line("M6 2.1a3.9 3.9 0 1 0 .01 0z"),
   };
   /** Whether a magic-resistant monster halves this spell. */
-  const halvedByResistance = (s) => !!((s.blow || 0) & SPELL_BLOW_MASK & BLOW_MAGIC);
+  const halvedByResistance = (s) =>
+    !drains(s) && !!((s.blow || 0) & SPELL_BLOW_MASK & BLOW_MAGIC);
 
   /* What a spell does, as the tab's second filter. Unresistable is a subset of
      damage rather than a category beside it, so it never sweeps in a heal. */
@@ -2731,6 +2752,13 @@
 
   function damageMark(s) {
     if (!s.damage) return null;
+    // Carries the ordinary type and is never asked about it. So it earns the
+    // same ring as a spell with no type. The ring says the figure beside it
+    // is the figure a magic-resistant monster takes.
+    if (drains(s)) {
+      return { kind: "untyped", cls: "typeless",
+               note: "drains before the resistance test, so nothing halves it" };
+    }
     const word = (s.blow || 0) & SPELL_BLOW_MASK;
     if (word & BLOW_MAGIC) return null;
     if (word & BLOW_UNDEAD) {
@@ -3004,8 +3032,8 @@
        class chips are bordered buttons, and a second row of those would read
        as the same control repeated rather than as a different question.
        Unresistable belongs here because it is a kind of damage, not a kind of
-       caster: 59 of the 70 damage spells are halved by a magic-resistant
-       monster and these eleven are the rest. */
+       caster: 55 of the 70 damage spells are halved by a magic-resistant
+       monster and these fifteen are the rest. */
     const kinds = el("div", { className: "spell-types" });
     for (const [value, label, test, hint] of SPELL_TYPES) {
       const b = el("button", { type: "button", className: "type-filter",
@@ -3291,6 +3319,145 @@
     return place.length === 1 ? place[0].title : null;
   }
 
+  /**
+   * The colors a map's spawn dots are drawn in, one per monster kind.
+   *
+   * A dot has to be told apart from everything it is seen against: the colors
+   * the map paints where the monsters stand, and the other dots. So each one
+   * is put as far from all of that as sRGB allows, and nothing else is
+   * scored. A dot far from every color on the map is legible on it, because
+   * the black in the shadows and the white in the ice are colors on the map
+   * like any other.
+   *
+   * Distance is dE76 in CIELAB, which is nearer to what the eye means by
+   * another color than an sRGB triple is.
+   *
+   * The colors to choose from are a nine-level cut of the cube. Finer steps
+   * buy nothing. What wins sits near a corner of it, and the game paints in
+   * browns and greens, which are nowhere near one.
+   */
+  const INK_LEVELS = [0, 32, 64, 96, 128, 160, 192, 224, 255];
+
+  /* A color under this much of the sample is a speck, and a speck is not what
+     the map looks like where a dot lands. */
+  const INK_SPECK = 0.005;
+
+  const _lin = (u) => (u <= 0.04045 ? u / 12.92 : ((u + 0.055) / 1.055) ** 2.4);
+
+  /** sRGB hex to CIELAB, so "far apart" means what the eye means by it. */
+  function toLab(hex) {
+    const r = _lin(parseInt(hex.slice(1, 3), 16) / 255);
+    const g = _lin(parseInt(hex.slice(3, 5), 16) / 255);
+    const b = _lin(parseInt(hex.slice(5, 7), 16) / 255);
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+    const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+  /** dE76, lightness counting once, the same as any other axis. */
+  const labGap = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+  /**
+   * What a dot is actually seen against.
+   *
+   * Not the tile under it. A map draws its rocks, doors and stairs as overlay
+   * sprites painted over the tile, 338 of them across the 960 cells of
+   * Dwarven Homeland 1. Those are opaque: at a cell carrying one the tile is
+   * not visible at all. Sampling tiles alone reported that map as white ice
+   * and picked a blue that vanished among its blue-gray rocks.
+   *
+   * The neighborhood counts too, not just the cell. A dot sits in the middle
+   * of its cell and is read against what surrounds it. So this walks the cell
+   * and the eight around it.
+   *
+   * Every color above a speck comes back, and a speck is half a percent.
+   * Keeping only the colors that cover a twentieth of the field dropped the
+   * ones that matter most. A stand of trees is ten shades of the same green
+   * at a percent or two each, and dropping all ten let a dot be drawn in one.
+   */
+  function floorLabs(page, points) {
+    const size = page.tile;
+    const tiles = atob(page.tiles);
+    const grid = atob(page.grid);
+    const sprites = atob(page.sprites || "");
+    const over = new Map();
+    for (const [row, col, sprite] of page.overlay || []) {
+      over.set(row * page.cols + col, sprite);
+    }
+    const seen = new Map();
+    let total = 0;
+    for (const p of points) {
+      for (let dr = -1; dr <= 1; dr += 1) {
+        for (let dc = -1; dc <= 1; dc += 1) {
+          const row = p.row + dr, col = p.col + dc;
+          if (row < 0 || row >= page.rows || col < 0 || col >= page.cols) continue;
+          const at = row * page.cols + col;
+          const sprite = over.get(at);
+          const art = sprite === undefined ? tiles : sprites;
+          const base = (sprite === undefined ? grid.charCodeAt(at) : sprite)
+            * size * size;
+          for (let i = 0; i < size * size; i += 1) {
+            const hex = page.palette[art.charCodeAt(base + i)];
+            seen.set(hex, (seen.get(hex) || 0) + 1);
+            total += 1;
+          }
+        }
+      }
+    }
+    return [...seen].filter(([, n]) => n / total >= INK_SPECK)
+      .map(([hex, n]) => ({ hex, lab: toLab(hex), share: n / total }));
+  }
+
+  const inkCache = new Map();
+  let inkGrid = null;
+  /**
+   * The ink each monster kind takes on this map, in census order.
+   *
+   * The first kind takes the color furthest from every color on the map. The
+   * next takes the color furthest from the map and from that one, and so on,
+   * each dot joining the set the next has to stay away from.
+   *
+   * So the first kind gets the best of it, and the census orders the kinds by
+   * how many of them the map places. What is left narrows as a map places
+   * more kinds. Sewers of Bariag places four, the most in the game, and its
+   * fourth dot is the tightest anywhere.
+   */
+  function spawnInks(page, points) {
+    if (inkCache.has(page.title)) return inkCache.get(page.title);
+    if (!inkGrid) {
+      const hex = (n) => n.toString(16).padStart(2, "0");
+      inkGrid = [];
+      for (const r of INK_LEVELS) {
+        for (const g of INK_LEVELS) {
+          for (const b of INK_LEVELS) {
+            const c = `#${hex(r)}${hex(g)}${hex(b)}`;
+            inkGrid.push({ hex: c, lab: toLab(c) });
+          }
+        }
+      }
+    }
+    const census = SPAWNS[page.title];
+    const kinds = census ? Object.keys(census.monsters) : [];
+    const against = floorLabs(page, points).map((f) => f.lab);
+    const out = {};
+    for (const kind of kinds) {
+      let best = null;
+      for (const ink of inkGrid) {
+        let far = Infinity;
+        for (const lab of against) {
+          far = Math.min(far, labGap(ink.lab, lab));
+          if (best && far <= best.far) break;
+        }
+        if (!best || far > best.far) best = { far, ink };
+      }
+      against.push(best.ink.lab);
+      out[kind] = best.ink.hex;
+    }
+    inkCache.set(page.title, out);
+    return out;
+  }
+
   function renderMaps(root) {
     root.textContent = "";
 
@@ -3336,6 +3503,22 @@
       badge.style.top = `${((m.row + 0.5) / shown.rows) * 100}%`;
       frame.append(badge);
     }
+    /* Where the maps put the monsters, over the same frame the legend badges
+       use. Positioned the same way: the cell event's x and y are the page's
+       own column and row. Off unless asked for, since 1,862 dots over 47 maps
+       is not what the tab is for. */
+    const points = (D.spawn_points || {})[shown.title] || [];
+    const inks = points.length ? spawnInks(shown, points) : {};
+    if (ui.mapSpawns) {
+      for (const s of points) {
+        const dot = el("span", { className: "map-spawn",
+                                 title: titleCase(s.name) });
+        dot.style.background = inks[s.name];
+        dot.style.left = `${((s.col + 0.5) / shown.cols) * 100}%`;
+        dot.style.top = `${((s.row + 0.5) / shown.rows) * 100}%`;
+        frame.append(dot);
+      }
+    }
     figure.append(frame);
     const caption = el("figcaption");
     // The 140 map slots are one grid, 20 levels across by 7 areas down, and
@@ -3349,7 +3532,17 @@
     globe.title = "The world map";
     globe.append(globeIcon());
     globe.onclick = () => world.showModal();
-    caption.append(el("strong", { textContent: titleCase(shown.title) }), globe);
+    /* Beside the map's name, because it is about the map being shown. The
+       count is the map's own. The label says what turning it on will draw. */
+    const placed = ((D.spawn_points || {})[shown.title] || []).length;
+    const spawns = el("button", { type: "button", className: "toggle map-spawns" });
+    spawns.append(document.createTextNode("Monsters"));
+    spawns.append(el("span", { className: "count", textContent: ` (${placed})` }));
+    spawns.title = "Show where the map places its monsters";
+    spawns.setAttribute("aria-pressed", String(!!ui.mapSpawns));
+    spawns.onclick = () => { ui.mapSpawns = !ui.mapSpawns; renderMaps(root); };
+    caption.append(el("strong", { textContent: titleCase(shown.title) }),
+                   spawns, globe);
     figure.append(caption);
     // The dialog is a sibling of the figure rather than a child of the
     // caption: inside it, its own heading is a second `figcaption strong`.
@@ -3401,7 +3594,8 @@
           () => goTo("f2", () => { ui.monsterPick = name; }),
           m ? `Level ${m.level}, ${m.experience.toLocaleString()} experience `
               + `each. Open its page.`
-            : "Open its page."));
+            : "Open its page.",
+          ui.mapSpawns ? inks[name] : undefined));
       }
       root.append(mobs);
       root.append(el("p", { className: "note", style: "margin:.5rem 0 0",
@@ -4315,13 +4509,13 @@
   // which monster set the bar.
   //
   // What it measures against is the worst the level can put in front of you:
-  // per stat, the highest value among every monster met by that level. That
-  // is deliberately not one monster. A character that lands every swing on
-  // the level's hardest monster and misses the one wearing the most armor has
-  // not met the goal, so each stat comes from whichever monster carries the
-  // most of it and the evidence rows name them. Bosses are left out until
-  // asked for; a monster above the cap is one that a character at the cap meets,
-  // which is how Paltivar enters a level-40 plan.
+  // per stat, the highest value among every monster still standing at that
+  // level. That is deliberately not one monster. A character that lands every
+  // swing on the level's hardest monster and misses the one wearing the most
+  // armor has not met the goal, so each stat comes from whichever monster
+  // carries the most of it and the evidence rows name them. Bosses are left
+  // out until asked for; a monster above the cap is one that a character at
+  // the cap meets, which is how Paltivar enters a level-40 plan.
   //
   // The trainer is not needed. With it on, the character is read out of the
   // running game rather than typed, which is the difference between planning a
@@ -4402,6 +4596,21 @@
   // The ladder stops at the cap, so anything above it is what a character at
   // the cap fights.
   const facedAt = (e) => Math.min(e.level, CAP);
+  /** The level of the hardest thing standing on each map. */
+  const MAP_TOP = new Map(Object.entries(SPAWNS).map(([map, page]) =>
+    [map, Math.max(...Object.keys(page.monsters)
+                    .map((n) => (BY_NAME.get(n) || { level: 0 }).level))]));
+  /* Where a kind runs out. The population is fixed: 1,862 monsters, each
+     killed once, nothing regenerating (docs/encounters.md). A monster is
+     therefore gone once the party is past the maps it stands on. A map is
+     behind the party once the party is past the hardest thing on it. Sixteen
+     Fire Dwarf Towers stand on one Dwarven Homeland map beside a level-17
+     alchemist. Their shot's 160 is the accuracy bar at 16 and 17. */
+  const clearedBy = (e) => {
+    const maps = WHERE[e.name] || [];
+    return maps.length
+      ? Math.min(CAP, Math.max(...maps.map((w) => MAP_TOP.get(w.map)))) : CAP;
+  };
 
   const GROUP_BITS = 0xe000;
   /**
@@ -4475,19 +4684,25 @@
        it is a statement about which fights the plan is about. */
     const counted = D.enemies.filter(
       (e) => e.listed && (bosses || !isBoss(e)) && !(skip && halvesSpells(e)));
-    /* An ordinary monster keeps standing on its map, so a character of this
-       level meets it from its own level onward. A boss is one fight, at the
-       level it is met: carrying it forward left every later level priced
-       against something the party had already killed, and by the end the only
-       thing a bar could come off was a boss long since dead. Paltivar is level
-       45 and so is met at the cap, which is where the tab has always put him.
-       Below the first monster in the game there is nothing to measure against,
-       so the lowest level that has one stands in for it. */
-    const met = counted.filter((e) => (isBoss(e) ? facedAt(e) === level
-                                                 : facedAt(e) <= level));
-    const rows = met.length ? met
-      : counted.filter((e) => facedAt(e) === Math.min(...counted.map(facedAt)));
-    const out = barsOf(rows, level, bosses, skip, groups);
+    /* An ordinary monster is met from its own level until the party is past
+       the map it stands on. A boss is met at its own level and not after. A
+       dead monster sets no bar: pricing a level against one describes a fight
+       nobody has. Paltivar is level 45. A character at the cap meets him
+       there. */
+    const standing = (lv) => counted.filter(
+      (e) => !isBoss(e) && facedAt(e) <= lv && lv <= clearedBy(e));
+    /* No monster in the game is level 12, 23 or 24. Everything placed below
+       those levels stands on a map the party has cleared by then. Such a
+       character is still fighting the region behind it, so the bar comes from
+       the nearest level below with monsters still standing. Below the first
+       monster in the game there is nothing behind. The lowest level with
+       monsters stands in instead. */
+    let rows = standing(level);
+    for (let lv = level - 1; !rows.length && lv >= 1; lv -= 1) rows = standing(lv);
+    for (let lv = level + 1; !rows.length && lv <= CAP; lv += 1) rows = standing(lv);
+    const out = barsOf(
+      rows.concat(counted.filter((e) => isBoss(e) && facedAt(e) === level)),
+      level, bosses, skip, groups);
     worstCache.set(key, out);
     return out;
   }
@@ -5262,7 +5477,7 @@
           : swing(me.damage, me.attack, foe.absorption);
         /* The fight is one monster's, so it is named once, on the first row
            it appears in rather than against every number it carries. */
-        const rounds = roundsToKill(foe, output);
+        const rounds = roundsToKill(foe, output, attackersOf(plan));
         const engaged = engagedAgainst(plan, foe, rounds);
         /* Read down: they have this much health, the four of us do this much
            to it, so a kill is this many rounds; this many of them are in by
@@ -5283,7 +5498,8 @@
         const toKill = hit > 0 ? Math.ceil(me.health / hit) : Infinity;
         const rows = [
           versus(["Damage", Math.round(output)], ["Health", foe.health, foe]),
-          versus([`Damage \u00d7 ${PARTY}`, Math.round(PARTY * output)],
+          versus([`Damage \u00d7 ${attackersOf(plan)}`,
+                  Math.round(attackersOf(plan) * output)],
                  ["Engaged", engaged]),
           /* What a landed blow takes off, and how many of them it takes. The
              blow arrives whole or not at all, so health is a count of hits
@@ -5548,8 +5764,21 @@
    * monster. The party's swings, not this character's, since the four of them
    * are on whatever is in front (docs/combat.md).
    */
-  const roundsToKill = (foe, output) =>
-    Math.max(1, Math.ceil(foe.health / Math.max(1e-9, PARTY * output)));
+  /**
+   * How many are swinging at what is in front.
+   *
+   * This character, unless Party is on. Four of the same build is not a party
+   * anyone assembles. A rate priced that way describes four copies of whoever
+   * is being planned, a run nobody makes. What the goal is asked by default is
+   * what this one character kills between two rests.
+   *
+   * The damage taken is a quarter share either way. The monster's target
+   * picker rolls over four slots whether or not the other three are helping
+   * kill this one.
+   */
+  const attackersOf = (plan) => (plan.party ? PARTY : 1);
+  const roundsToKill = (foe, output, attackers) =>
+    Math.max(1, Math.ceil(foe.health / Math.max(1e-9, attackers * output)));
 
   /**
    * How many rounds a monster swings in before it is killed.
@@ -5624,13 +5853,10 @@
       ? (cast ? cast.landed : 0)
       : swing(me.damage, me.attack, foe.absorption);
     if (!output) return 0;
-    /* The party's rounds, not this character's. Four of them are swinging at
-       the monster in front, which is what decides how long it stands and so
-       how many more close behind it, and it is the same four the monster is
-       choosing its target from. Counting one character's rounds against a
-       quarter of the monster's attention was the party being four for the
-       damage taken and one for the damage dealt. */
-    const rounds = roundsToKill(foe, output);
+    /* Whose rounds the kill takes, which `attackersOf` settles. However many
+       are swinging, that is what decides how long the monster stands. How
+       many more close behind follows from it. */
+    const rounds = roundsToKill(foe, output, attackersOf(plan));
     /* Rounds standing counts the rounds the monster is swinging in, and a
        kill costs `swingsBefore` of those, so their quotient is kills and the
        rounds cancel. A monster that never swings gives no denominator, which
@@ -5702,10 +5928,16 @@
    * dropped out of it. Reading the booleans halved a spell against the three
    * monsters whose bit 4 is their whole magic row -- Fire Dwarf, Sorcerer and
    * Chameleon Man -- where the arithmetic halves nothing at all.
+   *
+   * The Life Force line is an exception to the test, not to the word. All
+   * four carry the ordinary type. All four are diverted at image `0x1ccd5`
+   * into a branch that runs neither test. The type they carry is never put to
+   * a monster.
    */
   const BLOW_MASK = 0xfe00;
   const halvedBy = (spell, foe) =>
-    !!(foe && ((spell.blow || 0) & BLOW_MASK) & (foe.resistance || 0));
+    !drains(spell)
+    && !!(foe && ((spell.blow || 0) & BLOW_MASK) & (foe.resistance || 0));
   const zeroedBy = (spell, foe) =>
     !!(foe && (spell.element_word || 0) & (foe.immunity || 0));
 
@@ -5794,7 +6026,19 @@
       if (s.when === "out of hand to hand") continue;
       if (!affects(s, foe)) continue;
       const halved = !unresisted && halvedBy(s, foe);
-      const landed = rollOdds(margin) * perHit(s.damage, margin) * (halved ? 0.5 : 1);
+      const odds = rollOdds(margin);
+      let landed = odds * perHit(s.damage, margin) * (halved ? 0.5 : 1);
+      /* A drain that misses does not fizzle. Image `0x1d642` reloads the
+         amount with record 46 whole and hands the transfer to the monster. A
+         miss therefore adds the damage stat to the health a hit would have
+         taken off. What follows weighs the two against each other. It goes
+         negative below margin 38, which is where these spells stop being
+         worth casting.
+
+         What the party loses on that same miss is not priced here. The goals
+         that read incoming damage read it off the monster's turn. By the
+         margin at which a drain is chosen, the miss is rare. */
+      if (drains(s)) landed -= (1 - odds) * s.damage;
       if (landed <= 0) continue;
       const cast = { spell: s, landed, margin, halved };
       if (foe && landed >= foe.health) {
@@ -6248,10 +6492,11 @@
       }
       results.sort((a, b) => active.indexOf(a.goal) - active.indexOf(b.goal));
       if (purse && plan.spare === "strength") {
-        buy("strength", strengthCrossover(plan, level, bought, purse, at));
+        buy("strength", strengthCrossover(plan, level, bought, purse, capAt));
       }
-      /* Strength stops paying at the crossover, and the training still has to
-         close, so whatever is over goes where the choice says. */
+      /* The crossover takes the share of the purse strength is worth more
+         than skill on, and the training still has to close, so whatever is
+         over goes where the choice says. */
       if (purse) buy(plan.spare === "dexterity" ? "dexterity" : leverOf(GOALS.hit, plan), purse);
 
       const me = project(plan, level, bought);
@@ -6263,13 +6508,32 @@
     return rows;
   }
 
-  /** Points of strength worth buying here, out of what the goals left. */
-  function strengthCrossover(plan, level, bought, spare, at) {
+  /**
+   * Points of strength worth buying here, out of what the goals left.
+   *
+   * A point of skill adds `damage / 100` to a swing and a point of strength
+   * adds `margin / 500`. Both are worth the same whenever they are bought,
+   * and what they are worth moves over the career. Damage is mostly the
+   * weapon, and the weapon is bought with gold, so a point of skill is worth
+   * five times as much at the cap as at level 6. So the split is weighed at
+   * the cap, the way `spread` is. Weighed at the level instead, a starter
+   * weapon leaves the margin far above five times the damage and the early
+   * trainings all go to strength, which the character then carries to the cap
+   * in place of the skill it would rather have.
+   *
+   * Every split is priced with the rest of the leftovers on the skill they
+   * would otherwise buy, since that is where they go. Priced against a
+   * character that spends nothing, any strength at all looks like a gain and
+   * takes the whole purse.
+   */
+  function strengthCrossover(plan, level, bought, spare, capAt) {
+    const skill = leverOf(GOALS.hit, plan);
     let best = 0, bestOut = -1;
     for (let p = 0; p <= spare; p += 1) {
-      const me = project(plan, level,
-                         raise(bought, "strength", bought.strength + p, level));
-      const out = swing(me.damage, me.accuracy, at.absorption.value);
+      let split = raise(bought, "strength", bought.strength + p, level);
+      split = raise(split, skill, split[skill] + (spare - p), level);
+      const me = project(plan, CAP, split);
+      const out = swing(me.damage, me.attack, capAt.absorption.value);
       if (out > bestOut) { bestOut = out; best = p; }
     }
     return best;
@@ -6432,7 +6696,7 @@
        goals of their own, and keying on the rows alone hands the second one
        the first one's answer. */
     const key = JSON.stringify([settings, stored.archetype, stored.goals,
-                                stored.bosses, stored.groups,
+                                stored.bosses, stored.groups, stored.party,
                                 stored.ignoreResist,
                                 stored.skipResistant,
                                 stored.code, stored.armorShare,
@@ -6502,6 +6766,9 @@
         ? stored.goals : archetypeGoals(archetype),
       code: stored.code || 1,
       bosses: !!stored.bosses,
+      /* Whether kills before a rest counts the four of them swinging at what
+         is in front, or this character alone. */
+      party: !!stored.party,
       /* How many of a monster a fight is against: as many as its record lets
          engage, or one of it. On by default. That prices the worse of the two
          fights, and every figure the tab has ever quoted was measured under
@@ -6649,13 +6916,17 @@
     root.textContent = "";
     const plan = planState();
 
-    root.append(characterBox(root, plan), goalBox(root, plan),
-                careerBox(root, plan));
+    /* Walked once for the two boxes that read it. The sheet's level-40 column
+       and the career table under it are the same career, and walking it twice
+       would cost a second pass over forty levels for numbers already in hand. */
+    const rows = plan.goals.some((g) => g.on) ? walk(plan) : null;
+    root.append(characterBox(root, plan, rows), goalBox(root, plan),
+                careerBox(root, plan, rows));
     watchParty(root, plan);
   }
 
   /** Who is being planned. */
-  function characterBox(root, plan) {
+  function characterBox(root, plan, rows) {
     const c = plan.character;
     const box = el("div");
     const heading = el("div", { className: "plan-heading" });
@@ -6870,28 +7141,74 @@
 
     box.append(switches);
 
+    /* Points per lever over the whole career, added up off the same list the
+       Spend column of the career table prints, so the two cannot disagree.
+       Charisma is in there with the rest: it is not a lever a goal buys, but
+       it is where the first trainings go and the player pays for it. */
+    const totals = new Map();
+    for (const row of rows || []) {
+      for (const [lever, n] of row.spent) {
+        totals.set(lever, (totals.get(lever) || 0) + n);
+      }
+    }
+
+    /* Where the career leaves the character. `project` carries every stat the
+       sheet shows except charisma, which no goal reads: charisma climbs 2 per
+       level and takes whatever the early trainings bought on top. */
+    const last = rows && rows.length ? rows[rows.length - 1] : null;
+    const at40 = last ? Object.assign({}, last.me, {
+      charisma: c.charisma + K.per_level * (CAP - c.level)
+        + (totals.get("charisma") || 0),
+    }) : null;
+
     /* What the character is, in the numbers the goals read. Shown rather than
        typed: with the trainer these came out of the game, and by hand they are
        what the class rolls at the cap and what the gold affords by the level. */
     const sheet = el("dl", { className: "stats plan-sheet" });
     /* Only a character out of the game has a level to state, and it is a fact
        about it rather than a setting: one built here is the class as it rolls,
-       planned from the first training, because points cannot be banked. */
+       planned from the first training, because points cannot be banked. It is
+       also the one row with nothing to say about level 40, which is why the
+       third field is the name the value is read out of the projection under
+       and the level has none. */
     const shown = c.source === "game" ? [["Level", c.level]] : [];
-    shown.push(["Accuracy", c.accuracy], ["Damage", c.damage],
-                ["Absorption", c.absorption], ["Dexterity", c.dexterity],
-                ["Health", c.health], ["Charisma", c.charisma]);
-    if (c.casting) shown.push(["Casting", c.casting]);
-    if (c.magic) shown.push(["Magic", c.magic]);
+    shown.push(["Accuracy", c.accuracy, "accuracy"], ["Damage", c.damage, "damage"],
+                ["Absorption", c.absorption, "absorption"],
+                ["Dexterity", c.dexterity, "dexterity"],
+                ["Health", c.health, "health"], ["Charisma", c.charisma, "charisma"]);
+    if (c.casting) shown.push(["Casting", c.casting, "casting"]);
+    if (c.magic) shown.push(["Magic", c.magic, "magic"]);
     /* Each name and its value are one cell, so a narrow panel wraps between
        pairs rather than between a label and the number it belongs to. */
-    for (const [label, value] of shown) {
-      sheet.append(el("div", {}, [
-        el("dt", { textContent: label }),
-        el("dd", { className: `plan-${label.toLowerCase()}`,
-                   textContent: String(value) })]));
+    for (const [label, value, key] of shown) {
+      const dd = el("dd", { className: `plan-${label.toLowerCase()}`,
+                            textContent: String(value) });
+      const end = at40 && key ? at40[key] : undefined;
+      if (end !== undefined) {
+        dd.append(el("span", { className: "plan-at-cap",
+                               textContent: `→ ${end}` }));
+      }
+      sheet.append(el("div", {}, [el("dt", { textContent: label }), dd]));
     }
     box.append(sheet);
+
+    /* The totals, under the sheet the stats they were spent on are read off.
+       The career table prices each level; this is what forty of them come to,
+       which is the number a player compares one build against another with.
+       Levers nothing went into are left out rather than printed as zeros. */
+    const bought = [...LEVERS, "charisma"].filter((lever) => totals.get(lever));
+    if (bought.length) {
+      box.append(el("div", { className: "plan-sublabel",
+                             textContent: "Points bought by 40" }));
+      const spend = el("dl", { className: "stats plan-bought" });
+      for (const lever of bought) {
+        spend.append(el("div", {}, [
+          el("dt", { textContent: capitalize(LEVER_LABEL[lever]) }),
+          el("dd", { className: `plan-bought-${lever}`,
+                     textContent: `+${totals.get(lever)}` })]));
+      }
+      box.append(spend);
+    }
     return box;
   }
 
@@ -7074,6 +7391,15 @@
         cell.append(el("label", { className: "plan-switch plan-goal-switch" },
                        [ignore, document.createTextNode("Ignore Resistance")]));
       }
+      /* This character's rounds, or the four of them on what is in front. Off
+         by default: four of the same build is not a party anyone assembles. */
+      if (g.type === "kills") {
+        const party = el("input", { type: "checkbox", id: "plan-party" });
+        party.checked = plan.party;
+        party.onchange = () => { savePlan({ party: party.checked }); renderPlanner(root); };
+        cell.append(el("label", { className: "plan-switch plan-goal-switch" },
+                       [party, document.createTextNode("Party")]));
+      }
       tr.append(cell);
       /* Every lever it can buy, not only the one it is named for: a goal that
          reads three numbers spends on three, and the column is what tells the
@@ -7152,17 +7478,16 @@
   }
 
   /** The answer: every level from where the character stands to the cap. */
-  function careerBox(root, plan) {
+  function careerBox(root, plan, rows) {
     const box = el("div");
     box.append(el("h4", { className: "curve-sub", textContent: "Career" }));
 
     const active = plan.goals.filter((g) => g.on);
-    if (!active.length) {
+    if (!active.length || !rows) {
       box.append(el("p", { className: "empty", textContent: "No goals" }));
       return box;
     }
 
-    const rows = walk(plan);
     const lines = el("div", { className: "plan-summary" });
     summary(plan, rows, active).forEach((line, i) => {
       const row = el("span", { className: line.held ? "plan-holds" : "plan-fails" });

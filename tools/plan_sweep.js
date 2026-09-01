@@ -42,7 +42,7 @@ if (!src.includes(ENTRY)) {
 const hooked = src.replace(ENTRY, `  window.__plan = {
     PLAN, ARCHETYPES, POLICIES, archetypeGoals, buildPlan, fitPolicies, walk,
     worstRestFoe, castAgainst, swing, roundsToKill, swingsBefore,
-    engagedAgainst, killsPerRest,
+    engagedAgainst, killsPerRest, attackersOf,
   };
 })();`);
 
@@ -80,7 +80,7 @@ const rows = await page.evaluate(() => {
               ? P.castAgainst(plan, me, foe, undefined, plan.ignoreResist) : null;
             const dealt = casts ? (cast ? cast.landed : 0)
               : P.swing(me.damage, me.attack, foe.absorption);
-            const rounds = P.roundsToKill(foe, dealt);
+            const rounds = P.roundsToKill(foe, dealt, P.attackersOf(plan));
             out.push({
               cls: cls.name, archetype, bosses, groups, level, casts,
               engaged: P.engagedAgainst(plan, foe, rounds),

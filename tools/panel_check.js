@@ -302,6 +302,67 @@ if (!/Health\s*\n?1162\b/.test(atForty)) {
     + `combat_model computes: ${JSON.stringify(atForty)}`);
 }
 
+// The sheet states each stat twice: where the character stands, and where the
+// career leaves it at 40. The second figure is the same walk the table below
+// prints, so it carries the health the evidence just named, and no stat ends
+// the career under where it started: every lever only ever rises and the climb
+// of 2 per level is free.
+const sheetCells = await planner.locator(".plan-sheet > div").evaluateAll(
+  (cells) => cells.map((d) => {
+    const cap = d.querySelector(".plan-at-cap");
+    return {
+      name: d.querySelector("dt").textContent.trim(),
+      now: Number(d.querySelector("dd").firstChild.textContent.trim()),
+      // The level a character was read out of the game at is the one field
+      // with nothing to say about 40.
+      cap: cap ? Number(cap.textContent.match(/\d+/)[0]) : null,
+    };
+  }));
+const health = sheetCells.find((s) => s.name === "Health");
+if (!health || health.cap !== 1162) {
+  problems.push("planner: the sheet does not carry the career to the 1162 "
+    + `health its own evidence names: ${JSON.stringify(health)}`);
+}
+const sunk = sheetCells.filter((s) => s.cap !== null && s.cap < s.now);
+if (sunk.length) {
+  problems.push(`planner: ${sunk[0].name} ends the career at ${sunk[0].cap}, `
+    + `under the ${sunk[0].now} it started at`);
+}
+
+// What the sheet totals under a lever is every Spend cell of that lever added
+// up, so the career and the summary above it cannot part company. Charisma is
+// the one that catches a summary reading the projection's own tallies instead
+// of the rows: no goal buys charisma, so it is in the rows and nowhere else.
+const LEVER_NAME = { skill: "Weapon skill", dex: "Dexterity", str: "Strength",
+                     pool: "Pool attribute", casting: "Casting",
+                     stam: "Stamina", cha: "Charisma" };
+const perLever = await planner.locator(".plan-career tbody tr[data-level]")
+  .evaluateAll((rows) => {
+    const out = {};
+    for (const tr of rows) {
+      const cells = [...tr.querySelectorAll("td")];
+      for (const m of cells[cells.length - 1].textContent.matchAll(/(\w+) \+(\d+)/g)) {
+        out[m[1]] = (out[m[1]] || 0) + Number(m[2]);
+      }
+    }
+    return out;
+  });
+const totals = await planner.locator(".plan-bought > div").evaluateAll(
+  (cells) => Object.fromEntries(cells.map((d) => [
+    d.querySelector("dt").textContent.trim(),
+    Number(d.querySelector("dd").textContent.replace("+", "")),
+  ])));
+for (const [short, points] of Object.entries(perLever)) {
+  if (totals[LEVER_NAME[short]] !== points) {
+    problems.push(`planner: the career spends ${points} on ${short} and the `
+      + `sheet totals ${totals[LEVER_NAME[short]]} under ${LEVER_NAME[short]}`);
+  }
+}
+if (Object.keys(totals).length !== Object.keys(perLever).length) {
+  problems.push("planner: the sheet totals a lever the career never bought: "
+    + `${JSON.stringify(totals)} against ${JSON.stringify(perLever)}`);
+}
+
 // Groups says whether a fight is against as many of a monster as its record
 // lets engage or against one of it. The Black Dragon's bits allow three, so
 // surviving a round at the cap prices three of it with the switch on and one
@@ -374,6 +435,16 @@ if (!/Accuracy\s*\n?160\b/.test(tower)
     + `Tower's shot: ${JSON.stringify(tower)}`);
 } else if (!/shot/i.test(tower)) {
   problems.push("planner: the bar the tower's shot set is not marked as a shot");
+}
+
+// And it stops there. Sixteen towers stand on one Dwarven Homeland map beside
+// a level-17 alchemist. A character of 24 is past that map. What it fights is
+// the crocodiles of 22, the last monsters placed below it. Carrying the tower
+// on instead armors the career to 25 against monsters already killed.
+const cleared = await takeHitAt(24);
+if (!/Accuracy\s*\n?152\b/.test(cleared) || !names(cleared).includes("CROCODILE")) {
+  problems.push("planner: level 24 is not measured against the Crocodile: "
+    + JSON.stringify(cleared));
 }
 
 // With bosses counted, a character at the cap is measured against Paltivar,
