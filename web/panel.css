@@ -659,6 +659,52 @@ body.embedded .guide-side { top: 3.2rem; }
                  border: 1px solid var(--stone-500); border-radius: 3px;
                  padding: 1rem 1.2rem; }
 .trainer-about::backdrop { background: rgba(0, 0, 0, .6); }
+
+/* The spell list, sized to the cabinet rather than to the panel it opens from,
+   so a long list scrolls once instead of inside the tab's own scroll. A dialog
+   is display:none until it is open, so the layout only applies then. */
+.plan-casts { width: min(46rem, 92vw); max-height: 88vh; padding: 1rem 1.2rem;
+              background: var(--stone-200); color: var(--ink);
+              border: 1px solid var(--stone-500); border-radius: 3px;
+              overflow: hidden; }
+.plan-casts[open] { display: flex; flex-direction: column; gap: .6rem; }
+.plan-casts::backdrop { background: rgba(0, 0, 0, .75); }
+.plan-casts h3 { margin: 0; font-size: 14px; color: var(--ink-bright); }
+.plan-casts .note { margin: 0; max-width: none; }
+.plan-casts-shell { overflow: auto; min-height: 0; }
+/* Every column sorts, and the one being sorted on says which way it is
+   running. The arrow is in the heading rather than beside it, so a turn does
+   not shift the column under the pointer. */
+/* The heading is the switch between planning one character and planning four,
+   so it reads as the heading it stands in for rather than as a control. */
+.plan-view { background: none; border: 0; padding: 0; font: inherit;
+             color: inherit; cursor: pointer;
+             /* Both words sit in the same box, so the mark on the right of it
+                does not walk left when the shorter one is showing. */
+             display: inline-flex; justify-content: space-between;
+             gap: .4rem; min-width: 5.5rem; }
+.plan-view:hover { color: var(--ink-bright); }
+.plan-view::after { content: " \21c4"; opacity: .4; font-size: .85em; }
+.plan-party { max-width: 34rem; margin-bottom: .6rem; }
+.plan-party td { padding: .15rem .4rem .15rem 0; }
+/* A character the monster outruns takes a blow before it lands one. */
+.plan-party .plan-slow { color: var(--stone-600); }
+.plan-foes-line { display: flex; align-items: baseline; gap: .5rem;
+                  flex-wrap: wrap;
+                  margin-bottom: .5rem; color: var(--stone-700); }
+.plan-casts th { cursor: pointer; user-select: none; }
+.plan-casts th[aria-sort="ascending"]::after { content: " \2191"; }
+.plan-casts th[aria-sort="descending"]::after { content: " \2193"; }
+.plan-casts th[aria-sort="none"]::after { content: " \2195"; opacity: .25; }
+/* A spell that kills nothing it could still meet. Its monster is the toughest
+   thing it can hurt rather than something it drops, so the row is dimmed to
+   say the Damage beside it falls short of the Health. */
+.plan-casts tr.plan-cast-short td { color: var(--stone-600); }
+.plan-casts .toggle { align-self: flex-start; }
+/* A mark on the label, not a control with a box around it. */
+.plan-info { background: none; border: 0; padding: 0 0 0 .3rem; font: inherit;
+             line-height: 1; color: var(--stone-700); cursor: pointer; }
+.plan-info:hover { color: var(--ink-bright); }
 .trainer-about h3 { margin: 0 0 .6rem; font-size: 14px; color: var(--ink-bright); }
 .trainer-about .note { max-width: none; }
 

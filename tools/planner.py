@@ -131,17 +131,23 @@ def weapons(items: list[dict] | None = None) -> dict:
     actually stocks; the three weapons of Light are quest loot and are priced
     as what a shop pays for one. `combat_model.shop_weapons` is the filter.
 
-    The two lists are kept apart because carrying a two-hander costs the
+    The two melee lists are kept apart because carrying a two-hander costs the
     shield, which is 30 absorption against 10 damage, and the panel prices the
-    two choices separately.
+    two choices separately. Missile weapons are a third list rather than part
+    of either: a character shoots with the projectile skill and the missile
+    weapon, which the sheet holds as its own pair, and the gold that buys one
+    is the same gold. `shop_weapons` tells them apart on the record's skill
+    field.
     """
     single = C.shop_weapons(items=items)
     both = C.shop_weapons(items=items, two_handed=True)
+    shot = C.shop_weapons(items=items, melee=False, two_handed=True)
     names = {name for _damage, _price, name in single}
     row = lambda r: {"damage": r[0], "price": r[1], "name": r[2]}
     return {
         "one_handed": [row(r) for r in single],
         "two_handed": [row(r) for r in both if r[2] not in names],
+        "projectile": [row(r) for r in shot],
     }
 
 

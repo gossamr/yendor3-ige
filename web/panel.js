@@ -4877,12 +4877,16 @@
     for (const s of WEAPON_SKILLS) if (now(s) > now(skill)) skill = s;
     const dexterity = now("dexterity");
     const strength = now("strength");
+    /* What it throws rather than what it swings. The sheet holds both pairs:
+       these two come off the projectile skill and the missile weapon. */
+    const shotAccuracy = now("shot accuracy");
+    const shotDamage = now("shot damage");
     const absorption = now("absorption");
     const damage = now("damage");
     return {
       source: "game", name: person.name, slot: person.slot,
       code: person.classCode % 10,
-      level: person.level, skill,
+      level: person.level, skill, shotAccuracy, shotDamage,
       strength, dexterity, stamina: base("stamina"),
       intelligence: base("intelligence"), wisdom: base("wisdom"),
       charisma: base("charisma"),
@@ -4940,6 +4944,21 @@
     const key = `w${level}:${share}:${twoHanded}`;
     if (afforded.has(key)) return afforded.get(key);
     const value = weaponValue(level, share, twoHanded);
+    afforded.set(key, value);
+    return value;
+  }
+
+  /** Damage of the best missile weapon the gold stretches to. The same purse
+   *  the melee weapon comes out of: a character carries one of each and the
+   *  share buys whichever it is about to use. */
+  function shotAfforded(level, share) {
+    const key = `s${level}:${share}`;
+    if (afforded.has(key)) return afforded.get(key);
+    const spare = spareGold(level, share);
+    let value = 0;
+    for (const w of PLAN.weapons.projectile || []) {
+      if (w.price <= spare) { value = w.damage; break; }
+    }
     afforded.set(key, value);
     return value;
   }
@@ -5144,10 +5163,19 @@
     }
 
     const accuracy = c.accuracy + grown + bought.attack;
+    /* What it throws. The skill climbs with the level like the rest; the
+       damage is the missile weapon's and no lever buys it. A character built
+       by hand carries neither, so a round out of contact reads zero for it. */
+    const shotAccuracy = (c.shotAccuracy || 0) && c.shotAccuracy + grown;
+    /* Upgraded out of the same purse as the melee weapon. What the character
+       carries now is the floor: a missile weapon it already has is not sold
+       to buy a worse one. */
+    const shotDamage = Math.max(c.shotDamage || 0,
+                                shotAfforded(level, plan.weaponShare));
     const casting = c.casting ? c.casting + grown + bought.casting : 0;
     return {
       level, dexterity, strength, armor, weapon, health, magic,
-      accuracy, casting,
+      accuracy, casting, shotAccuracy, shotDamage,
       // What an attack of this character's rolls with, and what a landed one
       // delivers. A caster's blow is the spell, so the damage behind it is
       // read off the spell rather than off the weapon it is not swinging.
@@ -5949,7 +5977,6 @@
   const bestCast = (plan, me, at) =>
     castAgainst(plan, me, at.health.monster, at.absorption.value);
 
-  /** The same, against one monster and its own armor. */
   /**
    * The damage spells a class has learned by a level.
    *
@@ -5989,6 +6016,49 @@
   }
 
   /**
+   * What one spell lands on one monster, or null where it is not an option.
+   *
+   * A monster whose immunity word shares a bit with the spell's element word
+   * takes nothing at all from it, so the spell is not an option rather than a
+   * halved one. The damage spells whose element word is zero cannot be shut
+   * out this way. The family a spell names works the same way, and resistance
+   * is the one that reduces rather than removes.
+   *
+   * The margin moves both limbs of the answer: how often the cast connects,
+   * and how much of the spell's damage a connection delivers.
+   */
+  function landedOn(spell, margin, foe, unresisted, ooc) {
+    if (zeroedBy(spell, foe)) return null;
+    /* Inert once a monster has closed, which is the fight the melee round
+       models. It rules out the two most efficient spells a mage has, Finger
+       of Flame and Power Surge, and every spell that carries a reach phrase.
+       Reach and casting condition are nested, so all 12 that reach in a
+       straight line or in a 3x3 area are cast out of hand to hand
+       (docs/spells.md). Scope is a separate field and is not filtered here:
+       21 of the 33 damage spells that hit every monster are castable in
+       melee, 13 of them reaching in hand to hand and 8 naming no reach.
+       Asked about the round before contact, the spells this drops are
+       exactly the ones on offer. */
+    if (!ooc && spell.when === "out of hand to hand") return null;
+    if (!affects(spell, foe)) return null;
+    const halved = !unresisted && halvedBy(spell, foe);
+    const odds = rollOdds(margin);
+    let landed = odds * perHit(spell.damage, margin) * (halved ? 0.5 : 1);
+    /* A drain that misses does not fizzle. Image `0x1d642` reloads the
+       amount with record 46 whole and hands the transfer to the monster. A
+       miss therefore adds the damage stat to the health a hit would have
+       taken off. What follows weighs the two against each other. It goes
+       negative below margin 38, which is where these spells stop being
+       worth casting.
+
+       What the party loses on that same miss is not priced here. The goals
+       that read incoming damage read it off the monster's turn. By the
+       margin at which a drain is chosen, the miss is rare. */
+    if (drains(spell)) landed -= (1 - odds) * spell.damage;
+    return landed > 0 ? { spell, landed, margin, halved } : null;
+  }
+
+  /**
    * The spell to throw at this monster.
    *
    * Not the one that lands hardest. `tools/combat_model.py` settled this and
@@ -6007,7 +6077,7 @@
    * ranked by what a pool buys of them, and the rest of the list is the
    * fallback for levels where nothing is lethal, ranked by what lands.
    */
-  function castAgainst(plan, me, foe, absorption, unresisted) {
+  function castAgainst(plan, me, foe, absorption, unresisted, scope) {
     const cls = classAt(plan.character.code);
     if (!cls.magic_blend.length) return null;
     const name = cls.name.toUpperCase();
@@ -6015,32 +6085,14 @@
       - (absorption === undefined ? (foe ? foe.absorption : 0) : absorption);
     let lethal = null, fallback = null;
     for (const s of learnedBy(name, me.level)) {
-      // A monster whose immunity word shares a bit with the spell's element
-      // word takes nothing at all from it, so the spell is not an option
-      // rather than a halved one. The damage spells whose element word is zero
-      // cannot be shut out this way.
-      if (zeroedBy(s, foe)) continue;
-      /* Inert once a monster has closed, which is the fight being modeled.
-         It rules out the two most efficient spells a mage has, Finger of
-         Flame and Power Surge. */
-      if (s.when === "out of hand to hand") continue;
-      if (!affects(s, foe)) continue;
-      const halved = !unresisted && halvedBy(s, foe);
-      const odds = rollOdds(margin);
-      let landed = odds * perHit(s.damage, margin) * (halved ? 0.5 : 1);
-      /* A drain that misses does not fizzle. Image `0x1d642` reloads the
-         amount with record 46 whole and hands the transfer to the monster. A
-         miss therefore adds the damage stat to the health a hit would have
-         taken off. What follows weighs the two against each other. It goes
-         negative below margin 38, which is where these spells stop being
-         worth casting.
-
-         What the party loses on that same miss is not priced here. The goals
-         that read incoming damage read it off the monster's turn. By the
-         margin at which a drain is chosen, the miss is rare. */
-      if (drains(s)) landed -= (1 - odds) * s.damage;
-      if (landed <= 0) continue;
-      const cast = { spell: s, landed, margin, halved };
+      /* One scope at a time where the caller asks: what a party round wants
+         is the best spell that reaches every monster and, separately, the
+         best that reaches one, and the two are not comparable by what they
+         land. */
+      if (scope && s.scope !== scope) continue;
+      const cast = landedOn(s, margin, foe, unresisted, plan.ooc);
+      if (!cast) continue;
+      const landed = cast.landed;
       if (foe && landed >= foe.health) {
         /* Kills it either way, so the one a pool buys most of, and the cheaper
            one where that is the same number. Whole casts are what a rest
@@ -6060,6 +6112,51 @@
       }
     }
     return lethal || fallback;
+  }
+
+  /**
+   * Each damage spell the class knows, and the monster it is for.
+   *
+   * The Cast cell is one number, the one `castAgainst` reaches for the single
+   * monster the goals are asked about. This is the rest of the list, and it
+   * runs the same rule from the other end: a spell's monster is the toughest
+   * one a single cast kills. The biggest thing it drops outright is what it is
+   * for, so a spell gets no credit for overkilling something small, and a
+   * monster that halves the spell or is immune to it was never a candidate.
+   *
+   * A spell that kills nothing in one cast still has a best target, so it
+   * takes the toughest monster it can hurt at all and is marked as not lethal.
+   */
+  function spellTargets(plan, me) {
+    const cls = classAt(plan.character.code);
+    if (!cls.magic_blend.length) return [];
+    const name = cls.name.toUpperCase();
+    const pool = MONSTERS.filter((m) => plan.bosses || !isBoss(m));
+    const out = [];
+    for (const spell of learnedBy(name, me.level)) {
+      const from = Math.min(...(spell.classes || [])
+        .filter((c) => c.class === name).map((c) => c.level));
+      let lethal = null, hurts = null;
+      for (const foe of pool) {
+        /* A monster the party outgrows before the spell is learned is not
+           what the spell is for, however well the arithmetic pairs them.
+           King Slator stands at level 36 and Turbulent Atmosphere is learned
+           at 38, so the one never meets the other. */
+        if (foe.level < from) continue;
+        const cast = landedOn(spell, me.casting - foe.absorption, foe,
+                              plan.ignoreResist, plan.ooc);
+        if (!cast) continue;
+        if (!hurts || foe.health > hurts.foe.health) hurts = { foe, cast };
+        if (cast.landed >= foe.health
+            && (!lethal || foe.health > lethal.foe.health)) lethal = { foe, cast };
+      }
+      const best = lethal || hurts;
+      if (!best) continue;
+      out.push({ spell, foe: best.foe, landed: best.cast.landed,
+                 kills: !!lethal });
+    }
+    out.sort((a, b) => b.foe.health - a.foe.health);
+    return out;
   }
 
   /* --- the walk ---------------------------------------------------------- */
@@ -6146,7 +6243,8 @@
    *      decides which one gives way when one training will not cover both;
    *   2. toward what a goal further up the career will ask for, in the same
    *      order, which is the only way to arrive at a stop able to pay for it;
-   *   3. strength, to the crossover, when that is switched on;
+   *   3. strength against skill, split where the pair is worth most at the
+   *      cap, when the leftovers are set to strength;
    *   4. whatever is left, into the lever the attack goals use, since a point
    *      of skill is never worth nothing.
    *
@@ -6346,17 +6444,79 @@
          goal the most good rather than all on the first lever it names. A goal
          that cannot say how close it came, or that has one lever, has nothing
          to choose between and takes the plain answer. */
-      const spread = (goal, spec, levers) => {
-        if (levers.length < 2 || !goal.nearness) { buy(levers[0], purse); return; }
-        /* Weighed at the cap, not here. Four of the five levers are worth the
-           same whenever they are bought, and the pool is worth what the
-           trainings after it make of it: at the level it is paid for it is
-           worth nothing at all, so a point of it measured here can never win
-           however badly the goal needs the casts. The goal is a promise about
-           every level from its own to the last, and the cap is the one horizon
-           all five can be read against. */
-        const value = (held) =>
-          goal.nearness(plan, project(plan, CAP, held), capAt, spec.target);
+      const spread = (value, levers) => {
+        if (levers.length < 2 || !value) { buy(levers[0], purse); return; }
+        const total = purse;
+        let future = 0;
+        for (const [when, t] of granted) if (when > level) future += t.free;
+        /* Only the share of those that reaches these levers. The goals take
+           theirs first, and dexterity and charisma are not in this split.
+           Handing the whole grant to two levers had every early training
+           planning a career that ends near 105 strength, which the later
+           ones then spent themselves correcting. */
+        future = Math.round(future * (training.free ? total / training.free : 0));
+        /* The character at the cap if the trainings still to come split their
+           points the way this one is splitting them. A training holds seven
+           to fifteen points and the career holds four hundred, so a split
+           priced on its own share alone reads the cap as it will never be:
+           short on every lever by what the later levels will buy, which
+           understates the margin, which is what strength is paid in. The pool
+           and stamina are left out. What a point of either is worth depends
+           on when it was bought, and a share added here has no date. */
+        const later = (held) => {
+          if (!future || !total) return held;
+          const out = Object.assign({}, held);
+          for (const lever of levers) {
+            if (DATED[lever]) continue;
+            const share = (held[lever] - bought[lever]) / total;
+            out[lever] = held[lever] + Math.round(future * share);
+          }
+          return out;
+        };
+        /* Two levers is every split of the training, so it is priced by
+           trying them rather than by walking toward one. The greedy below
+           offers a lever the whole of what is left and keeps whichever gains
+           most, which is not the same question: it took 22 points of strength
+           where every split says 57, because the first point of strength
+           never beats the first point of skill and the loop never looks past
+           it. Three levers is kills per rest alone, where the walk is what
+           keeps the search from squaring. */
+        if (levers.length === 2) {
+          let best = null;
+          for (let p = 0; p <= total; p += 1) {
+            let held = raise(bought, levers[0], bought[levers[0]] + p, level);
+            held = raise(held, levers[1], held[levers[1]] + (total - p), level);
+            const worth = value(later(held));
+            /* Ties to the lever named first. Splits that buy the same thing
+               are common, since the attribute bonus is a staircase, and the
+               first lever is the one a point is never wasted on. Taking the
+               other side of a tie put strength in at level 5, where the
+               starter weapon makes the two read alike. */
+            if (!best || worth >= best.worth) best = { worth, p };
+          }
+          /* Strength rises 2 per level on its own and pays 1 damage per 5 of
+             it, so 3 bought completes a step and 1 or 2 completes nothing.
+             A partial step is not a smaller gain, it is the same gain later,
+             and the points that would buy it are worth their full value in
+             skill meanwhile. So the purchase is taken up to the step it can
+             complete and no further. Read at this level rather than at the
+             cap: what the split is worth is a question about the career, and
+             when it lands is a question about the level. */
+          const feeds = { strength: "damage", dexterity: "absorption" };
+          const stat = feeds[levers[1]];
+          if (stat) {
+            const at = (p) => {
+              const h = raise(bought, levers[0], bought[levers[0]] + p, level);
+              return project(plan, level,
+                             raise(h, levers[1], h[levers[1]] + (total - p), level))[stat];
+            };
+            const landed = at(best.p);
+            while (best.p < total && at(best.p + 1) === landed) best.p += 1;
+          }
+          buy(levers[0], best.p);
+          buy(levers[1], purse);
+          return;
+        }
         let holding = bought;
         const share = new Map();
         let left = purse;
@@ -6366,10 +6526,10 @@
              five of the attribute, so a lever asked what one point buys
              answers nothing four times in five and loses to a lever whose
              worth climbs smoothly. */
-          const from = value(holding);
+          const from = value(later(holding));
           let best = null;
           for (const lever of levers) {
-            const gain = value(raise(holding, lever, holding[lever] + left, level))
+            const gain = value(later(raise(holding, lever, holding[lever] + left, level)))
               - from;
             if (gain > 0 && (!best || gain > best.gain)) best = { lever, gain };
           }
@@ -6380,8 +6540,8 @@
           let lo = 0, hi = left;
           while (hi - lo > 1) {
             const mid = Math.floor((lo + hi) / 2);
-            const gain = value(raise(holding, best.lever,
-                                     holding[best.lever] + mid, level)) - from;
+            const gain = value(later(raise(holding, best.lever,
+                                           holding[best.lever] + mid, level))) - from;
             if (gain >= best.gain - 1e-12) hi = mid; else lo = mid;
           }
           holding = raise(holding, best.lever, holding[best.lever] + hi, level);
@@ -6443,6 +6603,15 @@
                    state: goal.holds(plan, now, at, g.target) ? "held" : "missed" };
         }
         const levers = leversOf(goal, plan);
+        /* Weighed at the cap, not here. Four of the five levers are worth the
+           same whenever they are bought, and the pool is worth what the
+           trainings after it make of it: at the level it is paid for it is
+           worth nothing at all, so a point of it measured here can never win
+           however badly the goal needs the casts. The goal is a promise about
+           every level from its own to the last, and the cap is the one horizon
+           all five can be read against. */
+        const nearer = goal.nearness && ((held) =>
+          goal.nearness(plan, project(plan, CAP, held), capAt, g.target));
         const due = level >= g.from;
         /* What the levels still to come will ask that their own grants will
            not cover, on whichever lever asks least of the character as it now
@@ -6459,7 +6628,7 @@
           /* Nothing reaches it here. Points are permanent and this goal is the
              one that was asked for, so what is left goes on its levers anyway,
              where it does this goal the most good. */
-          spread(goal, g, levers);
+          spread(nearer, levers);
           return { goal: g, state: "unreachable" };
         }
         /* Today's bar first, on the lever that answers it for the least, then
@@ -6468,6 +6637,20 @@
         if (carry) {
           wants.set(carry.lever,
                     Math.max(wants.get(carry.lever) || 0, carry.points));
+        }
+        const owed = [...wants].reduce(
+          (n, [lever, points]) => n + Math.max(0, points - bought[lever]), 0);
+        if (owed > purse && nearer) {
+          /* This training cannot close the gap, and a goal that can say how
+             close it came is asking for a number rather than for a total on
+             one lever. So the points buy the most of that number they can,
+             which is also the soonest the gap closes. Buying the cheapest
+             lever instead poured every training into weapon skill for a
+             one-round kill that was never affordable, and the split that
+             decides strength against skill never ran at all. */
+          const gap = owed - purse;
+          spread(nearer, levers);
+          return { goal: g, state: "short", short: gap };
         }
         for (const [lever, points] of wants) buy(lever, points - bought[lever]);
         const short = now.points - bought[now.lever];
@@ -6491,13 +6674,24 @@
         if (hopeless.has(g)) results.push(claim(g));
       }
       results.sort((a, b) => active.indexOf(a.goal) - active.indexOf(b.goal));
-      if (purse && plan.spare === "strength") {
-        buy("strength", strengthCrossover(plan, level, bought, purse, capAt));
+      /* What the goals left, on the same allocator and the same horizon they
+         used. Strength and skill are two halves of one product, so which is
+         worth more turns on where the character stands at the cap rather than
+         on which was asked for: a point of skill adds `damage / 100` to a
+         swing and a point of strength adds `margin / 500`. Skill is named
+         first, so whatever buys neither of them anything lands there, where a
+         point is never worth nothing. */
+      if (purse) {
+        const skill = leverOf(GOALS.hit, plan);
+        if (plan.spare === "split") {
+          spread((held) => {
+            const me = project(plan, CAP, held);
+            return swing(me.damage, me.attack, capAt.absorption.value);
+          }, [skill, "strength"]);
+        } else {
+          buy(plan.spare === "dexterity" ? "dexterity" : skill, purse);
+        }
       }
-      /* The crossover takes the share of the purse strength is worth more
-         than skill on, and the training still has to close, so whatever is
-         over goes where the choice says. */
-      if (purse) buy(plan.spare === "dexterity" ? "dexterity" : leverOf(GOALS.hit, plan), purse);
 
       const me = project(plan, level, bought);
       rows.push({
@@ -6508,36 +6702,6 @@
     return rows;
   }
 
-  /**
-   * Points of strength worth buying here, out of what the goals left.
-   *
-   * A point of skill adds `damage / 100` to a swing and a point of strength
-   * adds `margin / 500`. Both are worth the same whenever they are bought,
-   * and what they are worth moves over the career. Damage is mostly the
-   * weapon, and the weapon is bought with gold, so a point of skill is worth
-   * five times as much at the cap as at level 6. So the split is weighed at
-   * the cap, the way `spread` is. Weighed at the level instead, a starter
-   * weapon leaves the margin far above five times the damage and the early
-   * trainings all go to strength, which the character then carries to the cap
-   * in place of the skill it would rather have.
-   *
-   * Every split is priced with the rest of the leftovers on the skill they
-   * would otherwise buy, since that is where they go. Priced against a
-   * character that spends nothing, any strength at all looks like a gain and
-   * takes the whole purse.
-   */
-  function strengthCrossover(plan, level, bought, spare, capAt) {
-    const skill = leverOf(GOALS.hit, plan);
-    let best = 0, bestOut = -1;
-    for (let p = 0; p <= spare; p += 1) {
-      let split = raise(bought, "strength", bought.strength + p, level);
-      split = raise(split, skill, split[skill] + (spare - p), level);
-      const me = project(plan, CAP, split);
-      const out = swing(me.damage, me.attack, capAt.absorption.value);
-      if (out > bestOut) { bestOut = out; best = p; }
-    }
-    return best;
-  }
 
   /* --- the archetypes ---------------------------------------------------- */
 
@@ -6547,10 +6711,10 @@
   // order the points are spent in.
   const ARCHETYPES = [
     ["berserker", "Berserker", "two_handed", [
-      ["first_strike", 6], ["hit", 6], ["one_round", 15, 4]]],
+      ["first_strike", 6], ["hit", 6], ["one_round", 15, 4]], ["kills", "absorption"]],
     ["half", "Half the time", "one_handed", [
       ["first_strike", 6], ["hit", 6], ["one_round", 15, 4],
-      ["take_hit", 15, 0.5]]],
+      ["take_hit", 15, 0.5]], ["kills", "absorption"]],
     ["rarely", "Rarely hit", "one_handed", [
       ["first_strike", 6], ["hit", 6], ["take_hit", 15, 0.266],
       ["conditions", 15]]],
@@ -6563,6 +6727,27 @@
       ["first_strike", 6], ["pool", 12, 800], ["conditions", 15],
       ["take_hit", 20, 0.266]]],
   ];
+
+  /**
+   * The archetype a goal list is, or null where it is none of them.
+   *
+   * An archetype names a build the strategy guide prices, and what it puts in
+   * the goal list is how that build is recognized. Edit any row and the plan
+   * is no longer that build, which both views say by falling to Custom. Read
+   * off the goals rather than off the stored name, since the name is what the
+   * plan started as and the goals are what it is.
+   */
+  const archetypeMatching = (goals) => {
+    const found = ARCHETYPES.find(([key]) => {
+      const want = archetypeGoals(key);
+      return want.length === goals.length
+        && want.every((g, i) => g.type === goals[i].type
+                                && g.from === goals[i].from
+                                && g.target === goals[i].target
+                                && goals[i].on);
+    });
+    return found ? found[0] : null;
+  };
 
   const goalFrom = (type, from, target) => ({
     type, from, on: true,
@@ -6623,6 +6808,39 @@
   }
 
   /** Levels held, one count per goal, in the order the goals are listed. */
+  /**
+   * What a build is worth once the goals cannot tell two of them apart.
+   *
+   * Kills per rest is the first term because it is the one number every
+   * property feeds: `roundsStanding` drops health the moment absorption shuts
+   * an attack out, and `min(byHealth, byMagic)` drops the pool once health is
+   * the shorter limb. So the relations between them do not have to be ranked,
+   * they are already priced.
+   *
+   * It stops discriminating in one case, and the fall-through is for that
+   * case: a character that kills before it is swung at takes nothing back, so
+   * `byHealth` is Infinity and for a martial the whole rate is. Two builds
+   * that both do it tie there, which is exactly when what they are worth is
+   * decided by what they carry.
+   */
+  const TAIL = {
+    /* Unrounded. A rest holds whole kills, so the panel prints the floor of
+       this, but a comparison between two builds has to see the one that is
+       most of the way to another kill: floored, five and five-nine-tenths
+       read alike and the build that bought the difference reads as having
+       bought nothing. */
+    kills: (plan, me, at) => killsRate(plan, me, at),
+    absorption: (plan, me) => me.absorption,
+    output: (plan, me, at) => output(plan, me, at),
+    pool: (plan, me) => me.magic,
+  };
+
+  /** The terms this plan's archetype is read on, after its goals. */
+  const tailOf = (plan) => {
+    const found = ARCHETYPES.find(([key]) => key === plan.archetype);
+    return (found && found[4]) || [];
+  };
+
   function scoreOf(plan) {
     const active = plan.goals.filter((g) => g.on && GOALS[g.type]);
     if (!active.length) return [];
@@ -6638,6 +6856,14 @@
         else if (goal.nearness) near += goal.nearness(plan, hit.me, row.at, g.target);
       }
       score.push(held, near);
+    }
+    /* Read at the cap, since the tail is about the build the career arrives
+       at rather than about any level of it. */
+    const last = rows[rows.length - 1];
+    if (last) {
+      const capAt = planAt(plan, CAP);
+      const me = project(plan, CAP, last.bought);
+      for (const term of tailOf(plan)) score.push(TAIL[term](plan, me, capAt));
     }
     return score;
   }
@@ -6795,7 +7021,11 @@
       pinned: new Set(POLICIES.filter((k) => stored[k] !== null
                                              && stored[k] !== undefined)),
     };
-    plan.character = (plan.source === "game" && planCharacter)
+    /* `stored.character` is how a slot brings its own. The party view builds
+       four plans in one pass and `planCharacter` holds only whichever one the
+       character view is looking at, so without this every slot read the same
+       person and the four came out identical. */
+    plan.character = (plan.source === "game" && (stored.character || planCharacter))
       || byHand(plan.code, 1, plan.weapon, plan.armorShare, plan.weaponShare);
     if (settings.attacksWith && canDoEither(classAt(plan.character.code))) {
       plan.character = Object.assign({}, plan.character,
@@ -6834,11 +7064,17 @@
    * still to come, so one bought at level 5 is worth about ten magic and the
    * same point at 35 is worth one. It is bought at the start of a career or it
    * is not worth buying, which is what the pool field is for.
+   *
+   * A character that swings has one route rather than two. Skill and strength
+   * are two halves of one product, so the split between them is arithmetic
+   * with an answer rather than a preference: a berserker sending every
+   * leftover to skill swings for 211 where the split swings for 222, and
+   * nothing on the field said so. A caster keeps the choice, because its blow
+   * carries the spell's damage and strength moves it nothing, which leaves
+   * casting and dexterity as two different things to want.
    */
   function spareRoutes(plan) {
-    if (!plan.character.casts) {
-      return [["strength", "Strength"], ["attack", "Weapon skill"]];
-    }
+    if (!plan.character.casts) return [["split", "Weapon skill/strength"]];
     return [["attack", "Casting"], ["dexterity", "Dexterity"]];
   }
 
@@ -6883,7 +7119,16 @@
     return Object.assign({}, all, mine);
   }
 
-  const savePlan = (changes) => {
+  /**
+   * A change to one character's plan, or to the tab's own fields.
+   *
+   * `at` names whose plan it is. Null means whichever is being looked at,
+   * which is what every field in the character view wants. The party view
+   * names a slot instead: it shows four characters at once and each picker
+   * belongs to one of them, and they are the same entries the character view
+   * writes, so a change made in either shows in the other.
+   */
+  const savePlanAt = (at, changes) => {
     const all = Object.assign({}, ui.plan || {});
     /* Written before the key is read, since `source`, `who` and `code` are
        what the key is made of: a change of slot has to land in the tab's own
@@ -6891,7 +7136,7 @@
     for (const [k, v] of Object.entries(changes)) {
       if (!PER_CHARACTER.includes(k)) all[k] = v;
     }
-    const key = planKey(all);
+    const key = at === null ? planKey(all) : at;
     const per = Object.assign({}, all.per || {});
     const mine = Object.assign({}, per[key] || {});
     /* A plan from before the store existed: its goals belong to whoever was
@@ -6912,6 +7157,9 @@
     ui.plan = all;
   };
 
+  const savePlan = (changes) => savePlanAt(null, changes);
+  const savePlanFor = (stored, changes) => savePlanAt(planKey(stored), changes);
+
   function renderPlanner(root) {
     root.textContent = "";
     const plan = planState();
@@ -6919,10 +7167,600 @@
     /* Walked once for the two boxes that read it. The sheet's level-40 column
        and the career table under it are the same career, and walking it twice
        would cost a second pass over forty levels for numbers already in hand. */
+    if ((ui.plan || {}).view === "party") {
+      root.append(partyBox(root, planStored()));
+      /* The party view reads the game exactly as the character view does. It
+         is four slots rather than one, so it needs the read more, not less:
+         without this the roster was never fetched at all and every slot fell
+         back to the first class and the default goals. */
+      watchParty(root, plan);
+      return;
+    }
     const rows = plan.goals.some((g) => g.on) ? walk(plan) : null;
     root.append(characterBox(root, plan, rows), goalBox(root, plan),
                 careerBox(root, plan, rows));
     watchParty(root, plan);
+  }
+
+  /** The spell list at the cap, behind a button beside the Cast cell: what
+   *  each one lands and the monster it is for. */
+  function castAbout(plan, me) {
+    const dialog = el("dialog", { className: "plan-casts" });
+    dialog.append(el("h3", { textContent: "What each spell is for" }));
+    dialog.append(el("p", { className: "note", textContent:
+      "At level " + me.level + ", casting " + me.casting + ". A spell's "
+      + "monster is the toughest one a single cast kills, so nothing is "
+      + "credited for overkill, and a monster that halves the spell or is "
+      + "immune to it is never picked for it." }));
+    const rows = spellTargets(plan, me);
+    /* Each column: its heading, what it reads off a row, and whether it is
+       read downward when it is first clicked. Names start at A and numbers
+       start at the biggest. */
+    const COLUMNS = [
+      ["Spell", (r) => r.spell.name, false],
+      ["MP", (r) => r.spell.mp, true],
+      ["Damage", (r) => r.landed, true],
+      ["Monster", (r) => r.foe.name, false],
+      ["Health", (r) => r.foe.health, true],
+    ];
+    const body = el("tbody");
+    const heads = COLUMNS.map(([label]) => el("th", { textContent: label }));
+    // The biggest thing each spell drops is what the list is about, so it
+    // opens on that.
+    let sort = { index: 4, down: true };
+    const paint = () => {
+      const read = COLUMNS[sort.index][1];
+      const order = rows.slice().sort((a, b) => {
+        const x = read(a), y = read(b);
+        const by = typeof x === "string" ? x.localeCompare(y) : x - y;
+        return sort.down ? -by : by;
+      });
+      body.textContent = "";
+      for (const row of order) {
+        body.append(el("tr", { className: row.kills ? "" : "plan-cast-short" }, [
+          el("td", { textContent: titleCase(row.spell.name) }),
+          el("td", { className: "num", textContent: String(row.spell.mp) }),
+          el("td", { className: "num", textContent: String(Math.round(row.landed)) }),
+          el("td", { textContent: titleCase(row.foe.name) }),
+          el("td", { className: "num", textContent: String(row.foe.health) }),
+        ]));
+      }
+      heads.forEach((th, i) => th.setAttribute(
+        "aria-sort", i !== sort.index ? "none"
+          : (sort.down ? "descending" : "ascending")));
+    };
+    heads.forEach((th, i) => {
+      th.onclick = () => {
+        sort = i === sort.index ? { index: i, down: !sort.down }
+                                : { index: i, down: COLUMNS[i][2] };
+        paint();
+      };
+    });
+    paint();
+    /* The list is the only thing here that can outgrow the screen, so it is
+       the only thing that scrolls. The dialog itself is sized to the cabinet
+       and clipped. */
+    dialog.append(el("div", { className: "plan-casts-shell" }, [
+      el("table", {}, [
+        el("thead", {}, [el("tr", {}, heads)]),
+        body,
+      ]),
+    ]));
+    const close = el("button", { type: "button", className: "toggle",
+                                 textContent: "Close" });
+    close.onclick = () => dialog.close();
+    dialog.append(close);
+    const open = el("button", { type: "button", className: "plan-info",
+                                textContent: "\u24d8" });
+    open.setAttribute("aria-label", "What each spell is for");
+    open.title = "What each spell is for";
+    open.onclick = () => dialog.showModal();
+    return [open, dialog];
+  }
+
+  /**
+   * The heading, as the switch between planning one character and planning
+   * four.
+   *
+   * A heading rather than a field: which of the two is being looked at is not
+   * a property of the plan, it is which question is being asked, and the
+   * answer to one is not carried into the other. The four slots each keep
+   * their own plan under the store's own key, so switching back and forth
+   * loses nothing.
+   */
+  function viewToggle(root, label) {
+    const head = el("h4", { className: "curve-sub" });
+    const button = el("button", { type: "button", className: "plan-view",
+                                  textContent: label });
+    button.setAttribute("aria-label", "Plan one character or the party");
+    button.title = label === "Character" ? "Plan the party" : "Plan one character";
+    button.onclick = () => {
+      savePlan({ view: label === "Character" ? "party" : "character" });
+      renderPlanner(root);
+    };
+    head.append(button);
+    return head;
+  }
+
+  /**
+   * Where the characters come from, as a button beside whichever heading is
+   * showing.
+   *
+   * The same question in both views. One character read out of the game is
+   * the one in the party slot; four of them are the party. So the button is
+   * not the character view's, and the view switch does not carry it away.
+   */
+  function sourceToggle(root, live) {
+    const toggle = el("button", { type: "button", className: "toggle plan-source",
+                                  textContent: live ? "Game" : "Hand" });
+    toggle.setAttribute("aria-pressed", String(live));
+    toggle.setAttribute("aria-label", "Character source");
+    toggle.onclick = () => {
+      if (live) planCharacter = null;
+      savePlan({ source: live ? "hand" : "game" });
+      renderPlanner(root);
+    };
+    return toggle;
+  }
+
+  /* The four the party holds. A hand-built party is four classes, and two of
+     the same class are the same plan: what a class rolls and what it should
+     buy do not differ between two of them. A read party is four slots, which
+     the game distinguishes and so does the store. */
+  const PARTY_SLOTS = 4;
+
+  const sourceOf = (stored) => stored.source || (TRAINER ? "game" : "hand");
+
+  /**
+   * The class in each slot, as the planner's own code.
+   *
+   * On Game that is whoever the sheet holds and nothing else: a class chosen
+   * while planning a hand party does not carry over, since the party is what
+   * it is. The record's code carries the tier in its tens digit, which
+   * `className` splits out and `fromParty` drops the same way, so the
+   * planner's nine codes are the units.
+   */
+  const partyCodes = (stored) => {
+    const game = sourceOf(stored) === "game";
+    const kept = game ? planParty.map((person) => person.classCode % 10)
+                      : (stored.partyCodes || []);
+    const out = [];
+    for (let i = 0; i < PARTY_SLOTS; i += 1) out.push(kept[i] || 1);
+    return out;
+  };
+
+  /** The person in a slot, where the game is being read. */
+  const partyPerson = (stored, slot) => (sourceOf(stored) === "game"
+    ? planParty.find((person) => person.slot === slot) : null);
+
+  /** What the game calls each slot, where it is the game being read. */
+  const partyNames = (stored) => (sourceOf(stored) === "game"
+    ? planParty.map((person) => titleCase(person.name)) : []);
+
+  /**
+   * What one slot has been planned as, out of the store the character view
+   * writes to.
+   *
+   * A slot is not a fresh character. Whoever is in it has been looked at on
+   * its own, given an archetype, had goals moved and policies pinned, and all
+   * of that sits under its own key. The party view reads the same entry, so
+   * the two views are the same plan seen twice rather than two plans that
+   * happen to share a class.
+   */
+  function slotStored(source, code, slot) {
+    const all = ui.plan || {};
+    const at = source === "game" ? { source, who: slot } : { source, code };
+    const mine = (all.per || {})[planKey(at)] || {};
+    const held = Object.assign({}, all, mine, at);
+    if (source === "game") {
+      const person = planParty.find((p) => p.slot === slot);
+      if (person) {
+        held.character = fromParty(person);
+        held.code = person.classCode % 10;
+      }
+    }
+    return held;
+  }
+
+  /**
+   * One slot's plan, fitted, and where it stands at a level.
+   *
+   * The career is walked whole whatever level is asked for, since what a
+   * character has bought by 20 is decided by the goals it is heading toward
+   * at 40. A level the walk does not reach is one the character has not got
+   * to yet, and the nearest row it has is the answer.
+   */
+  function slotPlan(stored, level) {
+    const settings = {};
+    for (const key of POLICIES) {
+      settings[key] = stored[key] === undefined ? null : stored[key];
+    }
+    settings.poolThrough = null;
+    const plan = buildPlan(stored, fitPolicies(stored, settings));
+    const rows = plan.goals.some((g) => g.on) ? walk(plan) : null;
+    if (!rows || !rows.length) return { plan, me: plan.character, at: level };
+    const row = rows.find((r) => r.level === level)
+      || (level < rows[0].level ? rows[0] : rows[rows.length - 1]);
+    return { plan, me: project(plan, row.level, row.bought), at: row.level };
+  }
+
+  /**
+   * What one character can put into a round: the hardest blow that lands on
+   * one monster, and the hardest that lands on every one of them.
+   *
+   * A swing is always the first. A cast is either, and which it is comes off
+   * the spell's `scope`: 21 of the 44 damage spells castable in melee hit all
+   * of them, Earthquake and Fire Storm among them. `castAgainst` cannot answer
+   * this, because it picks the cheapest spell that kills the one monster it
+   * was asked about, and against three the question is a different one.
+   */
+  function blowsOf(plan, me, at, mode) {
+    const single = { scope: "one", damage: 0, name: null, mp: 0 };
+    const every = { scope: "all", damage: 0, name: null, mp: 0 };
+    /* Out of contact nothing swings. A character with no spell to throw
+       shoots, and one with no missile weapon does nothing at all, which is
+       the honest answer for a fighter asked about a round it cannot reach. */
+    const shooting = mode !== "melee" && (mode === "ooc_ranged"
+                                          || !plan.character.casts);
+    if (shooting) {
+      single.damage = swing(me.shotDamage, me.shotAccuracy,
+                            at.absorption.value);
+      single.name = "Shot";
+      return { single, every };
+    }
+    if (!plan.character.casts) {
+      single.damage = swing(me.damage, me.attack, at.absorption.value);
+      single.name = "Swing";
+      return { single, every };
+    }
+    /* Picked the way `castAgainst` picks anything: the cheapest spell that
+       still kills, ranked by what the pool buys of it, and the hardest
+       lander only where nothing kills. Taking the largest instead spends a
+       450-point spell on a monster a 180-point one drops, which is the trap
+       that function was written to avoid. */
+    const foe = at.health.monster;
+    const bar = at.absorption.value;
+    const one = castAgainst(plan, me, foe, bar, plan.ignoreResist, "one");
+    const all = castAgainst(plan, me, foe, bar, plan.ignoreResist, "all");
+    if (one) {
+      single.damage = one.landed;
+      single.name = titleCase(one.spell.name);
+      single.mp = one.spell.mp || 0;
+    }
+    if (all) {
+      every.damage = all.landed;
+      every.name = titleCase(all.spell.name);
+      every.mp = all.spell.mp || 0;
+    }
+    return { single, every };
+  }
+
+  /**
+   * Whether the party puts this many monsters down in one round.
+   *
+   * Two things the sum it replaced got wrong. A blow that reaches every
+   * monster is worth its damage against each of them rather than once. And a
+   * blow that reaches one is worth at most that monster's health: a character
+   * swinging for 900 into a monster with 600 left kills it and stops, and the
+   * 300 does not travel to the next one.
+   *
+   * So each character offers its two blows, every choice of one apiece is
+   * tried, and the single-target ones are put on the monsters every way they
+   * go. Four characters and at most three monsters is 16 choices and 81
+   * placements, which is small enough to answer exactly rather than guess.
+   */
+  function roundAgainst(blows, foes, health, actors, order, holding, inLine) {
+    const idle = { scope: "one", damage: 0, name: "Holds" };
+    let best = null;
+    /* Health still standing when the round ends, over all of them. The worst
+       monster's share alone cannot tell two left from three, and cannot tell
+       a monster killed by the first swing from one killed by the first and
+       swung at three more times. Both of those are the same question: what
+       did the round leave. */
+    const place = (i, singles, pots) => {
+      if (i === singles.length) {
+        return { left: pots.reduce((n, p) => n + Math.max(0, p), 0),
+                 standing: pots.filter((p) => p > 0).length };
+      }
+      /* A shot goes at whatever is in line of sight and stops there: it does
+         not pass through, and out of melee the monsters are not clumped for a
+         second one to stand beside the first. But the volley is one action
+         resolved one missile at a time, so a shot that finishes the monster
+         in front leaves the ones after it flying at whatever is behind. The
+         order is the turn list's, and what a shot spends past the kill is
+         gone rather than carried on. */
+      if (inLine) {
+        const shots = singles.slice().sort((a, b) => a.rank - b.rank);
+        const next = pots.slice();
+        let front = 0;
+        for (const shot of shots) {
+          if (front >= next.length) break;
+          next[front] -= shot.damage;
+          if (next[front] <= 0) front += 1;
+        }
+        return { left: next.reduce((n, x) => n + Math.max(0, x), 0),
+                 standing: next.filter((x) => x > 0).length };
+      }
+      let least = null;
+      for (let k = 0; k < foes; k += 1) {
+        const next = pots.slice();
+        next[k] -= singles[i].damage;
+        const got = place(i + 1, singles, next);
+        if (!least || got.left < least.left) least = got;
+        if (least.left === 0) return least;
+      }
+      return least;
+    };
+    /* Last, the least magic. Two rounds that kill the same monsters with the
+       same characters at the same moment are not the same round: the pool is
+       what a caster runs out of, so the one that spends less of it is the one
+       to throw. Against a single monster this is what keeps an area spell
+       from being cast where a cheaper one reaches just as far. */
+    const choose = (i, area, singles, picks, acts, waited, spent) => {
+      if (i === blows.length) {
+        const each = health - area;
+        const got = each <= 0 ? { left: 0, standing: 0 }
+          : place(0, singles, new Array(foes).fill(each));
+        /* Then the fewest actions, since a monster that is already dead takes
+           no more swings and the character holds instead. Then the earliest
+           of them: the turn list runs on dexterity and the round is decided
+           by whoever reaches it first, so where one character will do it is
+           the quickest one. */
+        const rank = [got.left, acts, waited, spent];
+        let better = !best;
+        if (best) {
+          const against = [best.left, best.acts, best.waited, best.spent];
+          const at = rank.findIndex((n, k) => n !== against[k]);
+          better = at >= 0 && rank[at] < against[at];
+        }
+        if (better) {
+          best = { left: got.left, standing: got.standing, acts, waited,
+                   spent, picks };
+        }
+        return;
+      }
+      const { single, every } = blows[i];
+      /* A volley is one action the whole party takes at once: nobody sits it
+         out to save a shot, so shooting has no holding in it. In contact a
+         character with nothing left to swing at does hold, since there is no
+         second monster for it to reach. */
+      if (holding || (single.damage <= 0 && every.damage <= 0)) {
+        choose(i + 1, area, singles, picks.concat([idle]), acts, waited, spent);
+      }
+      if (acts >= actors) return;
+      if (every.damage > 0) {
+        choose(i + 1, area + every.damage, singles,
+               picks.concat([every]), acts + 1, waited + order[i], spent + every.mp);
+      }
+      if (single.damage > 0) {
+        /* Carried with the rank it is thrown at, since a volley resolves in
+           turn order and a melee round does not care. */
+        choose(i + 1, area, singles.concat([{ damage: single.damage, rank: order[i] }]),
+               picks.concat([single]), acts + 1, waited + order[i], spent + single.mp);
+      }
+    };
+    choose(0, 0, [], [], 0, 0, 0);
+    return { left: best.left, standing: best.standing, picks: best.picks };
+  }
+
+  /**
+   * What four characters do together, which is the question the one-round
+   * kill has always been asking.
+   *
+   * The goal takes a count of attackers and multiplies one character's output
+   * by it, which prices a party of four copies of whoever is being looked at.
+   * Here the four are four different characters and the output is their sum,
+   * so a party carrying one of each is priced as what it is.
+   */
+  function partyBox(root, stored) {
+    const box = el("div");
+    const heading = el("div", { className: "plan-heading" });
+    heading.append(viewToggle(root, "Party"));
+    if (TRAINER) heading.append(sourceToggle(root, sourceOf(stored) === "game"));
+    box.append(heading);
+
+    const source = sourceOf(stored);
+    /* Which round is being asked about. In contact a weapon swings and only
+       the spells castable in melee are on offer; out of contact nothing
+       swings, and the party either throws what it cannot throw in melee or
+       shoots. */
+    const MODES = [["melee", "Melee"], ["ooc_cast", "Out of melee, casting"],
+                   ["ooc_ranged", "Out of melee, shooting"]];
+    const mode = MODES.some(([key]) => key === stored.partyMode)
+      ? stored.partyMode : "melee";
+    /* Which level the party is asked about. The cap by default, because that
+       is the build the career arrives at, but a party is fought with all the
+       way up and the round it loses is worth finding. */
+    const level = Math.min(CAP, Math.max(1, Number(stored.partyLevel) || CAP));
+    const levels = el("select", { className: "picker plan-party-level" });
+    levels.setAttribute("aria-label", "Party level");
+    for (let n = 1; n <= CAP; n += 1) {
+      levels.append(el("option", { value: String(n), selected: n === level,
+                                   textContent: String(n) }));
+    }
+    levels.onchange = () => {
+      savePlan({ partyLevel: Number(levels.value) });
+      renderPlanner(root);
+    };
+    const modes = el("select", { className: "picker plan-mode" });
+    modes.setAttribute("aria-label", "Which round");
+    for (const [key, label] of MODES) {
+      modes.append(el("option", { value: key, selected: key === mode,
+                                  textContent: label }));
+    }
+    modes.onchange = () => {
+      savePlan({ partyMode: modes.value });
+      renderPlanner(root);
+    };
+
+    const codes = partyCodes(stored);
+    const names = partyNames(stored);
+    const table = el("table", { className: "plan-party" });
+    table.append(el("thead", {}, [el("tr", {}, [names.length ? "Who" : "Slot",
+                                                "Class", "Archetype",
+                                                "Order", "Action", "Damage"]
+      .map((h) => el("th", { textContent: h })))]));
+    const body = el("tbody");
+    const blows = [];
+    const dexterities = [];
+    let capAt = null;
+    for (let slot = 0; slot < PARTY_SLOTS; slot += 1) {
+      const held = slotStored(source, codes[slot], slot);
+      const { plan, me } = slotPlan(held, level);
+      if (!capAt) capAt = planAt(plan, level);
+      /* Out of contact the spells the melee round rules out are the ones on
+         offer, which is where every area spell above Fire Storm lives. */
+      plan.ooc = mode === "ooc_cast";
+      blows.push(blowsOf(plan, me, capAt, mode));
+      dexterities.push(me.dexterity);
+
+      /* Read from the game, the class is a fact and is printed. The name is
+         the tiered one: the tens digit picks within the triad, so a 17 is a
+         Wizard rather than the Mage its units digit alone would say. Built by
+         hand, it is a choice and is offered as one. */
+      const person = partyPerson(stored, slot);
+      let cls;
+      if (person) {
+        cls = el("span", { textContent: titleCase(className(person.classCode)) });
+      } else {
+        cls = el("select", { className: "picker" });
+        cls.setAttribute("aria-label", `Slot ${slot + 1} class`);
+        for (const entry of PLAN.classes) {
+          cls.append(el("option", { value: String(entry.code),
+                                    selected: entry.code === codes[slot],
+                                    textContent: titleCase(entry.name) }));
+        }
+        cls.onchange = () => {
+          const next = codes.slice();
+          next[slot] = Number(cls.value);
+          savePlan({ partyCodes: next });
+          renderPlanner(root);
+        };
+      }
+
+      /* The build the character is, which is what it was planned as and what
+         supplies the tail its leftovers are read on. Not the goal list: goals
+         moved by hand are the policy, and a plan that has been tuned is still
+         a berserker. So this never falls to Custom the way the character
+         view's field does, because here it is the archetype being asked
+         about rather than the goals. */
+      const arch = el("select", { className: "picker" });
+      arch.setAttribute("aria-label", `Slot ${slot + 1} archetype`);
+      for (const [key, label] of ARCHETYPES) {
+        arch.append(el("option", { value: key, textContent: label }));
+      }
+      arch.value = plan.archetype;
+      arch.onchange = () => {
+        /* Written to that slot's own entry, so it is the same change the
+           character view makes when the archetype field is used there. */
+        const found = ARCHETYPES.find(([key]) => key === arch.value);
+        if (!found) return;
+        savePlanFor(slotStored(source, codes[slot], slot),
+                    { archetype: found[0], goals: archetypeGoals(found[0]),
+                      weapon: found[2] });
+        renderPlanner(root);
+      };
+
+      body.append(el("tr", {}, [
+        el("td", { textContent: names[slot] || String(slot + 1) }),
+        el("td", {}, [cls]),
+        el("td", {}, [arch]),
+        el("td", { className: "num plan-order" }),
+        el("td", { className: "plan-action" }),
+        el("td", { className: "num plan-blow" }),
+      ]));
+    }
+    table.append(body);
+    box.append(table);
+
+    /* The one goal that reads the whole party. Their health is the bar and
+       the four together are what is put against it, in one round.
+
+       How many of them is a control, because it is the question the engaged
+       cap raises: a party that kills what closes in the round it closes never
+       meets a second one, and one that cannot is fighting three
+       (docs/panel.md). So the bar is that many of the monster rather than one
+       of it. */
+    const foes = Math.min(3, Math.max(1, Number(stored.partyFoes) || 1));
+    const counter = el("select", { className: "picker plan-foes" });
+    counter.setAttribute("aria-label", "Monsters killed in the round");
+    for (const n of [1, 2, 3]) {
+      counter.append(el("option", { value: String(n), selected: n === foes,
+                                    textContent: String(n) }));
+    }
+    counter.onchange = () => {
+      savePlan({ partyFoes: Number(counter.value) });
+      renderPlanner(root);
+    };
+    const line = el("div", { className: "plan-foes-line" });
+    line.append(el("span", { textContent: "Killed in one round:" }), counter);
+    line.append(el("span", { textContent: "Round:" }), modes);
+    line.append(el("span", { textContent: "Level:" }), levels);
+    box.append(line);
+
+    const each = capAt ? capAt.health.value : 0;
+    const foe = capAt && capAt.health.monster;
+    /* The turn list is rebuilt every round and sorted on dexterity,
+       descending, with a tie going to the party (docs/combat.md). So the
+       order is the party's own dexterities ranked, and a character quicker
+       than the monster swings before it does, which is the difference
+       between taking a blow back and not. Worked out before the round is
+       solved, because where one character will do, it is the quickest one. */
+    const foeDexterity = capAt && capAt.health.monster
+      ? capAt.health.monster.dexterity : 0;
+    const ranked = dexterities.map((d, slot) => ({ d, slot }))
+      .sort((a, b) => b.d - a.d || a.slot - b.slot);
+    const order = dexterities.map((d, slot) =>
+      ranked.findIndex((r) => r.slot === slot));
+
+    /* How many of the four act. In contact everyone does. Out of melee the
+       monsters are closing and the party gets one cast before they arrive, so
+       the round is one character's. */
+    const actors = mode === "ooc_cast" ? 1 : blows.length;
+    const round = capAt
+      ? roundAgainst(blows, foes, each, actors, order, mode !== "ooc_ranged",
+                     mode === "ooc_ranged")
+                        : { left: Infinity, standing: foes, picks: [] };
+    /* Filled once the round is solved: a blow that reaches every monster is
+       worth its figure against each of them, and which blow was thrown is
+       what the round chose rather than which is largest. */
+    [...body.querySelectorAll(".plan-order")].forEach((cell, slot) => {
+      const place = ranked.findIndex((r) => r.slot === slot) + 1;
+      const first = dexterities[slot] >= foeDexterity;
+      cell.textContent = String(place);
+      cell.title = first ? "before the monster" : "after the monster";
+      if (!first) cell.classList.add("plan-slow");
+    });
+    const actions = [...body.querySelectorAll(".plan-action")];
+    [...body.querySelectorAll(".plan-blow")].forEach((cell, slot) => {
+      const pick = round.picks[slot];
+      if (!pick) return;
+      cell.textContent = pick.damage > 0 ? String(Math.round(pick.damage)) : "\u2014";
+      /* What it does, in its own words: the spell by name, a swing or a shot,
+         and whether it reaches one monster or all of them. */
+      if (actions[slot]) {
+        /* The reach is only worth saying where there is a second monster for
+           it to reach. Against one, a spell that hits everything hits the one
+           thing there, and the note read as though an area spell had been
+           picked for a single target when it was picked for being cheapest. */
+        const reaches = pick.scope === "all" && foes > 1;
+        actions[slot].textContent = pick.damage > 0
+          ? pick.name + (reaches ? ", all" : "")
+          : pick.name;
+      }
+    });
+    const name = titleCase(foe ? foe.name : "\u2014");
+    const target = foes === 1 ? `${name}, ${each} health`
+                             : `${foes} \u00d7 ${name}, ${each} health each`;
+    const left = Math.round(round.left);
+    const verdict = round.left <= 0
+      ? (foes === 1 ? "Killed inside the round." : "All down inside the round.")
+      : round.standing === 1
+        ? `One still standing, with ${left} health.`
+        : `${round.standing} still standing, ${left} health between them.`;
+    box.append(el("p", { className: "note",
+                         textContent: `One round against ${target}. ${verdict}` }));
+    return box;
   }
 
   /** Who is being planned. */
@@ -6930,7 +7768,7 @@
     const c = plan.character;
     const box = el("div");
     const heading = el("div", { className: "plan-heading" });
-    heading.append(el("h4", { className: "curve-sub", textContent: "Character" }));
+    heading.append(viewToggle(root, "Character"));
     box.append(heading);
 
     /* Where the character comes from, when there is a game to take one out of.
@@ -6941,16 +7779,7 @@
        beside the heading it belongs to, with the party it reads next to it. */
     if (TRAINER) {
       const live = plan.source === "game";
-      const toggle = el("button", { type: "button", className: "toggle plan-source",
-                                    textContent: live ? "Game" : "Hand" });
-      toggle.setAttribute("aria-pressed", String(live));
-      toggle.setAttribute("aria-label", "Character source");
-      toggle.onclick = () => {
-        if (live) planCharacter = null;
-        savePlan({ source: live ? "hand" : "game" });
-        renderPlanner(root);
-      };
-      heading.append(toggle);
+      heading.append(sourceToggle(root, live));
 
       const who = el("select", { className: "picker plan-who" });
       who.setAttribute("aria-label", "Party");
@@ -7003,20 +7832,12 @@
        recognized. Edit any row and the plan is no longer that build, which the
        list says by falling to Custom. */
     const archetype = el("select", { className: "picker plan-archetype" });
-    const matches = (key) => {
-      const want = archetypeGoals(key);
-      return want.length === plan.goals.length
-        && want.every((g, i) => g.type === plan.goals[i].type
-                                && g.from === plan.goals[i].from
-                                && g.target === plan.goals[i].target
-                                && plan.goals[i].on);
-    };
-    const named = ARCHETYPES.find(([key]) => matches(key));
+    const named = archetypeMatching(plan.goals);
     for (const [key, label] of ARCHETYPES) {
       archetype.append(el("option", { value: key, textContent: label }));
     }
     if (!named) archetype.append(el("option", { value: "", textContent: "Custom" }));
-    archetype.value = named ? named[0] : "";
+    archetype.value = named || "";
     archetype.onchange = () => {
       const found = ARCHETYPES.find(([key]) => key === archetype.value);
       if (!found) return;
@@ -7066,8 +7887,14 @@
        side of it would have been worth. */
 
     /* Where a training's points go once every goal has what it needs. They go
-       somewhere: the screen does not close with any in hand. */
-    policyField("Spare points", "spare", plan.spare, spareRoutes(plan));
+       somewhere: the screen does not close with any in hand. Offered the way
+       the Attack field is, only where there is something to pick: a character
+       that swings has one answer, and a field holding it and nothing else is
+       a control over nothing. */
+    const routes = spareRoutes(plan);
+    if (routes.length > 1) {
+      policyField("Spare points", "spare", plan.spare, routes);
+    }
     box.append(fields);
 
     /* What that choice is worth, against the two ways of getting it wrong.
@@ -7172,15 +7999,37 @@
        third field is the name the value is read out of the projection under
        and the level has none. */
     const shown = c.source === "game" ? [["Level", c.level]] : [];
-    shown.push(["Accuracy", c.accuracy, "accuracy"], ["Damage", c.damage, "damage"],
-                ["Absorption", c.absorption, "absorption"],
-                ["Dexterity", c.dexterity, "dexterity"],
-                ["Health", c.health, "health"], ["Charisma", c.charisma, "charisma"]);
+    shown.push(["Accuracy", c.accuracy, "accuracy"], ["Damage", c.damage, "damage"]);
+    let castsDialog = null;
+    /* What the two above it come to against something, which is the number a
+       build is compared on: the odds of landing times what a landed one takes
+       off. Every other cell is the character alone, so this is the one that
+       needs a monster, and it takes the same bars the goals are asked
+       against. At the cap and nowhere else. A level-1 character swings a
+       starter weapon for 1, which separates no two builds, and the cell would
+       carry a number that only ever means the same thing. */
+    if (at40) {
+      const cell = [c.casts ? "Cast" : "Swing",
+                    Math.round(output(plan, at40, planAt(plan, CAP)))];
+      if (c.casts) {
+        const [open, dialog] = castAbout(plan, at40);
+        castsDialog = dialog;
+        cell.push(null, open);
+      }
+      shown.push(cell);
+    }
+    shown.push(["Absorption", c.absorption, "absorption"],
+                ["Dexterity", c.dexterity, "dexterity"]);
+    /* The attribute behind Damage, beside the other one the planner buys. A
+       caster's blow is the spell and strength moves it nothing, so a caster
+       is never planned on it and the cell would be a number to ignore. */
+    if (!c.casts) shown.push(["Strength", c.strength, "strength"]);
+    shown.push(["Health", c.health, "health"], ["Charisma", c.charisma, "charisma"]);
     if (c.casting) shown.push(["Casting", c.casting, "casting"]);
     if (c.magic) shown.push(["Magic", c.magic, "magic"]);
     /* Each name and its value are one cell, so a narrow panel wraps between
        pairs rather than between a label and the number it belongs to. */
-    for (const [label, value, key] of shown) {
+    for (const [label, value, key, extra] of shown) {
       const dd = el("dd", { className: `plan-${label.toLowerCase()}`,
                             textContent: String(value) });
       const end = at40 && key ? at40[key] : undefined;
@@ -7188,9 +8037,12 @@
         dd.append(el("span", { className: "plan-at-cap",
                                textContent: `→ ${end}` }));
       }
-      sheet.append(el("div", {}, [el("dt", { textContent: label }), dd]));
+      const dt = el("dt", { textContent: label });
+      if (extra) dt.append(extra);
+      sheet.append(el("div", {}, [dt, dd]));
     }
     box.append(sheet);
+    if (castsDialog) box.append(castsDialog);
 
     /* The totals, under the sheet the stats they were spent on are read off.
        The career table prices each level; this is what forty of them come to,
@@ -7234,7 +8086,17 @@
       if (!root.isConnected || root.hidden) { clearInterval(planTimer); return; }
       try {
         const { party } = await anchor();
+        const roster = (list) => JSON.stringify(
+          list.map((p) => [p.slot, p.name, p.classCode]));
+        const moved = roster(planParty) !== roster(party);
         planParty = party;
+        /* The party view is about all four, so it redraws when any of them
+           changes. The test below is about the one being planned, which is
+           not the same question. */
+        if (moved && (ui.plan || {}).view === "party") {
+          renderPlanner(root);
+          return;
+        }
         /* The character being planned, then the slot the last visit left, then
            the first slot. A slot this party does not fill falls through. */
         const known = planCharacter ? planCharacter.slot : plan.who;

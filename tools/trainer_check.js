@@ -306,6 +306,36 @@ else {
       console.log(`planner kept the slot: ${kept}`);
     }
 
+    /* The party view plans all four at once. It is the same read: the slots
+       are the game's, so the names and the classes come off the sheet rather
+       than out of a picker, and a class chosen while planning a hand party
+       does not survive into it. */
+    await frame.locator('section[data-key="pl"] .plan-view').click();
+    const partyRows = frame.locator('section[data-key="pl"] .plan-party tbody tr');
+    await partyRows.first().waitFor({ state: "visible", timeout: 30000 });
+    const shown = await partyRows.evaluateAll((rs) => rs.map((r) => ({
+      who: r.children[0].textContent.trim(),
+      cls: r.children[1].textContent.trim(),
+    })));
+    console.log("party view:", shown.map((r) => `${r.who} ${r.cls}`).join(", "));
+    if (shown.length !== names.length) {
+      problems.push(`the party view lists ${shown.length} slots, the game holds ${names.length}`);
+    }
+    for (const [i, name] of names.entries()) {
+      if (!shown[i]) continue;
+      if (shown[i].who.toLowerCase() !== name.toLowerCase()) {
+        problems.push(`party view slot ${i} is "${shown[i].who}", the game says ${name}`);
+      }
+      // A class read out of the game is a fact, so it is printed rather than
+      // offered: a picker here would mean the sheet had not been read.
+      if (!shown[i].cls || /^\d+$/.test(shown[i].cls)) {
+        problems.push(`party view slot ${i} shows no class, only "${shown[i].cls}"`);
+      }
+    }
+    await frame.locator('section[data-key="pl"]')
+      .screenshot({ path: `${outDir}/06-party.png` });
+    await frame.locator('section[data-key="pl"] .plan-view').click();
+
     await frame.locator('section[data-key="pl"]').screenshot({ path: `${outDir}/06-planner.png` });
     await frame.locator('nav button[data-key="ch"]').click();
     await view("trainer").click();

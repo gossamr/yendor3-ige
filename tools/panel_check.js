@@ -1177,6 +1177,144 @@ if (await page.locator(`${wt} .pageno`).count() !== raw) {
 }
 await page.screenshot({ path: `${outDir}/f6-raw.png` });
 
+/* --- the planner's party view ------------------------------------------- */
+//
+// Clicked rather than called: the tab is opened, the heading is pressed, and
+// the fields are the ones on the page. Built by hand, so no game is needed.
+// What a party read out of a running game shows is `cabinet_check.js`, where
+// there is one to read.
+const partyFault = (what) => problems.push(`party view: ${what}`);
+const inParty = "section[data-key='pl'] .plan-party";
+
+await page.click('nav button[data-key="pl"]');
+await page.waitForSelector("section[data-key='pl'] .plan-view", { timeout: 8000 });
+await page.click("section[data-key='pl'] .plan-view");
+await page.waitForSelector(inParty, { timeout: 8000 });
+
+/** Set one of the tab's own selects by the text a player would read. */
+const choose = async (selector, label) => {
+  const found = await page.evaluate(([sel, want]) => {
+    const e = document.querySelector(sel);
+    if (!e) return false;
+    const i = [...e.options].findIndex((o) => o.textContent.trim() === want);
+    if (i < 0) return false;
+    e.selectedIndex = i;
+    e.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }, [selector, label]);
+  if (!found) partyFault(`no "${label}" to pick in ${selector}`);
+  await page.waitForTimeout(400);
+};
+const readRows = () => page.$$eval(`${inParty} tbody tr`, (rs) => rs.map((r) => ({
+  cls: (r.querySelectorAll("select")[0] || {}).selectedOptions
+    ? r.querySelectorAll("select")[0].selectedOptions[0].textContent : "",
+  order: Number(r.querySelector(".plan-order").textContent),
+  action: r.querySelector(".plan-action").textContent,
+  dmg: parseInt(r.querySelector(".plan-blow").textContent, 10) || 0,
+  // The reach is marked on the action, beside the name of what was thrown.
+  all: / all$/.test(r.querySelector(".plan-action").textContent),
+})));
+const verdict = () => page.$eval(`${inParty} ~ .note`, (n) => n.textContent);
+
+if ((await page.$$(`${inParty} tbody tr`)).length !== 4) {
+  partyFault("the party is not four slots");
+}
+
+// A party of four different classes, set through the pickers.
+const WANT = ["Fighter", "Mage", "Monk", "Rogue"];
+for (const [slot, name] of WANT.entries()) {
+  await choose(`${inParty} tbody tr:nth-child(${slot + 1}) select`, name);
+}
+const built = await readRows();
+for (const [slot, name] of WANT.entries()) {
+  if (built[slot] && built[slot].cls !== name) {
+    partyFault(`slot ${slot} kept "${built[slot].cls}" after ${name} was picked`);
+  }
+}
+// The turn list is dexterity descending, so the order is a permutation of the
+// four places rather than whatever the slots happen to be.
+const places = built.map((r) => r.order).sort((a, b) => a - b);
+if (places.join() !== "1,2,3,4") {
+  partyFault(`the order column reads ${built.map((r) => r.order).join()}`);
+}
+
+await choose(`${inParty} ~ .plan-foes-line .plan-party-level`, "40");
+await choose(`${inParty} ~ .plan-foes-line .plan-mode`, "Melee");
+const oneFoe = await verdict();
+await choose(`${inParty} ~ .plan-foes-line .plan-foes`, "3");
+const threeFoes = await verdict();
+if (oneFoe === threeFoes) {
+  partyFault("the verdict does not move between one monster and three");
+}
+
+/* What the round leaves, worked out here rather than read off the panel. A
+   blow that reaches every monster is worth its figure against each of them;
+   one that reaches a single monster is worth at most that monster's health,
+   since a character that finishes it stops. */
+const each = Number((/(\d+) health each/.exec(threeFoes) || [])[1]);
+const melee = await readRows();
+if (each) {
+  const area = melee.filter((r) => r.all).reduce((t, r) => t + r.dmg, 0);
+  const left = each - area;
+  const singles = melee.filter((r) => !r.all && r.dmg > 0).map((r) => r.dmg);
+  const covers = (i, pots) => {
+    if (i === singles.length) return pots.every((p) => p >= left);
+    for (let k = 0; k < 3; k += 1) {
+      const next = pots.slice();
+      next[k] += singles[i];
+      if (covers(i + 1, next)) return true;
+    }
+    return false;
+  };
+  const want = left <= 0 || covers(0, [0, 0, 0]);
+  const said = /All down inside the round/.test(threeFoes);
+  if (said !== want) {
+    partyFault(`three of ${each} health against ${JSON.stringify(melee)}: `
+      + `the round says ${said ? "all down" : "some standing"} where placing the `
+      + `blows says ${want ? "all down" : "some standing"}`);
+  }
+}
+
+// A volley is one action the party takes together, so nobody holds, and it is
+// resolved one missile at a time: a shot that finishes the monster in front
+// leaves the ones after it flying at what is behind.
+await choose(`${inParty} ~ .plan-foes-line .plan-mode`, "Out of melee, shooting");
+const volley = await readRows();
+/* A character with no missile weapon and no projectile skill has no shot to
+   take, which is what a hand-built one is: nothing on the page gives it
+   either. Where any of them can shoot, none of them sits the volley out. */
+const armed = volley.filter((r) => r.dmg > 0);
+if (armed.length && volley.some((r) => r.action === "Holds")) {
+  partyFault("a character holds during a volley, which is one action for all four");
+}
+if (each && armed.length) {
+  const shots = volley.slice().sort((a, b) => a.order - b.order).map((r) => r.dmg);
+  const pots = [each, each, each];
+  let front = 0;
+  for (const shot of shots) {
+    if (front >= pots.length) break;
+    pots[front] -= shot;
+    if (pots[front] <= 0) front += 1;
+  }
+  const standing = pots.filter((n) => n > 0).length;
+  const said = await verdict();
+  const told = /All down/.test(said) ? 0
+    : Number((/^(\d+) still standing/.exec(said.split(". ")[1] || "") || [])[1]
+             || (/One still standing/.test(said) ? 1 : NaN));
+  if (Number.isFinite(told) && told !== standing) {
+    partyFault(`a volley of ${shots.join()} into three of ${each}: the panel `
+      + `says ${told} standing where resolving them in turn leaves ${standing}`);
+  }
+}
+
+await page.screenshot({ path: `${outDir}/pl-party.png` });
+// And the heading swaps back without the character view losing its contents.
+await page.click("section[data-key='pl'] .plan-view");
+await page.waitForTimeout(400);
+if (!(await page.$("section[data-key='pl'] .plan-sheet"))) {
+  partyFault("switching back to Character left no stat block");
+}
+
 await browser.close();
 
 if (problems.length) {
