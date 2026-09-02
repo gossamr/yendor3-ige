@@ -18,4 +18,12 @@ export const EXPECTED = {
     restoration: "91d8f9c39bebb5b62e41e7ca9ad437a0df0bbbc37459b1e5d07cd04548f6b26b",
     worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
   },
+  "28a9f060298263c2": {
+    restoration: "d78dddaa76c1c85cce1a8669a54beee18f63fbc4db2712f62d59050102773cec",
+    worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
+  },
+    "8e2d9b5921c56069": {
+    restoration: "c6856fb6cd2a4588aa6fa12d5fe99a79601dc556d9420d4cb758dd2358bd4b9f",
+    worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
+  },
 };

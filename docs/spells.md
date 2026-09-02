@@ -22,7 +22,7 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 | `70` | bit 10 is the out-of-melee restriction | screens: F3 WHEN, 98/98 |
 | `72` | scope, what the spell acts on, and how far it reaches | screens: F3 AFFECTS and WHEN, 98/98 |
 | `74` | element | screens: the prose, bit by bit; four bits **undecoded**, below |
-| `76` | blow word | code, `0x1D72F`; screens: F3 AFFECTS, 98/98 |
+| `76` | blow word | screens: F3 AFFECTS, bits 1, 2 and 8, 98/98; code, `0x1D72F` for the upper bits and `0x1c5a4` for bit 0, which no page shows, below |
 
 **MP and nuore** are exact on all 98 spells the clue book lists, against the game's own F3 SPELL INFORMATION screen.
 
@@ -81,6 +81,18 @@ The noun, in test order:
 Reach and WHEN are **nested rather than independent**, and they share the same enumeration of phrases. All 36 spells that reach "in hand to hand" are cast "in hand to hand", and all 19 that reach "at a distance", "in a 3x3 area" or "in a straight line" are cast "out of hand to hand". WHEN is the coarser condition, and reach is the pattern within it. "Out of hand to hand" is a *restriction on casting*, meaning that the caster must not be engaged in melee. It is not a targeting mode, because the ranged sense belongs to the reach value instead.
 
 Friend-or-foe is not separate information. Across the 98 listed spells, all 70 that do damage act on monsters, undead or insects and none on a character, and all 19 restorative ones act on characters.
+
+### Offset 76 bit 0
+
+**code**. No page shows this bit.
+
+TURBULENT ATMOSPHERE holds 0 at 72 and `0x0001` at 76. No other spell record carries 76 bit 0. With 72 empty, every branch above falls through, so the F3 page prints ONE MONSTER. The description prints ALL VISIBLE MONSTERS.
+
+Image `0x1c5a4` tests 76 bit 0 and routes the cast to `0x1d5be`, which reaches the applier at `0x1d374`. EARTHQUAKE and the ACID RAIN spells reach that applier too. [combat.md](combat.md) has it.
+
+`0x1c5a4` is the only read of the bit. Twenty-five instructions reference the word: twenty-three test a mask that excludes bit 0, `0x1d8bc` loads the word and masks it with `0xFE00`, and `0x1c5a4` is the twenty-fifth.
+
+`data/spells.json` holds scope `all` and target `visible monsters` for this record, against its page. An F3 page carries the class rows, MP, nuore, AFFECTS and WHEN. Compared field by field against the 98 captured pages, this AFFECTS row is the only value the file departs on.
 
 ## The element word
 

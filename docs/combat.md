@@ -26,6 +26,8 @@ Everything here is **code**, read off the disassembly rather than off the runnin
 | Volley shot | `0x0c75e` |
 | Cast dispatcher | `0x1c4e4` |
 | Spell on one monster | `0x1d93d` |
+| Spell on every visible monster | `0x1d374` |
+| View cell to spawn slot | `0x12f60` |
 | LIFE FORCE branch | `0x1d3d8` |
 | LIFE FORCE roll | `0x1d61c` |
 | Gain and lose handler | `0x037d9` |
@@ -257,6 +259,16 @@ Casting charges the caster's current magic points by the spell's record 24 and t
 3. **Immunity sets the damage to zero.** Record 74 is the spell's element and record 100 is the monster's immunity word. They share a bit layout, and a match sets the damage to zero (`0x1d6f0`).
 4. **Resistance halves it.** Record 76 masked with `0xFE00` is the spell's damage type. It is matched against the monster's resistance word at record 102, and a match shifts the damage right once (`0x1d72f`, and `0x1d8af` is the same test written as a loop). That mask only ever holds 0, `0x200` or `0x2000`, so of a monster's three resistance bits only `0x2000` is ever answered by a spell. This one is **measured**: [tools/fight_probe.js](../tools/fight_probe.js) sets a monster's resistance word before boot and reads its health between blows, and [monsters.md](monsters.md) has the readings.
 5. Each condition bit the spell carries is tested against the same immunity word and OR'd into the monster's flags if the monster is not immune (`0x1d649`). The condition then deals record 52's damage per turn for record 66 turns.
+
+### The applier at `0x1d374`
+
+The dispatcher at `0x1c4e4` tests record 72 bit by bit and then four bits of record 76. Three of those bits lead to `0x1d374`, each through a block of its own: TREMOR and EARTHQUAKE from `0x1d2e9`, the four ACID RAIN spells from `0x1d4d4`, and TURBULENT ATMOSPHERE from `0x1d5be`. Those seven are records the clue book lists, and an `ERROR` placeholder reaches `0x1d4d4` as well. The only call a block makes before the tail is `0x1d91f`, the sound, so the seven are handed the same monsters. What lands on one of them is `0x1d93d`'s work, which is where HOLY RAIN's family restriction takes its row down to visible undeads.
+
+The tail calls `0x1d7f7` once per monster, which is `0x1d93d` plus the death and reward path. In hand to hand (`[0x5370]` bit `0x1000`) it walks the three engaged buffers first. Then it puts a cell number in `[0x53dc]` and calls `0x12f60`, which reads entry `[0x53dc]` of the eight-byte table at `DS:0x708e` and, where the entry's word at `+6` carries `0x400`, hands back the spawn slot holding the object the entry's `+4` names. Cells `0x32` and `0x30` are done singly, then `0x2f` counting down to `0x00` in a loop. Cell `0x31` is not visited. It is the band the hand-to-hand attack uses.
+
+**The table at `DS:0x708e` is what the view draws.** `0x10153` walks it from cell 0 in seven runs of 17, 17, 5, 3, 3, 3 and 3, which is 51 entries, cells 0 to `0x32`. It steps `di` by eight and `[0x53dc]` by one per entry, the same indexing the tail uses, and draws each entry it does not skip (`0x101fb`). The tail therefore covers 50 of the 51 cells the view draws, plus what is engaged.
+
+TURBULENT ATMOSPHERE reaches the tail on a bit the F3 printer has no branch for, so its page prints one monster. [spells.md](spells.md) has that record.
 
 Healing does not go through any of this. A restorative spell carries damage 0 and takes its own branch out of the cast dispatcher. On that branch the amount is a field of the record. The caster rolls nothing. [spells.md](spells.md) has the branch.
 

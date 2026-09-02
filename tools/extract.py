@@ -558,6 +558,17 @@ SPELL_NO_AFFECTS = 0x00FF
 # `test [affects], 6` on 76 or `test [affects], 0x5E00` on 72, and either makes
 # the row read ALL rather than ONE.
 SPELL_SCOPE_ALL_76, SPELL_SCOPE_ALL_72 = 0x0006, 0x5E00
+# The printer is not the only reader of 76. The cast dispatcher at image
+# `0x1c4e4` tests bit 0 at `0x1c5a4`, which is the one read of that bit in the
+# executable, and sends the cast to `0x1d5be`. That block runs its own
+# animation and jumps to `0x1d374`, the tail EARTHQUAKE reaches from `0x1d2e9`
+# and the ACID RAIN family from `0x1d4d4`. The tail applies the spell to each
+# of the three engaged buffers and then to every monster the view cells hold,
+# so bit 0 is a third way of saying ALL VISIBLE MONSTERS and the printer has
+# no test for it. TURBULENT ATMOSPHERE is the only record that carries it. Its
+# own description says all visible monsters where its F3 page says one
+# monster, and the code is what the cast does.
+SPELL_SCOPE_ALL_CAST = 0x0001
 SPELL_CHARACTER = 0xC000        # 72: the row says CHARACTER, not MONSTER
 SPELL_VISIBLE = 0x0200          # 72: ... VISIBLE MONSTERS
 SPELL_NARROW = 0x0100           # 76: with 30, narrows the noun
@@ -582,12 +593,15 @@ SPELL_UNKNOWN = [c for c in range(22, 80, 2)
 
 
 def spell_affects(rec: bytes) -> tuple[str | None, str | None, str | None, str]:
-    """The AFFECTS and WHEN rows: scope, what it acts on, reach, and when.
+    """What the spell acts on, at what reach, and when.
 
-    Follows image 0x0776E branch for branch. Two of them stop the row early
-    and are easy to miss: a blank AFFECTS row when any low bit of 72 is set,
-    and the VISIBLE branch, which prints its noun and jumps straight to the
-    WHEN row, so a VISIBLE spell never takes a plural or a reach phrase.
+    Follows image 0x0776E branch for branch, with one bit added that the
+    printer does not test: `SPELL_SCOPE_ALL_CAST`, which the cast dispatcher
+    reads to route the spell to the all-visible applier. Two of the printer's
+    branches stop the row early and are easy to miss: a blank AFFECTS row when
+    any low bit of 72 is set, and the VISIBLE branch, which prints its noun and
+    jumps straight to the WHEN row, so a VISIBLE spell never takes a plural or
+    a reach phrase.
     """
     affects = u16(rec, SPELL_AFFECTS_WORD)
     select = u16(rec, SPELL_BLOW)
@@ -597,7 +611,7 @@ def spell_affects(rec: bytes) -> tuple[str | None, str | None, str | None, str]:
     if affects & SPELL_NO_AFFECTS:
         return None, None, None, when
 
-    wide = select & SPELL_SCOPE_ALL_76
+    wide = select & (SPELL_SCOPE_ALL_76 | SPELL_SCOPE_ALL_CAST)
     scope = "all" if wide or affects & SPELL_SCOPE_ALL_72 else "one"
     narrow = select & SPELL_NARROW
     if affects & SPELL_CHARACTER:

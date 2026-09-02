@@ -417,8 +417,14 @@ def test_affects_and_when_reproduce_every_screen(data):
     The F3 printer builds them out of four words of the record (72, 76, 30
     and 70), and `extract.spell_affects` walks its branches in the same
     order. That makes the 98 captured screens the check on the decode instead
-    of its source: every one of them, exactly, including the nine spells whose
-    AFFECTS row the printer leaves blank.
+    of its source: 97 of them exactly, including the nine spells whose AFFECTS
+    row the printer leaves blank.
+
+    TURBULENT ATMOSPHERE is the 98th, and there the printer is wrong. Its
+    record carries 76 bit 0, which no branch of the printer tests and which
+    the cast dispatcher routes to the all-visible applier, so the page says
+    one monster where the cast hits every one of them. The decode follows the
+    cast. See docs/spells.md.
     """
     seen = observed("observed_spells.json")
     by = {s["name"]: s for s in data["spells"]}
@@ -430,8 +436,12 @@ def test_affects_and_when_reproduce_every_screen(data):
             if target and target.endswith(" " + phrase):
                 target, reach = target[: -len(phrase) - 1], phrase
                 break
-        assert (spell["scope"], spell["target"], spell["reach"], spell["when"]) \
-            == (screen["scope"], target, reach, screen["when"]), name
+        row = (spell["scope"], spell["target"], spell["reach"], spell["when"])
+        if name == "TURBULENT ATMOSPHERE":
+            assert (screen["scope"], target, reach) == ("one", "monster", None)
+            assert row == ("all", "visible monsters", None, "anytime")
+            continue
+        assert row == (screen["scope"], target, reach, screen["when"]), name
         blank += screen["target"] is None
     assert len(seen) == 98 and blank == 9
 
@@ -474,6 +484,10 @@ def test_spell_targeting_is_classified(data):
     # Reach is split out of the AFFECTS row so it does not repeat the WHEN row.
     assert by["COLD SLASH"]["target"] == "monster"
     assert by["COLD SLASH"]["reach"] == "in hand to hand"
+    # The one spell whose scope comes off the cast dispatcher rather than off
+    # the F3 printer, which has no test for the bit its record carries.
+    assert by["TURBULENT ATMOSPHERE"]["scope"] == "all"
+    assert by["TURBULENT ATMOSPHERE"]["target"] == "visible monsters"
     # Offset 74 is the element, in the same bit layout as the enemy immunity
     # word, and that shared vocabulary is the point: the game tests one against
     # the other, so "cold" here matches "immune to cold" there.
