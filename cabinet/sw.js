@@ -16,9 +16,10 @@
 // a worker controls only what is under it.
 const CACHE = "yendor-v1";
 
-// game/ and its list are the development server's, which holds the game
-// itself; a static host has neither, and answers 404 to both. Kept so that
-// the development server is a fair offline test too.
+// game/ is the development server's, which holds the game itself. A static
+// host answers 404 for it. Kept so that the development server is a fair
+// offline test too. The list beside it is served by both, empty where there
+// is no game, and the page reads it at boot to learn which host it is on.
 const KEEP = /^\/(|index\.html|favicon\.ico|dosbox\.conf|decoder-files\.json|decoder-version\.json|game-files\.json|cabinet\/.*|web\/.*|emulators\/.*|pyodide\/.*|tools\/.*|game\/.*|data\/.*)$/;
 
 // The shell, fetched by the worker itself as it installs. The first visit's
@@ -28,7 +29,7 @@ const KEEP = /^\/(|index\.html|favicon\.ico|dosbox\.conf|decoder-files\.json|dec
 // they are large, and the page fetches them while the worker is watching.
 const SHELL = [
   "./", "./index.html", "./favicon.ico", "./dosbox.conf",
-  "./decoder-files.json", "./decoder-version.json",
+  "./decoder-files.json", "./decoder-version.json", "./game-files.json",
   "./web/panel.html",
   "./cabinet/manifest.webmanifest", "./cabinet/icon.svg", "./cabinet/icon-192.png",
   "./cabinet/icon-512.png", "./cabinet/icon-maskable-512.png",

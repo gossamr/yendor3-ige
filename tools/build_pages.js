@@ -64,8 +64,33 @@ for (const name of await readdir(join(ROOT, "cabinet"))) {
 await cp(join(ROOT, "cabinet/sw.js"), join(OUT, "sw.js"));
 await cp(join(ROOT, "cabinet/favicon.ico"), join(OUT, "favicon.ico"));
 
-for (const name of ["panel.html", "panel.css", "panel.js"]) {
+// panel.css and panel.js as they are, for a reader who wants the sources the
+// page was assembled from. Nothing fetches either: the shell inlines both.
+for (const name of ["panel.css", "panel.js"]) {
   await cp(join(ROOT, "web", name), join(OUT, "web", name));
+}
+
+// The panel the frame loads, with the notes its sources carry taken out.
+//
+// build_panel.py inlines panel.css and panel.js whole, comments and all.
+// Those explain the panel to whoever edits it and say nothing to a reader of
+// the page, and they are two fifths of the 554 kB a player is sent.
+//
+// withoutComments() is the wrong tool here and would break the file. The
+// guides are inlined as JSON, their markdown carries <!-- panel:skip -->
+// markers, and panel.js carries the regex that reads one, so a strip of
+// everything between <!-- and --> would eat a marker the panel needs and cut
+// that regex in half. Each block goes through a reader of its own language
+// instead: a comment pattern for the stylesheet, and bun's transpiler, which
+// parses the script and re-emits it, for the code.
+{
+  const transpiler = new Bun.Transpiler({ loader: "js" });
+  const page = (await readFile(join(ROOT, "web/panel.html"), "utf8"))
+    .replace(/<style>([\s\S]*?)<\/style>/,
+             (_, css) => `<style>\n${css.replace(/\/\*[\s\S]*?\*\//g, "").trim()}\n</style>`)
+    .replace(/<script>([\s\S]*?)<\/script>/g,
+             (_, js) => `<script>\n${transpiler.transformSync(js).trim()}\n</script>`);
+  await writeFile(join(OUT, "web/panel.html"), page);
 }
 
 // The emulator, at the path cabinet.js resolves to relative to itself.
@@ -124,8 +149,11 @@ await writeFile(join(OUT, "decoder-files.json"), JSON.stringify(decoders));
 await writeFile(join(OUT, "decoder-version.json"),
                 JSON.stringify({ decoder: await decoderFingerprint() }));
 
-// game-files.json is deliberately not written. Its absence is how the page
-// works out that there is no game here and asks the player for theirs.
+// An empty game list: there is no game on a static host, and each player
+// brings their own. cabinet/serve.js answers the same list where it is
+// pointed at an empty directory, so the page reads one manifest on both
+// hosted deployments rather than reading a 404 on this one.
+await writeFile(join(OUT, "game-files.json"), JSON.stringify([]));
 
 // GitHub Pages runs Jekyll by default, which drops files and directories whose
 // names begin with an underscore. The emulator ships some.
