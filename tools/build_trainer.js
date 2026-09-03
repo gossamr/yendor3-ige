@@ -29,7 +29,8 @@ import { copyFileSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
 import { EMU_DIST } from "../cabinet/boot.js";
-import { CHANNEL, HOOK, TRAINER_JS, TRAINER_X_JS, trainerShim } from "../cabinet/trainer.js";
+import { CHANNEL, TRAINER_JS, TRAINER_X_JS } from "../cabinet/trainer.js";
+import { HOOK, trainerShim } from "./trainer_hook.js";
 
 export { CHANNEL, HOOK, TRAINER_JS, TRAINER_X_JS };
 

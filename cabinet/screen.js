@@ -15,11 +15,12 @@
 // the pixels have to arrive here whatever draws them. The 2D painter is kept
 // for anywhere WebGL will not start.
 
+// uv flips y: the frame's first row is the top one and a texture's is the
+// bottom one.
 const VERTEX = `
 attribute vec2 pos;
 varying vec2 uv;
 void main() {
-  // The frame's first row is the top one and a texture's is the bottom one.
   uv = vec2((pos.x + 1.0) * 0.5, (1.0 - pos.y) * 0.5);
   gl_Position = vec4(pos, 0.0, 1.0);
 }`;

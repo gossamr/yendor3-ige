@@ -18,7 +18,8 @@ import { fileURLToPath } from "url";
 import { dosboxConf } from "../cabinet/dosbox.conf.js";
 import { EMU_DIST, PYODIDE_DIST, PYODIDE_FILES, decoderFiles,
          decoderFingerprint, withoutComments } from "../cabinet/boot.js";
-import { TRAINER_BUILDS, trainerShim } from "../cabinet/trainer.js";
+import { TRAINER_BUILDS } from "../cabinet/trainer.js";
+import { trainerShim } from "./trainer_hook.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const arg = (name, fallback) =>
@@ -54,42 +55,60 @@ await mkdir(join(OUT, "web"), { recursive: true });
   await writeFile(join(OUT, "index.html"), withoutComments(page));
 }
 
+// The page's code, minified. bun parses each file and re-emits it with its
+// comments, whitespace and local names taken out. `external: ["*"]` leaves
+// every import where it is rather than bundling it, so the files still
+// resolve each other, the worker URLs still name files, and the service
+// worker still finds each one at the path it lists. One build per file:
+// entry points built together share helpers, and png.js's node import would
+// put a require() polyfill at the top of every other file.
+//
+// A regex is the wrong tool for any of it. panel.css has strings with
+// leading spaces, the guides are inlined as JSON carrying <!-- panel:skip -->
+// markers, and panel.js carries the regex that reads one. Each file is read
+// by a parser of its own language, and strings come through as written.
+const minified = async (path) => {
+  const build = await Bun.build({
+    entrypoints: [path], target: "browser", format: "esm", minify: true,
+    external: ["*"], sourcemap: "none",
+  });
+  if (!build.success) throw new AggregateError(build.logs, `minify: ${path}`);
+  return (await build.outputs[0].text()).trim() + "\n";
+};
+
 for (const name of await readdir(join(ROOT, "cabinet"))) {
   if (SERVER_ONLY.test(name) || !/\.(js|css|webmanifest|svg|png|ico)$/.test(name)) continue;
   if (name === "sw.js") continue;   // the root, below
-  await cp(join(ROOT, "cabinet", name), join(OUT, "cabinet", name));
+  const src = join(ROOT, "cabinet", name), dst = join(OUT, "cabinet", name);
+  if (/\.(js|css)$/.test(name)) await writeFile(dst, await minified(src));
+  else await cp(src, dst);
 }
 // The service worker at the root, where it controls the whole site, and the
 // favicon, where browsers ask for it by name.
-await cp(join(ROOT, "cabinet/sw.js"), join(OUT, "sw.js"));
+await writeFile(join(OUT, "sw.js"), await minified(join(ROOT, "cabinet/sw.js")));
 await cp(join(ROOT, "cabinet/favicon.ico"), join(OUT, "favicon.ico"));
 
-// panel.css and panel.js as they are, for a reader who wants the sources the
-// page was assembled from. Nothing fetches either: the shell inlines both.
-for (const name of ["panel.css", "panel.js"]) {
-  await cp(join(ROOT, "web", name), join(OUT, "web", name));
-}
-
-// The panel the frame loads, with the notes its sources carry taken out.
-//
-// build_panel.py inlines panel.css and panel.js whole, comments and all.
-// Those explain the panel to whoever edits it and say nothing to a reader of
-// the page, and they are two fifths of the 554 kB a player is sent.
-//
-// withoutComments() is the wrong tool here and would break the file. The
-// guides are inlined as JSON, their markdown carries <!-- panel:skip -->
-// markers, and panel.js carries the regex that reads one, so a strip of
-// everything between <!-- and --> would eat a marker the panel needs and cut
-// that regex in half. Each block goes through a reader of its own language
-// instead: a comment pattern for the stylesheet, and bun's transpiler, which
-// parses the script and re-emits it, for the code.
+// The panel the frame loads. build_panel.py inlines panel.css and panel.js
+// whole, and the two are two fifths of the 554 kB a player is sent. Each is
+// found in the page as it was inlined and swapped for the minified form of
+// its source. The script around panel.js, which fetches the tables and the
+// guides, is a value and a short wrapper, and only loses its whitespace.
 {
-  const transpiler = new Bun.Transpiler({ loader: "js" });
-  const page = (await readFile(join(ROOT, "web/panel.html"), "utf8"))
-    .replace(/<style>([\s\S]*?)<\/style>/,
-             (_, css) => `<style>\n${css.replace(/\/\*[\s\S]*?\*\//g, "").trim()}\n</style>`)
-    .replace(/<script>([\s\S]*?)<\/script>/g,
-             (_, js) => `<script>\n${transpiler.transformSync(js).trim()}\n</script>`);
+  const transpiler = new Bun.Transpiler({ loader: "js", minifyWhitespace: true });
+  const swap = async (page, name) => {
+    const source = "\n" + (await readFile(join(ROOT, "web", name), "utf8")).trim() + "\n";
+    const at = page.indexOf(source);
+    if (at < 0 || page.indexOf(source, at + 1) >= 0) {
+      throw new Error(`panel.html does not inline web/${name} once, as written`);
+    }
+    const out = await minified(join(ROOT, "web", name));
+    return page.slice(0, at) + "\n" + out + page.slice(at + source.length);
+  };
+  let page = await readFile(join(ROOT, "web/panel.html"), "utf8");
+  page = await swap(page, "panel.css");
+  page = await swap(page, "panel.js");
+  page = page.replace(/<script>([\s\S]*?)<\/script>/g,
+                      (_, js) => `<script>${transpiler.transformSync(js).trim()}\n</script>`);
   await writeFile(join(OUT, "web/panel.html"), page);
 }
 

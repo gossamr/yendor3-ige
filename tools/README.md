@@ -35,6 +35,7 @@ The hosted deployment is the exception. It ships no game and no JSON, so when a 
     pngutil.py       PNG read, write and crop zoom, for captured frames
     fight_probe.js   patches a monster's record, fights it, measures the damage
     build_trainer.js writes the emulator copy that the Trainer tab talks to
+    trainer_hook.js  the hook that copy carries, and the edit that injects it
 
 ## The checks
 
