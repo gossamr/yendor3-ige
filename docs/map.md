@@ -108,7 +108,7 @@ The order is settled by where the objects land. Reading the object as the word *
 Compositing both out of the files reproduces **30,042 of 30,050 cells exactly** (marker cells excluded), and **34 of the 37 pages entirely**.
 
 - **The palette is in `WORLD.DAT`.** Section 12 is 5,376 bytes: seven 768-byte VGA palettes of 6-bit DAC values, and the map screen draws with the first. [tools/tiles.py](../tools/tiles.py) reads it.
-- **Indices 220-223 are a fire ramp the game rotates.** The four colors are `(207,93,0)`, `(223,146,36)`, `(239,195,73)` and `(255,243,69)`, and they cycle through those four indices: all four rotations appear across the clue-book captures, one phase to a page. The palette as stored holds `(255,243,109)` at index 223, which is the ramp at rest and not one of the four. So a tile drawn with these indices matches a still frame only under the phase that frame caught. Indices 224 to 255 are a separate ramp, running from `(16,138,255)` to white with blue held at 255 throughout, and the first-person view draws its sky in it ([view.md](view.md)).
+- **Indices 220-223 are a fire ramp the game rotates.** The four colors are `(207,93,0)`, `(223,146,36)`, `(239,195,73)` and `(255,243,69)`, and they cycle through those four indices: all four rotations appear across the clue-book captures, one phase to a page. The palette as stored holds `(255,243,109)` at index 223, which is the ramp at rest and not one of the four. So a tile drawn with these indices matches a still frame only under the phase that frame caught. Indices 224 to 255 are a separate ramp, and the first-person view draws its sky in it. The game does not use the stored one: it uploads 32 colors from a day and night gradient whose window slides with the clock, and section 12 holds that window one step past where it rests by day ([view.md](view.md)).
 - **63 of the 145 are fully opaque and 82 carry transparency.** A tile with a transparent pixel can only be drawn over something else, so terrain comes from the opaque tiles and sprites come from the rest. That divides the run by what a tile *can* be, rather than by what uses it. **52 are reached by a map**, counting terrain and objects together, and the remainder include the interface art. [tools/tile_sheet.py](../tools/tile_sheet.py) draws all 145 as one sheet.
 - **An id chooses its tile outright**, with no area and no slot involved, as the next section describes. The cell's own bit in the table at `0x3C4F02` decides only whether the terrain draws at all. Where that bit is clear, the cell draws tile 19, which is the empty one, whatever its id.
 - **An object's tile need not be transparent anywhere.** A solid one replaces its cell outright rather than sitting over it, so transparency distinguishes what a tile *can* be, not what an object is.
@@ -201,6 +201,15 @@ Every marker the records place has a caption. A large minority of the legend lin
 
 The map page's title bar reads SELECT LEGEND OR ESC, and clicking a gold square prints its caption there. [tools/capture_legend.js](../tools/capture_legend.js) drives that. It requires the DOSBox-X backend, because plain DOSBox never delivers mouse coordinates, and it requires a double click, because a single click does not select.
 
+## The map in play
+
+The game draws the level the party stands on twice over, from the same 8 x 8 tiles the clue book's page uses, on a field of unseen cells dithered a pixel each way between `(117,117,117)` and `(186,186,186)`.
+
+- **The full map**, on `M`, takes the whole 320 x 200 screen. A title bar carries the map's name in yellow on black. The grid is `cell x 8` across and `band x 8` down from the top left, and the title is drawn over the top row: a party at world (460, 46), which is level 11 cell 20 and area 1 band 22, has its tile at x 160, y 176.
+- **The minimap** is a pane at **x 240 to 311, y 8 to 63**, a **9 x 7 window** of the same tiles, and a single click at (310, 12) toggles it against the title block. A second click toggles it back, so a double click leaves it as it was.
+
+**Either needs `DS:0xCEFD` bit `0x200`.** Image `0x1147B` tests it and refuses to `0x118DC` otherwise, which prints `YOUR SKILL IS NOT HIGH ENOUGH` from the 13-byte line table at `DS:0x8091` into the message area under the compass. A character carrying `PARTY MAP`, item id 51, and enough of the `mapping` skill are what feed the bit; the arithmetic between them is undecoded.
+
 ## The 140 slots are one grid
 
 A cell's place in the world is a single x and y across all of them:
@@ -262,6 +271,6 @@ Image `0x05512` reads it. It copies x, y and facing into the party's own words, 
 
 A door records no source, and its destination is a pair of world coordinates rather than a slot number or an `(area, level)` pair.
 
-[tools/links.py](../tools/links.py) reads both tables.
+[tools/links.py](../tools/links.py) reads the door destinations at `DS:0xBA95`. Nothing reads the pad table at `DS:0xB71F`.
 
 **`DS:0xB71F`** is a second, smaller table, nineteen 20-byte records keyed by a cell's *tile* rather than its position: matched on the terrain id when `+2` bit 15 is set and on the object id otherwise (image `0x0AE45`). A record with `+2` bit 14 teleports, taking x, y and facing from `+4`, `+6` and `+8`. These are the pads inside Acoknight's Cave, the Way of the Order and Vishan's Stronghold.

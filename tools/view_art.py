@@ -24,6 +24,11 @@ Monsters and their shots are the fifth thing the viewport draws and are
 already exported, by `monster_art` and `projectile_art` in
 [extract.py](extract.py).
 
+Two things the view needs that are not pictures go in the same file: the
+gradient the sky's palette window slides along, and the shade offsets that
+light every pass. [view.py](view.py) reads both and `docs/view.md` says how
+they are used.
+
 Floors and ceilings fill their frame, so they are written whole, and so does a
 strip, whose columns are indexed into the full width. A wall or an object face
 is mostly transparent, so it is cropped and the corner it was cut from is kept:
@@ -141,6 +146,11 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
                   "floor_band": list(V.FLOOR_BAND),
                   "ceiling_band": list(V.CEILING_BAND),
                   "strip": [V.STRIP_W, V.STRIP_H, V.STRIP_HALF]},
+        "sky": {"rgb": [list(c) for c in V.sky_gradient(d.world, d)],
+                "window": V.SKY_WINDOW, "index": 224,
+                "steps": V.SKY_STEPS, "cursor_max": V.SKY_CURSOR_MAX,
+                "turns_at_clock": V.SKY_TURNS_AT},
+        "light": V.light_schedule(d.exe),
     }
     for kind, run_index, crop in (("floor", V.RUN[V.FLOOR], False),
                                   ("ceiling", V.RUN[V.CEILING], False),
@@ -185,5 +195,7 @@ if __name__ == "__main__":
     built = build(sys.argv[1] if len(sys.argv) > 1 else "game")
     for kind in ("floor", "ceiling", "strip", "wall", "object"):
         print(f"{kind:<8} {len(built[kind]):>4}")
+    print(f"sky      {len(built['sky']['rgb']):>4} colors")
+    print(f"light    {len(built['light']['by_clock']):>4} clock records")
     print(f"\nwrote data/view_art.json "
           f"{Path('data/view_art.json').stat().st_size / 1024:.0f} kB")

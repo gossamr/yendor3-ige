@@ -186,6 +186,51 @@ def axis_bit(facing: int, party_ceiling: int) -> int:
     return 0 if facing in (NORTH, SOUTH) else 1
 
 
+# The sky's 32 colors at palette index 224 are a window on a gradient, and the
+# window slides with the clock. The gradient is the head of section 12's third
+# 768-byte block; image `0x0EDA0` copies 32 colors from `DS:0x4D62 + [0xD00F]`
+# and uploads them, and `docs/view.md` has the slide.
+SKY_SECTION, SKY_AT, SKY_COLORS, SKY_WINDOW = 12, 1536, 143, 32
+SKY_STEPS, SKY_CURSOR_MAX, SKY_TURNS_AT = 0x71, 0x14D, 1080
+
+# The shade offsets, one per row, far row first. `docs/view.md` has the rule.
+LIGHT_FIXED = 0x7A68            # used where DS:0xCEF9 bit 0x2000 is set
+LIGHT_BY_CLOCK = 0x7556         # 32-byte records, the seven words at +0x12
+LIGHT_RECORD, LIGHT_OFFSETS = 0x20, 0x12
+LIGHT_RUNGS_AT, LIGHT_RUNGS, LIGHT_ROWS = 0x7A06, 6, 7
+# Which bits of DS:0xCEF7 answer for each rung, brightest first (`0x17971`).
+LIGHT_BITS = ((0x200, 0x8), (0x400, 0x10), (0x800, 0x20),
+              (0x1000, 0x40), (0x2000, 0x80), (0x4000, 0x100))
+
+
+def sky_gradient(world: bytes, directory: SEC.Directory) -> list[tuple[int, int, int]]:
+    """The colors the sky's window slides along, as 8-bit RGB."""
+    at = directory.sections[SKY_SECTION].offset + SKY_AT
+    raw = world[at:at + SKY_COLORS * 3]
+    return [tuple((v << 2) | (v >> 4) for v in raw[i * 3:i * 3 + 3])
+            for i in range(SKY_COLORS)]
+
+
+def light_schedule(exe: bytes) -> dict:
+    """The shade offsets: the fixed set, the clock's records, and the rungs."""
+    def words(off, n):
+        return [struct.unpack_from("<h", exe, tiles.HEADER + tiles.DGROUP + off + i * 2)[0]
+                for i in range(n)]
+
+    records, at = [], LIGHT_BY_CLOCK
+    while True:
+        row = words(at, 16)
+        if row[0] == -1:
+            break
+        records.append({"from": row[0], "to": row[1],
+                        "offsets": words(at + LIGHT_OFFSETS, LIGHT_ROWS)})
+        at += LIGHT_RECORD
+    rungs = [words(LIGHT_RUNGS_AT + row * 12, LIGHT_RUNGS) for row in range(LIGHT_ROWS)]
+    return {"fixed": words(LIGHT_FIXED, LIGHT_ROWS), "by_clock": records,
+            "rungs": [[r[i] for r in rungs] for i in range(LIGHT_RUNGS)],
+            "bits": [list(b) for b in LIGHT_BITS]}
+
+
 def picture(exe: bytes, terrain_id: int, mode: int, axis: int) -> int | None:
     """Which picture of the pass's run a cell draws, or None for nothing.
 
