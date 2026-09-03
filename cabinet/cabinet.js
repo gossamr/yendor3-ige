@@ -62,6 +62,9 @@ document.body.classList.toggle("touch", TOUCH);
 const IPHONE = /iPhone|iPod/.test(navigator.userAgent) || navigator.standalone === true;
 document.body.classList.toggle("iphone", IPHONE);
 
+// `?perf` installs the measurement contract, which nothing else needs; see
+// cabinet/perf.js.
+const PERF = new URLSearchParams(location.search).has("perf");
 // Painting. `?webgl=0` takes the 2D painter instead, which is how the two are
 // compared on one machine; see screen.js for what the choice costs.
 const WEBGL = new URLSearchParams(location.search).get("webgl") !== "0";
@@ -505,8 +508,19 @@ async function acceptZip(file) {
   }
 }
 
+// Waiting for the next picture. A poll cannot see one land: paint() runs on
+// this thread, so anything spinning here is what stops it arriving, and a
+// timer that yields rounds the answer to its own resolution. Latency is
+// measured against this instead.
+let frameWaiters = [];
+const nextFrame = () => new Promise((resolve) => frameWaiters.push(resolve));
+
 function paint(rgb) {
   lastFrame = rgb;
+  if (frameWaiters.length) {
+    const now = performance.now();
+    for (const waiter of frameWaiters.splice(0)) waiter(now);
+  }
   // A context outlives the canvas that gave it, and a lost one cannot be
   // asked for a second time on the same element, so a WebGL context that goes
   // away leaves the frame undrawn rather than falling back. Browsers restore
@@ -1214,6 +1228,21 @@ async function boot() {
       ...saved,
       { dosboxConf: conf, jsdosConf: { version: emulators.version.split(" ")[0] } },
     ], offscreen ? { canvas: offscreen } : undefined);
+    // What tools/perf_check.js drives, and only when it is asked for: a
+    // session without the flag neither fetches nor parses the module. Installed here rather than beside
+    // __cabinet below because the contract is over a running emulator, and
+    // this is where there is one.
+    if (PERF) {
+      const { cabinetPerf } = await import("./perf.js");
+      window.__perf = cabinetPerf({
+        ci,
+        frames: () => frames,
+        info: () => window.__cabinet.engine,
+        nextFrame,
+        canvas,
+        taps: () => window.__cabinet.taps,
+      });
+    }
     // The game is up: the drop zone has done its job and the screen takes its
     // place. Without this the canvas stays hidden behind the zone that asked
     // for it, and a running game paints where nobody can see it.

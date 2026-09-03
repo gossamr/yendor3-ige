@@ -34,6 +34,10 @@ Every menu is reachable from the keyboard.
 
 During play the cursor keys move and turn. Up moves forward, down moves back, left and right turn, and Ctrl with left or right steps sideways. **SPACE uses whatever is in front of the party**, which is how a door is opened. Inside the clue book, the left arrow returns one page and ESC leaves the book.
 
+**Two ways into the world, and the short one needs a save.** With a save on the disk it is `E`, `L`, the slot, `Y`. With none it is `A`, the four member keys, `D`, `E`, then `R` to leave the panel that opens on arrival. `window.__perf.enter()` in [cabinet/perf.js](../cabinet/perf.js) takes whichever applies, and `takeSave` and `putSave` there read and write a slot through the emulator's own filesystem, so one run can keep a save and every later run start from it rather than assembling a party again.
+
+Waiting on the next delivered frame is not a substitute for waiting on a screen: the emulator delivers a frame when the picture changes, and the game draws while it is still loading, so such a wait ends before the screen is up and the next key goes nowhere. How long ENTER THE GAME takes to put the party in the world is measured by `window.__perf.enter()`, which reports it per run.
+
 **Entering the game lands with the disk panel already open**, so a `D` sent to open it selects DOS and reaches "exit to DOS?" instead. **NEW GAME appears in the disk panel only once a save exists.** Before a save exists the panel offers SAVE, DOS, ANIMATION and RETURN.
 
 ## The mouse
@@ -106,7 +110,7 @@ The second tap of a double tap carries no motion because the guest drops the pai
 
 ## The switches a measurement needs
 
-Each of these takes the other half of a pair, so the two can be compared in one sitting on one machine. `window.__cabinet.engine` reports which half a session actually took, along with the `cycles` line the backend was handed, because each has a fallback and a silent fallback reads exactly like a result.
+Each takes the other half of a pair, so the two can be compared on one machine. `window.__cabinet.engine` reports which half a session took, and the `cycles` line the backend was handed. Each has a fallback, so a session can take the slower path without saying so.
 
 | Switch | What it takes instead |
 |---|---|
@@ -117,6 +121,10 @@ Each of these takes the other half of a pair, so the two can be compared in one 
 
 [tools/perf_check.js](../tools/perf_check.js) takes all of these measurements: it walks the party and samples, times the painter and the frame read against each other, or compares the two emulator builds. `make perf` runs it against a server it starts, `make perf-paths` times the two paths, and `make perf-device` measures a phone through [tools/adb_proxy.js](../tools/adb_proxy.js).
 
-**The painter and the frame read, head to head at 640x400**, on the phone and in headless Chromium with software GL: painting through WebGL costs 3.65 ms against the 2D loop's 12.99 on the phone, and 0.44 against 1.15 on the desktop; reading the delivered frame costs 2.08 ms against `getImageData`'s 7.89 on the phone, and 0.32 against 0.39 on the desktop. The phone's ratios are the ones that matter, and a desktop measurement alone understates both by about an order of magnitude.
+**The painter and the frame read, head to head at 640x400**, on the phone and in headless Chromium with software GL: painting through WebGL costs 3.65 ms against the 2D loop's 12.99 on the phone, and 0.44 against 1.15 on the desktop; reading the delivered frame costs 2.08 ms against `getImageData`'s 7.89 on the phone, and 0.32 against 0.39 on the desktop. The desktop ratios are smaller than the phone's by about an order of magnitude.
+
+**How long the game takes to answer a finger, on the phone.** Tapping the game's own disk icon, at 0.956, 0.381 of the canvas, opened the panel after 3,149 ms and 4,747 ms. Tapping RETURN in it, at 0.572, 0.605, closed it after 4,686 ms and 4,753 ms. A key reaches the guest's keyboard buffer instead of the mouse path and answered in 298 ms, median of eight, 39 to 358.
+
+Those seconds are the mouse path rather than the emulator: a tap is queued, the cursor is homed into a corner with a delta larger than the screen, two waits watch for frames showing the arrow arrive and leave, a nudge follows, and the button is held 160 ms. `window.__perf.react("tap", n, timeout, spot)` in [cabinet/perf.js](../cabinet/perf.js) measures it, dispatching pointer events at a fraction of the canvas the way a finger does and stopping at the first picture drawn after the guest has the click. The screenshots either side of a measured tap show the panel opening and closing, so the figures are the game answering rather than a wait running out.
 
 **Measured, on a vivo 1933 over `adb reverse`**, Chrome's processes summed the way `top` reports them, where 100 is one core of the eight: 28 with the emulator stopped and the page still open, 120 to 130 at the main menu with nothing happening, 128 standing in the world, and 139 walking a step every 250 ms. Walking delivered 2.4 frames per second with the 2D painter and 3.4 with WebGL. `cycles=200` measured 142 and `cycles=20000` measured 130, so the cost is DOSBox-X's own runtime rather than the guest's instruction stream, and no cycle count makes it cheap. Run to run variance is wide: the same configuration at the menu measured 120 in one run and 172 in another, so differences of ten or twenty points are noise and only the factor of five between running and stopped is not. The battery read 31.0 C before and 38.0 C after about forty minutes of it, with the CPU cores at 40 to 42 C.
