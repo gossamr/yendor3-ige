@@ -23,6 +23,7 @@ The map grid sits **before** section 0. Seven areas of 76,800 bytes fill `0x0000
 | 21 | `0x03d8eb9` | 5,640 | NPC records, 141 × 40 ([shops.md](shops.md)) |
 | 22–23 | `0x03da4c1` | 64,380 | conversation topics, 1,073 × 60 ([shops.md](shops.md)) |
 | 24–26 | `0x03ea03d` | 139,060 | prose lines, 4,090 × 34 ([shops.md](shops.md)) |
+| 27 | `0x040bf71` | 18,844 | where each cell of the first-person view lands on screen ([view.md](view.md)) |
 | 28 | `0x041090d` | 26,472 | cell events ([map.md](map.md)) |
 | 29 | `0x0417075` | 7,738 | enemies, 73 × 106 ([monsters.md](monsters.md)) |
 | 30 | `0x0418eaf` | 10,000 | the spawn table, one uint16 per spawn id ([encounters.md](encounters.md)) |

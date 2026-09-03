@@ -42,7 +42,7 @@ TEST_ARGS ?= /NOM /NOS
         serve serve-byo serve-stock serve-headless session clean patched patched-debug \
         pages panel-shell trainer test-trainer test-decode test-away \
         hosted hosted-dev cabinet-deps test-hosted-trainer \
-        characters icons perf perf-paths perf-device
+        characters icons perf perf-paths perf-device view-art
 
 all: data panel
 
@@ -60,6 +60,14 @@ data:
 	PYTHONPATH=tools $(PY) tools/pack_maps.py
 	PYTHONPATH=tools $(PY) tools/extract.py
 	PYTHONPATH=tools $(PY) tools/world_map.py
+
+## The first-person view's artwork -> data/view_art.json.
+##
+## Separate from `data` because the panel does not draw the view, and this would
+## cost it a megabyte it never reads. tools/view_check.py holds the export to a
+## frame the game drew.
+view-art:
+	PYTHONPATH=tools $(PY) tools/view_art.py
 
 ## Record what this build decodes the panel's source data to, which the page
 ## holds a decode in the player's browser to. Run after any change to a decoder.

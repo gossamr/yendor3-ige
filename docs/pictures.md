@@ -24,12 +24,12 @@ A run ends where the next run begins, and the last run ends at the end of the fi
 | Run | Pixels | Pictures | Starts at | Holds |
 |---|---|---|---|---|
 | 0 | 318 x 198 | 23 | 0 | full-screen backdrops |
-| 1 | 210 x 105 | 156 | 1,448,172 | |
-| 2 | 140 x 155 | 270 | 4,887,972 | monsters drawn tall, and scenery |
+| 1 | 210 x 105 | 156 | 1,448,172 | the view's wall faces and its object faces from id 100 up, projectiles, interface panels ([view.md](view.md)) |
+| 2 | 140 x 155 | 270 | 4,887,972 | monsters drawn tall, scenery, and the view's object faces below id 100 |
 | 3 | 190 x 110 | 238 | 10,746,972 | monsters drawn wide, and spell effects |
-| 4 | 224 x 74 | 28 | 15,721,172 | |
-| 5 | 224 x 62 | 14 | 16,185,300 | |
-| 6 | 56 x 136 | 70 | 16,379,732 | |
+| 4 | 224 x 74 | 28 | 15,721,172 | the view's floors, each a whole floor in perspective ([view.md](view.md)) |
+| 5 | 224 x 62 | 14 | 16,185,300 | the view's ceilings and skies ([view.md](view.md)) |
+| 6 | 56 x 136 | 70 | 16,379,732 | the effect drawn on a struck monster |
 | 7 | 32 x 32 | 180 | 16,912,852 | |
 | 8 | 16 x 16 | 340 | 17,097,172 | |
 | 9 | 8 x 8 | 576 | 17,184,212 | the map's tiles, see [map.md](map.md) |

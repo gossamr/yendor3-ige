@@ -16,8 +16,8 @@
 // entries that follow the party are the frustum.
 //
 // The party's position is poked rather than walked, so a reading costs one
-// boot rather than a journey. Facings are 0x8000 north, 0x4000 east, 0x2000
-// south, 0x1000 west (docs/saves.md).
+// boot rather than a journey. Facings are 0x8000 north, 0x4000 south, 0x2000
+// west and 0x1000 east (docs/saves.md, docs/view.md).
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 
 import { loadEmulators, initFs, HEADLESS_ARGS } from "../cabinet/boot.js";

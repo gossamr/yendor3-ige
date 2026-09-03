@@ -36,6 +36,7 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Combat (the resolver, damage, resistance and rewards, [docs/combat.md](docs/combat.md))
 - [x] Save file (the seven sections, the seek that addresses them, the header's position and clock, and the seen grid, [docs/saves.md](docs/saves.md))
 - [x] Map transitions (the cell event table, and the destination of each door, [docs/map.md](docs/map.md))
+- [x] First-person view (the 51 cells it shows, where each one lands on screen, and the artwork it draws them from, [docs/view.md](docs/view.md))
 
 ## Running it locally
 
@@ -57,7 +58,7 @@ Put your copy of the game in `game/`, then run:
 
     make serve PORT=8090   # serve on another port
     make serve-stock       # the game exactly as it shipped, including the introduction
-    make test              # 366 python, 69 javascript, panel, persistence, boot
+    make test              # 379 python, 69 javascript, panel, persistence, boot
 
 
 ## Hosting it
@@ -83,7 +84,7 @@ There are two files rather than one file and an override. Compose merges volume 
 | [docs/](docs/) | What has been decoded, how it was confirmed, and how the game is run. Start at [README.md](docs/README.md) |
 | [game/](game/) | Your copy of the game. Not in this repository |
 
-[docs/README.md](docs/README.md) says how to read them and [docs/world-dat.md](docs/world-dat.md) indexes the rest. [map.md](docs/map.md), [items.md](docs/items.md), [monsters.md](docs/monsters.md), [spells.md](docs/spells.md), [saves.md](docs/saves.md), [shops.md](docs/shops.md) and [pictures.md](docs/pictures.md) describe the file formats. [combat.md](docs/combat.md) and [leveling.md](docs/leveling.md) describe the rules those formats encode. [running.md](docs/running.md), [patching.md](docs/patching.md) and [panel.md](docs/panel.md) describe the harness around them.
+[docs/README.md](docs/README.md) says how to read them and [docs/world-dat.md](docs/world-dat.md) indexes the rest. [map.md](docs/map.md), [items.md](docs/items.md), [monsters.md](docs/monsters.md), [spells.md](docs/spells.md), [saves.md](docs/saves.md), [shops.md](docs/shops.md), [pictures.md](docs/pictures.md) and [view.md](docs/view.md) describe the file formats. [combat.md](docs/combat.md) and [leveling.md](docs/leveling.md) describe the rules those formats encode. [running.md](docs/running.md), [patching.md](docs/patching.md) and [panel.md](docs/panel.md) describe the harness around them.
 
 [MANUAL.md](MANUAL.md) is a player's manual written from the decoded tables.
 
