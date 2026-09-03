@@ -23,11 +23,14 @@ const lum = (d, i) => d[i] + d[i + 1] + d[i + 2];
  * pixels much brighter in `a` than in `b` are the cursor. Its hotspot is the
  * tip, which is the top-left of that region.
  */
-export function locateCursor(a, b, width, height, threshold = 150, floor = 0) {
+export function locateCursor(a, b, width, height, threshold = 150, floor = 0, stride = 4) {
+  // The frame buffer the emulator hands over is three bytes to a pixel and an
+  // ImageData is four. Either can be read here; nothing else differs.
+  if (!a || !b) return null;
   const xs = [], ys = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
+      const i = (y * width + x) * stride;
       // `floor` asks for pixels that are bright as well as brighter: the
       // tap's look passes it, so the reference frame's own cursor does not
       // show up as a ghost where its black outline was. Calibration does
@@ -84,9 +87,8 @@ export function fallbackTransform(canvas) {
   };
 }
 
-export async function calibrate(ci, canvas, ctx, { settle = 450 } = {}) {
+export async function calibrate(ci, canvas, read, { settle = 450, stride = 4 } = {}) {
   const { width, height } = canvas;
-  const read = () => ctx.getImageData(0, 0, width, height).data;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const park = async (x, y) => { ci.sendMouseMotion(x, y); await wait(settle); return read(); };
 
@@ -103,7 +105,7 @@ export async function calibrate(ci, canvas, ctx, { settle = 450 } = {}) {
       await wait(160);
       const now = read();
       let diff = 0;
-      for (let j = 0; j < now.length; j += 4 * 53) {
+      for (let j = 0; j < now.length; j += stride * 53) {
         if (Math.abs(lum(now, j) - lum(last, j)) > 30) diff++;
       }
       last = now;
@@ -119,7 +121,7 @@ export async function calibrate(ci, canvas, ctx, { settle = 450 } = {}) {
     for (const v of [LOW, MID, HIGH]) {
       const here = await at(v);
       const away = await at(v === HIGH ? LOW : HIGH);   // reference elsewhere
-      const found = locateCursor(here, away, width, height);
+      const found = locateCursor(here, away, width, height, 150, 0, stride);
       if (found) points.push([v, pick(found)]);
     }
     if (points.length < 2) return null;

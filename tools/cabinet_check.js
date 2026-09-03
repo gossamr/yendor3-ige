@@ -37,8 +37,8 @@ page.on("console", (m) => {
 
 await page.goto(url, { waitUntil: "domcontentloaded" });
 
-// The canvas is transferred to the worker, so its pixels can only be read back
-// through an element screenshot.
+// The canvas is drawn to by WebGL, whose buffer is cleared once it has been
+// composited, so its pixels are read back through an element screenshot.
 const colors = async () => {
   const { rgb } = decodePng(await page.locator("#screen").screenshot());
   const seen = new Set();
@@ -550,6 +550,16 @@ if (!/ZORBAX/.test(keptStatus)) {
   problems.push(`the status line does not name the kept character (said: ${keptStatus})`);
 }
 console.log("roster in WORLD.DAT:", roster.join(", "));
+
+// Which of each pair of paths the page took. Each falls back where a browser
+// cannot take the faster one, and a silent fallback is what a run measuring
+// the faster one has to be able to rule out.
+const engine = await page.evaluate(() => window.__cabinet.engine);
+console.log("engine:",
+  `painter=${engine.painter} sound=${engine.sound} backend=${engine.backend}`);
+if (engine.painter !== "webgl") problems.push(`the painter fell back to ${engine.painter}`);
+if (engine.sound !== "worklet") problems.push(`sound fell back to ${engine.sound}`);
+if (engine.backend !== "dosbox-x") problems.push(`the backend was ${engine.backend}, not the default`);
 
 await browser.close();
 

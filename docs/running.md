@@ -103,3 +103,20 @@ The second tap of a double tap carries no motion because the guest drops the pai
 ## One long session
 
 [cabinet/session.js](../cabinet/session.js) keeps one emulator running and reads commands from `tmp/session.cmd`, so the cost of booting is paid once rather than once per interaction. `--backend=x` selects DOSBox-X, and `--trace` logs every filesystem mutation beside the command that caused it. [cabinet/cabinet.js](../cabinet/cabinet.js) accepts `?backend=dosbox|dosboxX` and `?mouse=absolute|relative`.
+
+## The switches a measurement needs
+
+Each of these takes the other half of a pair, so the two can be compared in one sitting on one machine. `window.__cabinet.engine` reports which half a session actually took, along with the `cycles` line the backend was handed, because each has a fallback and a silent fallback reads exactly like a result.
+
+| Switch | What it takes instead |
+|---|---|
+| `?webgl=0` | the 2D painter, which converts every frame from RGB to RGBA in JavaScript on the main thread |
+| `?worklet=0` | a `ScriptProcessorNode`, which mixes on the main thread |
+| `?jspi=1` | the JSPI build, which suspends the wasm stack in the engine instead of rewriting the program to do it. Off by default: it booted to the first frame in 883 and 938 ms against Asyncify's 922 and 939, and delivered 19 and 19 frames in ten seconds against 21 and 18 |
+| `?cycles=N` | an emulated speed other than the 20,000 in [cabinet/dosbox.conf.js](../cabinet/dosbox.conf.js) |
+
+[tools/perf_check.js](../tools/perf_check.js) takes all of these measurements: it walks the party and samples, times the painter and the frame read against each other, or compares the two emulator builds. `make perf` runs it against a server it starts, `make perf-paths` times the two paths, and `make perf-device` measures a phone through [tools/adb_proxy.js](../tools/adb_proxy.js).
+
+**The painter and the frame read, head to head at 640x400**, on the phone and in headless Chromium with software GL: painting through WebGL costs 3.65 ms against the 2D loop's 12.99 on the phone, and 0.44 against 1.15 on the desktop; reading the delivered frame costs 2.08 ms against `getImageData`'s 7.89 on the phone, and 0.32 against 0.39 on the desktop. The phone's ratios are the ones that matter, and a desktop measurement alone understates both by about an order of magnitude.
+
+**Measured, on a vivo 1933 over `adb reverse`**, Chrome's processes summed the way `top` reports them, where 100 is one core of the eight: 28 with the emulator stopped and the page still open, 120 to 130 at the main menu with nothing happening, 128 standing in the world, and 139 walking a step every 250 ms. Walking delivered 2.4 frames per second with the 2D painter and 3.4 with WebGL. `cycles=200` measured 142 and `cycles=20000` measured 130, so the cost is DOSBox-X's own runtime rather than the guest's instruction stream, and no cycle count makes it cheap. Run to run variance is wide: the same configuration at the menu measured 120 in one run and 172 in another, so differences of ten or twenty points are noise and only the factor of five between running and stopped is not. The battery read 31.0 C before and 38.0 C after about forty minutes of it, with the CPU cores at 40 to 42 C.

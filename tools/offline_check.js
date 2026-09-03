@@ -13,6 +13,7 @@ import { join, extname, resolve } from "path";
 import { deflateRawSync, crc32 } from "zlib";
 
 import { STOCK_DIR } from "../cabinet/boot.js";
+import { decodePng } from "../cabinet/png.js";
 
 const arg = (n, d) => {
   const hit = process.argv.find((a) => a.startsWith(`--${n}=`));
@@ -89,11 +90,15 @@ const context = await browser.newContext({ viewport: { width: 1280, height: 800 
 const page = await context.newPage();
 page.on("pageerror", (e) => fail(`pageerror: ${e.message}`));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const colors = () => page.evaluate(() => {
-  const c = document.querySelector("#screen");
-  const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-  const s = new Set(); for (let i = 0; i < d.length; i += 4 * 37) s.add((d[i]<<16)|(d[i+1]<<8)|d[i+2]); return s.size;
-});
+// The screen is drawn by WebGL, whose buffer is cleared once it has been
+// composited, so the pixels come back through an element screenshot rather
+// than out of a context this side can read.
+const colors = async () => {
+  const { rgb } = decodePng(await page.locator("#screen").screenshot());
+  const s = new Set();
+  for (let i = 0; i < rgb.length; i += 3 * 37) s.add((rgb[i] << 16) | (rgb[i + 1] << 8) | rgb[i + 2]);
+  return s.size;
+};
 const painted = async (limit) => { const t0 = Date.now(); while (Date.now() - t0 < limit) { await sleep(2000); if (await colors().catch(() => 0) > 4) return true; } return false; };
 const panelReady = async (limit) => {
   const t0 = Date.now();

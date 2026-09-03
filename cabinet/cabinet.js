@@ -9,6 +9,7 @@ import { KEY_CODES } from "./keymap.js";
 import { BUTTONS, DOM_BUTTONS, MOUSE_SCALE, HOME } from "./keys.js";
 import { startAudio } from "./audio.js";
 import { calibrate, fallbackTransform, retryDelay, locateCursor } from "./mouse.js";
+import { makeRenderer } from "./screen.js";
 import { Taps, mountTouchKeys, mountTyper } from "./touch.js";
 import {
   loadFiles, startAutosave, fingerprint, notKeptReason, putFile, diskPaths,
@@ -61,6 +62,30 @@ document.body.classList.toggle("touch", TOUCH);
 const IPHONE = /iPhone|iPod/.test(navigator.userAgent) || navigator.standalone === true;
 document.body.classList.toggle("iphone", IPHONE);
 
+// Painting. `?webgl=0` takes the 2D painter instead, which is how the two are
+// compared on one machine; see screen.js for what the choice costs.
+const WEBGL = new URLSearchParams(location.search).get("webgl") !== "0";
+// `?jspi=1` takes the JSPI build where the browser has it. Off by default:
+// measured against the Asyncify build it booted to the first frame in 883 and
+// 938 ms against 922 and 939, and delivered 19 and 19 frames in ten seconds
+// against 21 and 18, so there is nothing in it, and the second build is
+// another 8 MB for a browser to fetch and keep.
+const JSPI = new URLSearchParams(location.search).get("jspi") === "1";
+// `?worklet=0` plays through the main thread instead, the same comparison for
+// sound that `?webgl=0` is for the picture.
+const WORKLET = new URLSearchParams(location.search).get("worklet") !== "0";
+// `?cycles=N` overrides the emulated speed for one session. The default is in
+// dosbox.conf.js and was chosen against a desktop, so the lowest count a phone
+// still steps the party at promptly is something to measure rather than guess.
+const CYCLES = new URLSearchParams(location.search).get("cycles");
+let appliedCycles = null;
+const withCycles = (conf) => {
+  const out = (CYCLES && /^\d+$/.test(CYCLES))
+    ? conf.replace(/^cycles=.*$/m, `cycles=${CYCLES}`) : conf;
+  appliedCycles = (out.match(/^cycles=(.*)$/m) ?? [])[1] ?? null;
+  return out;
+};
+
 async function trainerAvailable() {
   if (!CHEATS) return false;
   try {
@@ -75,13 +100,22 @@ const canvas = $("#screen");
 const status = $("#status");
 
 // Deliberately lazy: a canvas that has ever had a rendering context cannot be
-// transferred to a worker, and transferring is the path we want.
-let ctx = null;
+// transferred to a worker, and a context is what the first frame asks for.
+let renderer = null;
+// Which emulator build started, for __cabinet.engine below.
+let backendKind = null;
+// The last frame the emulator delivered, three bytes to a pixel. The pixels
+// the cursor search wants are already here, because onFrame hands them to
+// paint(), so it reads them rather than asking the canvas for them back. On a
+// phone that is 2.08 ms against getImageData's 7.89 at 640x400, and a tap
+// polls every 40 ms for as long as it lasts (tools/perf_check.js --paths).
+// It also frees the painter from having to be one the page can read pixels
+// out of. readFrame() below is what the mouse and the tap path call.
+let lastFrame = null;
 
 const say = (m) => { status.textContent = m; };
 
 let ci = null;
-let image = null;
 let audio = null;
 let autosave = null;
 // Whether pauseWhenAway has stopped the emulator. Read by
@@ -472,18 +506,24 @@ async function acceptZip(file) {
 }
 
 function paint(rgb) {
-  if (!ctx) ctx = canvas.getContext("2d", { alpha: false });
-  const w = ci.width(), h = ci.height();
-  if (!image || image.width !== w || image.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
-    image = ctx.createImageData(w, h);
-  }
-  const out = image.data;
-  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
-    out[j] = rgb[i]; out[j + 1] = rgb[i + 1]; out[j + 2] = rgb[i + 2]; out[j + 3] = 255;
-  }
-  ctx.putImageData(image, 0, 0);
+  lastFrame = rgb;
+  // A context outlives the canvas that gave it, and a lost one cannot be
+  // asked for a second time on the same element, so a WebGL context that goes
+  // away leaves the frame undrawn rather than falling back. Browsers restore
+  // one on their own, and the next frame draws.
+  if (!renderer) renderer = makeRenderer(canvas, { webgl: WEBGL });
+  if (renderer.lost()) return;
+  renderer.draw(rgb, ci.width(), ci.height());
+}
+
+/**
+ * A copy of the last frame, three bytes to a pixel, or null before the first
+ * one arrives. The copy is what makes a comparison mean anything: the caller
+ * holds one frame while asking for later ones, and handing back the live
+ * buffer would have it compare a frame against itself.
+ */
+function readFrame() {
+  return lastFrame ? lastFrame.slice() : null;
 }
 
 
@@ -526,8 +566,7 @@ async function ensureCalibrated() {
   if (Date.now() < nextAttempt) return;
   calibrating = true;
   try {
-    if (!ctx) ctx = canvas.getContext("2d", { alpha: false });
-    const result = await calibrate(ci, canvas, ctx);
+    const result = await calibrate(ci, canvas, readFrame, { stride: 3 });
     if (result) {
       transform = result;
       failures = 0;
@@ -713,8 +752,7 @@ function wireInput() {
   // cursor rests at HOME rather than at the corner.
   const place = async (a) => {
     const p = target({ clientX: a.x, clientY: a.y });
-    if (!ctx) ctx = canvas.getContext("2d", { alpha: false });
-    const read = () => ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const read = readFrame;
     const nearHome = (t) => Math.abs(t.x - HOME.x) <= 6 && Math.abs(t.y - HOME.y) <= 6;
     // Read frames until the arrow's tip is found where `want` says, or the
     // time is up. The guest draws at its own pace, and on a slow phone two
@@ -726,7 +764,7 @@ function wireInput() {
       const until = Date.now() + ms;
       while (Date.now() < until) {
         await later(40);
-        const found = locateCursor(read(), before, canvas.width, canvas.height, 150, 400);
+        const found = locateCursor(read(), before, canvas.width, canvas.height, 150, 400, 3);
         if (found && want(found)) return found;
       }
       return null;
@@ -1112,7 +1150,7 @@ async function boot() {
       await applyGamePatches(
         files, BRING_YOUR_OWN.zip ? fingerprint(BRING_YOUR_OWN.zip) : null);
     }
-    const conf = await (await fetch("dosbox.conf")).text();
+    const conf = withCycles(await (await fetch("dosbox.conf")).text());
     // Kept characters go in before anything else looks at the files. They live
     // in WORLD.DAT rather than in a save file (see roster.js), and grafting
     // them here, ahead of the fingerprints below, keeps the 4MB WORLD.DAT
@@ -1155,9 +1193,17 @@ async function boot() {
       emulators.wdosboxxJs = TRAINER_X_JS;
       say("trainer build");
     }
-    const start = backend === "dosboxX"
-      ? emulators.dosboxXWorker.bind(emulators)
-      : emulators.dosboxWorker.bind(emulators);
+    // JSPI suspends the wasm stack in the engine rather than rewriting the
+    // program to unwind and rewind it, which is what Asyncify does. It made no
+    // measurable difference here, so it is off unless asked for. Never with
+    // the trainer: its hooked build is written from the Asyncify one and there
+    // is no JSPI copy to hook.
+    const jspi = backend === "dosboxX" && !trainerReady && JSPI
+      && typeof WebAssembly.Suspending === "function";
+    const start = backend !== "dosboxX" ? emulators.dosboxWorker.bind(emulators)
+      : jspi ? emulators.dosboxXJspiWorker.bind(emulators)
+      : emulators.dosboxXWorker.bind(emulators);
+    backendKind = backend === "dosboxX" ? (jspi ? "dosbox-x jspi" : "dosbox-x") : "dosbox";
     // Replace rather than overlay. Passing both the original and the saved
     // copy of a file leaves the original in place, later entries not winning,
     // so anything we have a saved version of is dropped from the base set.
@@ -1181,7 +1227,10 @@ async function boot() {
     if (TOUCH) say("running \u00b7 touch");
     // Browsers only allow audio to start from a user gesture: the click that
     // got us here counts.
-    audio = startAudio(ci);
+    // Awaited because the player is a worklet, whose module is loaded over a
+    // blob URL. Resume still works after it: a page the player has touched
+    // keeps that activation, so the boot click still counts a tick later.
+    audio = await startAudio(ci, { worklet: WORKLET });
     // resume() is not awaited. A browser may leave it pending instead of
     // rejecting it. Firefox does, where it will not start the context. That
     // left the rest of boot unreachable: no autosave, so nothing wrote the
@@ -1613,6 +1662,20 @@ window.__cabinet = {
   lastMouse: null,
   get ci() { return ci; },
   get audio() { return audio; },
+  // What this session is running: the painter, the sound path and the
+  // emulator build. Each of the three has a fallback, so which one is in use
+  // is a measurement's first fact rather than an assumption.
+  get engine() {
+    return {
+      painter: renderer ? renderer.kind : null,
+      sound: audio ? audio.kind : null,
+      backend: backendKind,
+      // The line the backend was actually handed, not the flag that asked for
+      // it: a measurement that cannot see this cannot tell a knob that did
+      // nothing from a knob that was never turned.
+      cycles: appliedCycles,
+    };
+  },
   get canvas() { return canvas; },
   get transform() { return transform; },
   // Asking by hand clears the backoff as well as the measurement: the caller

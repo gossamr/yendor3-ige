@@ -42,7 +42,7 @@ TEST_ARGS ?= /NOM /NOS
         serve serve-byo serve-stock serve-headless session clean patched patched-debug \
         pages panel-shell trainer test-trainer test-decode test-away \
         hosted hosted-dev cabinet-deps test-hosted-trainer \
-        characters icons
+        characters icons perf perf-paths perf-device
 
 all: data panel
 
@@ -142,6 +142,36 @@ test-mobile: patched panel
 	$(BUN) tools/mobile_check.js --url=http://localhost:$(MOBILE_PORT)/; \
 	status=$$?; kill `cat tmp/mobile.pid` 2>/dev/null; rm -f tmp/mobile.pid; \
 	exit $$status
+
+## Walk the party and sample what it costs: CPU where a device can report it,
+## frames either way. Starts and stops its own server.
+PERF_PORT ?= 8095
+perf: patched panel
+	@YENDOR_ARGS="$(TEST_ARGS)" $(BUN) cabinet/serve.js --port=$(PERF_PORT) & echo $$! > tmp/perf.pid; \
+	sleep 2; \
+	$(BUN) tools/perf_check.js --url=http://localhost:$(PERF_PORT)/ $(PERF_ARGS); \
+	status=$$?; kill `cat tmp/perf.pid` 2>/dev/null; rm -f tmp/perf.pid; \
+	exit $$status
+
+## Time the two painters and the two frame reads against each other. Needs no
+## game and boots none: the tool makes the buffer it measures on, so only the
+## module has to be served.
+PATHS_PORT ?= 8096
+perf-paths: panel-shell
+	@$(BUN) cabinet/serve.js --port=$(PATHS_PORT) & echo $$! > tmp/paths.pid; \
+	sleep 2; \
+	$(BUN) tools/perf_check.js --url=http://localhost:$(PATHS_PORT)/ --paths; \
+	status=$$?; kill `cat tmp/paths.pid` 2>/dev/null; rm -f tmp/paths.pid; \
+	exit $$status
+
+## The same measurements on a phone. This one starts no server, because the
+## device reaches a port tunneled to one you are already running: serve it
+## yourself first, `adb reverse tcp:8080 tcp:8080`, and have the page open in
+## a foreground tab, which Chrome on Android will not freeze. It also needs
+## tools/adb_proxy.js running. PERF_URL is the address as the *device* sees it.
+PERF_URL ?= http://localhost:8080/
+perf-device:
+	$(BUN) tools/perf_check.js --device --url=$(PERF_URL) $(PERF_ARGS)
 
 ## Prove the installed cabinet runs with no network: build the static site,
 ## serve it with no game, drop a copy in, decode and boot it, then stop the
