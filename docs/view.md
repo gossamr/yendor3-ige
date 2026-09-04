@@ -2,7 +2,7 @@
 
 How the game draws the world in front of the party: which cells it shows, where each one lands on screen, and what it draws them from. Settled findings only.
 
-The frustum is **code**, at image `0x107E9`, and **measured**: [tools/view_probe.js](../tools/view_probe.js) reads the game's own 51-entry table with the party poked anywhere and turned, and standing in the Athaneum facing north all 51 entries name the cells the frustum names. All four facings are **measured** too, by the compass the game prints beside the view: `0x8000` reads NORTH, `0x4000` SOUTH, `0x2000` WEST and `0x1000` EAST. Facing reaches the drawing in two places and no others: the axis bit below, and an object's four faces. Everything else is indexed by the cell number in `DS:0x53DC`, so it is the same whichever way the party looks. The slot geometry and the artwork are **shape**, tables that divide their section exactly, and **rendered**: [tools/view_check.py](../tools/view_check.py) redraws the floor, the ceiling and the strips from the files and diffs a frame the game drew. The wall pass and the object passes are **rendered** as well, against thirteen captures, under *What a redrawn frame accounts for*. [README.md](README.md) defines the classifiers.
+The frustum is **code**, at image `0x107E9`, and **measured**: [tools/view_probe.js](../tools/view_probe.js) reads the game's own 51-entry table with the party poked anywhere and turned, and standing in the Athaneum facing north all 51 entries name the cells the frustum names. All four facings are **measured** too, by the compass the game prints beside the view: `0x8000` reads NORTH, `0x4000` SOUTH, `0x2000` WEST and `0x1000` EAST. Facing reaches the drawing in two places and no others: the axis bit below, and an object's four faces. Everything else is indexed by the cell number in `DS:0x53DC`, so it is the same whichever way the party looks. The slot geometry and the artwork are **shape**, tables that divide their section exactly, and **rendered**: [tools/view_check.py](../tools/view_check.py) redraws the floor, the ceiling and the strips from the files and diffs a frame the game drew. The wall pass and the object passes are **rendered** as well, against thirteen captures, under *What a redrawn frame accounts for*. The monster pass is **code** alone; *A monster in the view* says what is missing. [README.md](README.md) defines the classifiers.
 
 ## The geometry is a table
 
@@ -69,6 +69,7 @@ Image `0x100CE` draws the view. It builds the table, sets the skip bits, then:
 | every cell's walls | `0x104A8` | 0, 3, 4 | 1 | terrain record `+4` |
 | the strips either side of the view | `0x10732`, `0x10776` | 6 | 6 | terrain record `+6` |
 | every cell's objects | `0x104A8` | 7, 8, 13 | 1, 2 | the object record |
+| every cell's monster | `0x1079B` | 10, 13 | 2, 3 | the enemy record |
 
 All of them call one blitter, image `0x19DC9`, which switches on the mode in `DS:0x53C8` to pick which slot table to read. `DS:0x0FC5` names the run, as that run's own offset into the picture table at `DS:0x7B5C` ([pictures.md](pictures.md)).
 
@@ -76,7 +77,7 @@ All of them call one blitter, image `0x19DC9`, which switches on the mode in `DS
 
 ## Where a cell lands
 
-**`WORLD.DAT` section 27 is the view's geometry**: 18,844 bytes at `0x40BF71`, loaded whole into one segment at startup. Image `0x0F3EB` asks for `0x49A` paragraphs, which is 18,848 bytes and the first count that covers it. Image `0x13088` writes eleven offsets into it at `DS:0x546A` upward, one per blitter mode. Three of them are the view's:
+**`WORLD.DAT` section 27 is the view's geometry**: 18,844 bytes at `0x40BF71`, loaded whole into one segment at startup. Image `0x0F3EB` asks for `0x49A` paragraphs, which is 18,848 bytes and the first count that covers it. Image `0x0F07C` writes eleven offsets into it at `DS:0x546A` upward, and the dispatch at `0x19DC9` pairs each blitter mode with one of them. Three of them are the view's:
 
 | Mode | At | What it draws |
 |---|---|---|
@@ -118,7 +119,7 @@ Each column draws the record's row list down from the picture's top (image `0x1A
 
 [tools/view.py](../tools/view.py) reads all four tables as `faces`, and `tests/test_view.py` holds the front lists to the widths and heights the rule below gives. Mode 4 raising the destination is what makes a right-hand face's top edge climb toward the party.
 
-**The wall pass walks a row in a fixed order** (image `0x104A8`): the left half from the outside in, then the right half from the outside in, then the middle cell last, so the middle's front face covers whatever the side faces beside it drew. For each cell it draws the front face in mode 0, then a side face in mode 3 or 4 only where the cell toward the center names neither a wall face nor a strip (`0x10520`), then the object: mode 8 with the front table for ids 200 and up, mode 7 for 100 to 199, mode 13 with run 2 for the rest (`0x10699`). Two things there are not read: a cell flag `0x2000` makes the pass draw a second front face from the record's first word (`0x10633`), and an object whose face is `DS:0xEA2` under flag `0x1000` draws picture 5 over itself (`0x106DC`).
+**The wall pass walks a row in a fixed order** (image `0x104A8`): the left half from the outside in, then the right half from the outside in, then the middle cell last, so the middle's front face covers whatever the side faces beside it drew. For each cell it draws the front face in mode 0, then a side face in mode 3 or 4 only where the cell toward the center names neither a wall face nor a strip (`0x10520`), then the object: mode 8 with the front table for ids 200 and up, mode 7 for 100 to 199, mode 13 with run 2 for the rest (`0x10699`); then the monster standing on the cell, if there is one. Two things there are not read: a cell flag `0x2000` makes the pass draw a second front face from the record's first word (`0x10633`), and an object whose face is `DS:0xEA2` under flag `0x1000` draws picture 5 over itself (`0x106DC`).
 
 **Mode 6 needs no shape at all.** It takes its place from mode 3's own table, the `x` and `y` of the same cell, and copies a fixed rectangle: 7 pixels a row for `0x71` rows, from the column `DS:0x53E2` names (image `0x1A055`). The pair of cells either side of the view take the two halves of one 14-column strip, the first from the record's own column and the second from that column plus 7 (`0x10723` and `0x10764`).
 
@@ -166,7 +167,38 @@ An object record is ten bytes and the first eight are **four view pictures, one 
 
 That is **measured**. Standing the party on all four sides of one object and looking in, the frames pair the way the record does. Object 104, a well, holds `52, 52, 53, 53`, and its north and south frames agree on 98.7% of the viewport against 32.4% between north and east. Object 101, a bed, holds `17, 16, 19, 18`, and every pair of its four frames agrees on 21 to 23%: a headboard from one end, the mattress from the other, and a different drawing from each side. What the pairs disagree on is the cells behind the object, which are not the same cells.
 
-[tools/view_art.py](../tools/view_art.py) writes all of it to `data/view_art.json`, cropping the wall and object faces to their own pixels and keeping the corner each was cut from. `make view-art` runs it. Monsters and their shots are the fifth thing the viewport draws and are already exported, by `monster_art` and `projectile_art` in [extract.py](../tools/extract.py).
+[tools/view_art.py](../tools/view_art.py) writes all of it to `data/view_art.json`, cropping the wall and object faces to their own pixels and keeping the corner each was cut from. `make view-art` runs it. Monsters and their shots are the fifth thing the viewport draws, and `monster_art` and `projectile_art` in [extract.py](../tools/extract.py) write a still of each to `data/monster_art.json` and `data/projectile_art.json`.
+
+## A monster in the view
+
+**A monster is drawn after the cell's object, by its own pass.** Image `0x1079B` runs at the tail of the row helper the wall pass calls, once per cell, and draws where three tests pass: the cell's index in `DS:0x53DC` is `0x11` or more, the cell's flags at `+6` carry `0x400`, and the spawn slot at `+4` resolves to a live monster (`0x126EE`, or a slot claimed at `0x125E6`). So **the far row draws no monster**: the first 17 entries are row 0, six cells ahead. Cell `0x31`, the party's own, is skipped too, and the three monsters in hand to hand are drawn there instead by the pass at `0x107CE`, which walks the structs at `DS:0x54B8`, `0x5554` and `0x55F0`.
+
+**The monster's blitter mode is 10 or 13.** Image `0x126A8` sets it when the slot is claimed: 10 where the record's word 96 carries bit 0, which is the monster drawn wide from run 3, and 13 otherwise, drawn tall from run 2 ([pictures.md](pictures.md)). It is held at `+0x0A` of the 156-byte monster struct, and image `0x10337` copies it into `DS:0x53C8` before the blit. Mode 13 is the same table the small objects use, and both draw a 140 x 155 picture.
+
+**The eleven tables, and which mode reads which.** Image `0x0F07C` writes them at `DS:0x546A` upward and the dispatch at `0x19DC9` picks one per mode, so the mode is not the index:
+
+| Mode | At | Walker | What it draws |
+|---|---|---|---|
+| 0 | `0x0000` | `0x19F39` | wall front faces, and object faces for ids 200 and up |
+| 1 | `0x0386` | `0x19FC0` | the floor half |
+| 2 | `0x0BF2` | `0x19FDF` | the ceiling half |
+| 3, 4 | `0x13B6` | `0x1A09F`, `0x1A121` | wall side faces, left and right of center |
+| 6 | `0x13B6` | `0x1A055` | the strips, from mode 3's own corners |
+| 7 | `0x3B76` | `0x1A1A3` | object faces, ids 100 to 199 |
+| 8 | `0x0000` | `0x1A1A3` | object faces, ids 200 and up |
+| 9, 10, 11 | `0x3CA8`, `0x3DF2`, `0x41D2` | `0x1A235` | a monster drawn wide |
+| 12, 13, 14 | `0x4316`, `0x4460`, `0x4858` | `0x1A235` | a monster drawn tall, and object faces below id 100 |
+
+Each is the same 51 six-byte corner records and two-level lists the object faces use, so a monster is placed and scaled the way an object face is. **Mode 10 fills 24 of the 51 cells and mode 13 fills 22**, both starting at cell 21. The pass's own floor is cell 17, and the four cells between are row 1's outermost, which fall outside the viewport the same way they do for the floor and ceiling halves. Mode 13 also skips the two cells beside the one ahead and the two beside the party, so a monster drawn tall standing diagonally adjacent is drawn nowhere. The middle cell of each row:
+
+| | 5 ahead | 4 | 3 | 2 | 1 | 0 |
+|---|---|---|---|---|---|---|
+| mode 10, from 190 x 110 | 13 x 7 | 45 x 26 | 78 x 45 | 114 x 66 | 150 x 87 | 190 x 110 |
+| mode 13, from 140 x 155 | 13 x 15 | 33 x 35 | 55 x 57 | 80 x 82 | 102 x 105 | 140 x 136 |
+
+**Each run's three tables are the three places a monster in hand to hand stands.** Only cell `0x31` carries an entry in modes 9, 11, 12 and 14, and the six entries put the picture at viewport x 0, 17 and 74 for the wide ones and 0, 42 and 99 for the tall, which is left, middle and right. The mode image `0x126A8` gives a monster is the middle of its three, and images `0x12EFD` to `0x12F2C` step it up or down as the group of at most three re-forms ([monsters.md](monsters.md)).
+
+That is **code** throughout. Redrawing a stop from these tables puts the monster on the cell's own floor, but there is no capture of the game with a monster in view to diff against, so unlike the wall and object faces the placement is held to nothing.
 
 ## Lighting
 

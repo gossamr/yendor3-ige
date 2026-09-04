@@ -43,11 +43,12 @@ Offsets 64..69 hold up to six recolor pairs, read when bit 2 of word 96 is
 set (image 0x10337); each byte is `from << 4 | to`, and the list stops at the
 first zero byte.
 
-Bit 15 of the word at offset 98 sends the picture through a different blit
-(image 0x10378), which draws every pixel in ramp 0, the gray one, whatever
-ramp the picture stores. Three monsters carry it: GHOST, SPECTRE and PHASE
-TITAN, the last of which shares the TITAN artwork and is told apart by nothing
-else.
+Bit 15 of the word at offset 98 puts 6 in DS:0x0E28 (image 0x10378), and the
+blitter's copy loops then rebuild every pixel as the *destination* pixel's own
+ramp with the source pixel's shade (images 0x1A9C5 and 0x1AA55). Three
+monsters carry it, GHOST, SPECTRE and PHASE TITAN, and they are drawn
+see-through. Over a ramp 0 ground the result is ramp 0 throughout, which is
+what the clue book's own page shows and what `grayed` reproduces.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ TRANSPARENT = 0xFF
 TALL, WIDE = 2, 3       # the two runs monsters are drawn from
 WIDE_BIT = (96, 0)      # record word 96, bit 0: the monster is drawn wide
 RECOLOR_BIT = (96, 2)  # record word 96, bit 2: the recolor list applies
-GRAY_BIT = (98, 15)     # record word 98, bit 15: drawn in ramp 0 throughout
+GRAY_BIT = (98, 15)     # record word 98, bit 15: the pixel takes the ground's ramp
 
 RAMP = 0x10             # colors a ramp; the high nibble of a pixel picks one
 GRAY_RAMP = 0
@@ -136,7 +137,13 @@ def recolored(raw: bytes, swaps: dict[int, int]) -> bytes:
 
 
 def grayed(raw: bytes) -> bytes:
-    """The picture with every pixel moved to the gray ramp, shade preserved."""
+    """The picture with every pixel moved to the gray ramp, shade preserved.
+
+    What the blitter does with word 98 bit 15 is take the destination pixel's
+    ramp rather than ramp 0, so this is that blit over a ramp 0 ground. That
+    is the clue book's page, and it is what a still of the monster wants;
+    docs/pictures.md, "Recoloring, and the blend", has the general case.
+    """
     return recolored(raw, {r: GRAY_RAMP for r in range(RAMP)})
 
 

@@ -148,12 +148,15 @@ def slots(world: bytes, mode: int, directory: SEC.Directory) -> list[Slot | None
     return out
 
 
-# The four corner-and-list tables the wall and object passes read, by the
-# offsets image 0x13082 writes at DS:0x546A upward and the dispatch at
+# The corner-and-list tables the wall, object and monster passes read, by the
+# offsets image 0x0F07C writes at DS:0x546A upward and the dispatch at
 # 0x19DC9 pairs with each mode: mode 0 and mode 8 share `front`, modes 3 and
-# 4 `side`, mode 7 reads `object_wide` and mode 13 `object_tall`.
+# 4 `side`, mode 7 reads `object_wide`, and mode 13 `object_tall`. A monster
+# takes mode 10 when its word 96 carries bit 0 and mode 13 otherwise (image
+# 0x126A8), so `monster_wide` is the run 3 monster's own table and the tall
+# one shares the small object's.
 FACE_TABLES = {"front": 0x0000, "side": 0x13B6, "object_wide": 0x3B76,
-               "object_tall": 0x4460}
+               "monster_wide": 0x3DF2, "object_tall": 0x4460}
 
 
 def runs(blob: bytes, at: int) -> tuple[list[tuple[int, int, int]], int]:

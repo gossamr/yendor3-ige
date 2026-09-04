@@ -449,6 +449,58 @@ def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, d
     return out
 
 
+# The whole block behind that still. A monster's ten pictures are its walk
+# cycle at 0 to 5, its attack at 6 to 8 and its death at 9, and word 96 says
+# which way the cycle runs; docs/pictures.md has all of it. The pictures are
+# kept as raw palette indices rather than as PNGs, since a caller drawing them
+# in the world applies the row's shading and the recolor list per pixel, in
+# that order, and cannot do either to a finished image.
+MONSTER_BLOCK_FRAMES = 10
+
+
+def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
+    """Every monster's ten pictures, and the record fields that draw them.
+
+    `build()` does not call this. All 39 blocks come to four megabytes against
+    the quarter of one the stills take, and a page that shows a monster
+    standing still wants `monster_art` instead. A caller that animates one
+    runs this and keeps what it needs.
+
+    Blocks are keyed by run and first picture, since the 71 monsters the game
+    lists share 39 of them and the recolor list is what tells two apart. Each
+    picture is cropped to its own pixels, with the corner it was cut from and
+    the run's frame kept, so it can be placed back where the game puts it.
+    """
+    runs = P.read_runs(d.exe, len(pics))
+    blocks: dict[str, dict] = {}
+    listed = []
+    for e in enemies:
+        if not e["listed"]:
+            continue
+        w96, w98 = e["masks"]["w96"], e["masks"]["w98"]
+        run = P.monster_run(runs, w96)
+        key = f"{run.index}/{e['sprite']}"
+        if key not in blocks:
+            frames = []
+            for f in range(MONSTER_BLOCK_FRAMES):
+                raw = P.picture(pics, run, e["sprite"] + f)
+                x0, y0, x1, y1 = P.bounds(raw, run.width)
+                frames.append({
+                    "w": x1 - x0, "h": y1 - y0, "x": x0, "y": y0,
+                    "fw": run.width, "fh": run.height,
+                    "raw": b"".join(raw[y * run.width + x0:y * run.width + x1]
+                                    for y in range(y0, y1)),
+                })
+            blocks[key] = {"run": run.index, "sprite": e["sprite"], "frames": frames}
+        listed.append({
+            "index": e["index"], "name": e["name"], "block": key,
+            "sprite": e["sprite"], "walk": e["walk"],
+            "recolor": [[s["from"], s["to"]] for s in e["recolor"]],
+            "blend": bool(w98 >> P.GRAY_BIT[1] & 1),
+        })
+    return {"blocks": blocks, "monsters": listed}
+
+
 # The projectile run. Each picture holds the shot at the four angles it can
 # travel at, so it is shown whole rather than cut up: which of the four the
 # game picks is a property of the shot, not of the monster.

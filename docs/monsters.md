@@ -8,6 +8,8 @@ The Evidence column says how each field was confirmed, in the classifiers [READM
 
 The record is copied into a 156-byte monster struct that carries a 50-byte header, so **record offset N is `[si+N+50]` in the code**. There are 80 of those structs, each one an active spawn, at `DS:0x122C` (image `0x1234E`). Three further copies, holding the monsters currently engaged, are at `DS:0x54B8`, `0x5554` and `0x55F0`.
 
+Four of the header's own fields are read below and in the other documents: `+0x08` the picture the monster is on, `+0x0A` the blitter mode that places it ([view.md](view.md)), `+0x0C` a state word, and `+0x10` its health as the fight leaves it. The state word carries the six conditions in the same bit layout *Immunity, offset 100* gives, since a blow ORs `~immunity & its own condition mask` into it at image `0x0C68D`, and its low bits drive the drawing ([pictures.md](pictures.md)).
+
 A character is a separate 500-byte struct at `DS:0xD0D1`, and its fields land on the same displacements, so a reference has to be read rather than counted. [tools/xref.py](../tools/xref.py) lists every instruction that touches a displacement.
 
 ## The fields
@@ -137,6 +139,7 @@ Rows three and five are the pair. The same resistance word halves the enchanted 
 | 0 | 26 | the picture is in run 3, the 190x110 one. Clear: run 2 | code, `0x1035E`; rendered |
 | 1 | 12 | the shot's recolor list at 70 applies | code, `0x125A2` |
 | 2 | 38 | the recolor list at 64 applies | code, `0x10337`; rendered |
+| 3 | 0 | which way a bouncing cycle is going. The stepper writes it, and no record ships with it set | code, `0x153EE` |
 | 4 | 23 | the walk cycle runs up and back down | code, `0x153B1` |
 | 5 | 48 | the walk cycle runs up and snaps back | code, `0x153A8` |
 | 6 | 0 | the monster does not animate | code, `0x15398` |
@@ -167,7 +170,7 @@ The map places one monster to a cell rather than drawing a group from an encount
 | 1, 2, 3 | 3, 12, 6 | **undecoded**, see below | |
 | 5 | 1 | MIMIC. The monster never sets its own active flag | code, `0x12F94` |
 | 9, 10, 11, 12 | 10, 0, 0, 3 | how often it shoots: 25, 50, 75, 90 | code, `0x129F8` |
-| 15 | 3 | drawn in color group 0, the gray one | code, `0x10378`; rendered |
+| 15 | 3 | the pixel takes the ground's own color group, see [pictures.md](pictures.md) | code, `0x10378`, `0x1A9C5` |
 
 Exactly the thirteen monsters with a ranged attack carry one of bits 9 to 12, and the three of those that cannot move (FUNGUS and the two dwarf towers) carry the 90. Image `0x12F85` runs when a monster spawns. It uses the distance band the monster appeared at to decide whether to set bit 0 of the monster's state word. Bits 6, 7 and 8 would move that threshold, and no monster carries them.
 
