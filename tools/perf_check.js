@@ -71,15 +71,12 @@ async function open() {
   const ctx = browser.contexts()[0];
   const host = new URL(url).host;
   const ours = ctx.pages().filter((p) => p.url().includes(host));
-  if (!ours.length) {
-    // A tab is opened rather than demanded, but the page it wants has to be
-    // there: the device reaches a server on the host, through adb reverse.
-    console.error(`no tab on ${host}. Serve the cabinet, `
-      + `"adb reverse tcp:8080 tcp:8080", and open ${url} on the device.`);
-  }
-  const page = ours[0] ?? await ctx.newPage();
+  // The tab a run left parked at about:blank is taken before a new one is
+  // opened: each tab the phone keeps is memory the sample would count.
+  const parked = ctx.pages().filter((p) => p.url() === "about:blank");
+  const page = ours[0] ?? parked[0] ?? await ctx.newPage();
   // One tab, or the sampling counts a second copy of the game.
-  for (const p of ours) if (p !== page) await p.close().catch(() => {});
+  for (const p of ctx.pages()) if (p !== page) await p.close().catch(() => {});
   await page.bringToFront().catch(() => {});
   return { browser, page, close: async () => {} };
 }
@@ -101,11 +98,53 @@ async function deviceCpu(seconds) {
 }
 
 /** Battery temperature in C, which is the CPU cost seen from the other side. */
+/**
+ * Chrome's memory on the device: resident set summed over its processes, in
+ * MB, and how many renderer processes it has. Every tab left open is a
+ * renderer, so the count says whether a run cleaned up after itself.
+ */
+async function deviceMemory() {
+  const proc = Bun.spawn(["adb", "shell", "top -b -n 1 -o RES,CMDLINE"], { stdout: "pipe", stderr: "ignore" });
+  const text = await new Response(proc.stdout).text();
+  let mb = 0, renderers = 0;
+  for (const line of text.split("\n")) {
+    const hit = line.trim().match(/^([\d.]+)([KMG])?\s+(\S*chrome\S*)/);
+    if (!hit) continue;
+    const unit = { K: 1 / 1024, M: 1, G: 1024 }[hit[2] ?? "K"];
+    mb += Number(hit[1]) * unit;
+    if (hit[3].includes("sandboxed_process")) renderers++;
+  }
+  return mb ? { memMB: Math.round(mb), renderers } : {};
+}
+
 async function deviceTemp() {
   const proc = Bun.spawn(["adb", "shell", "dumpsys battery"], { stdout: "pipe", stderr: "ignore" });
   const text = await new Response(proc.stdout).text();
   const hit = text.match(/temperature:\s*(\d+)/);
   return hit ? +(Number(hit[1]) / 10).toFixed(1) : null;
+}
+
+/**
+ * The silicon's own temperatures, from the thermal zones: the hottest CPU
+ * core, the hotter GPU zone, and the power management chip. Heat lags load
+ * by minutes, so a subject measured after another starts with the other's
+ * warmth, and these say how much.
+ */
+async function deviceZones() {
+  const proc = Bun.spawn(["adb", "shell",
+    "for z in /sys/class/thermal/thermal_zone*; do echo \"$(cat $z/type) $(cat $z/temp)\"; done"],
+    { stdout: "pipe", stderr: "ignore" });
+  const text = await new Response(proc.stdout).text();
+  const zones = {};
+  for (const line of text.split("\n")) {
+    const [type, temp] = line.trim().split(/\s+/);
+    if (type && temp && !Number.isNaN(Number(temp))) zones[type] = Number(temp) / 1000;
+  }
+  const pick = (re) => {
+    const v = Object.entries(zones).filter(([k]) => re.test(k)).map(([, t]) => t);
+    return v.length ? +Math.max(...v).toFixed(1) : null;
+  };
+  return { cpuC: pick(/^cpu\d-.*-usr$/), gpuC: pick(/^gpu\d-usr$/), pmicC: pick(/^pm\d+_tz$/) };
 }
 
 async function boot(page, query) {
@@ -122,10 +161,12 @@ async function boot(page, query) {
   // is not there.
   const kept = await Bun.file(savePath).json().catch(() => null);
   if (kept) {
+    // A subject without the cabinet's storage has no disk to put a save on,
+    // and says so through hasSave() rather than by failing here.
     await page.evaluate(`(async () => {
       const p = await import("/cabinet/persist.js");
       await p.putFile("SAVGAME1", new Uint8Array(${JSON.stringify(kept)}));
-    })()`);
+    })()`).catch((err) => console.error(`the save was not placed: ${err.message}`));
   }
 
   // The page waits to be asked. Any gesture will do; the power button is the
@@ -151,23 +192,49 @@ async function boot(page, query) {
 
 /** CPU and delivered frames over one window, with the subject doing `during`. */
 async function sample(page, label, seconds, during) {
-  const before = await page.evaluate("window.__perf.frames()");
+  // A page with no contract, the about:blank tare, has no frames to count.
+  const frames = () => page.evaluate("window.__perf ? window.__perf.frames() : 0");
+  const before = await frames();
   const load = device ? deviceCpu(seconds) : sleep(seconds * 1000);
   const work = during ? during() : null;
   const cpu = (await load) ?? {};
-  const after = await page.evaluate("window.__perf.frames()");
+  const after = await frames();
   if (work) await work;
   const row = { at: at(), label, ...cpu, fps: +((after - before) / seconds).toFixed(1) };
-  if (device) row.tempC = await deviceTemp();
+  if (device) Object.assign(row, await deviceMemory(), { tempC: await deviceTemp() }, await deviceZones());
   // Printed as it is taken, not held to the end of the run: a measurement
   // that shows nothing for minutes looks the same as one that has hung.
   console.log(JSON.stringify(row));
   return row;
 }
 
-/** Steps for as long as the sample lasts, at the pace the subject sets. */
+// How often a step key is sent, in ms. The default is faster than either
+// subject steps, so the keyboard buffer stays full and the frames counted are
+// the subject's own rate; `--pace=210` is the old one-key-per-step drive.
+const PACE = Number(arg("pace", "70"));
+
+/**
+ * Wait until the subject has drawn nothing for `quiet` ms, or `cap` ms in
+ * all. Stepping leaves keys in the game's buffer, and the game works through
+ * them before it takes any other input, so a reaction timed before the
+ * picture goes quiet is timing the queue.
+ */
+async function quiet(page, quietMs = 1500, cap = 30000) {
+  const frames = () => page.evaluate("window.__perf ? window.__perf.frames() : 0");
+  const until = Date.now() + cap;
+  let last = await frames(), since = Date.now();
+  while (Date.now() < until) {
+    await sleep(200);
+    const now = await frames();
+    if (now !== last) { last = now; since = Date.now(); }
+    else if (Date.now() - since >= quietMs) return;
+  }
+  console.error("the picture did not go quiet within the cap");
+}
+
+/** Steps for as long as the sample lasts, keys at PACE. */
 const stepping = (page, seconds) =>
-  () => page.evaluate(`window.__perf.step(${Math.round(seconds * 1000 / 210)})`);
+  () => page.evaluate(`window.__perf.step(${Math.round(seconds * 1000 / PACE)}, ${PACE})`);
 
 const median = (xs) => {
   const v = xs.filter((x) => typeof x === "number").sort((a, b) => a - b);
@@ -188,7 +255,7 @@ function summarize(runs) {
   for (const label of labels) {
     const rows = runs.map((run) => run.find((r) => r.label === label)).filter(Boolean);
     const out = { label, runs: rows.length };
-    for (const field of ["cpu", "renderer", "fps", "tempC", "ms"]) {
+    for (const field of ["cpu", "renderer", "fps", "memMB", "renderers", "tempC", "cpuC", "gpuC", "pmicC", "ms"]) {
       const xs = rows.map((r) => r[field]).filter((x) => typeof x === "number");
       if (!xs.length) continue;
       out[field] = median(xs);
@@ -258,6 +325,17 @@ try {
       const rows = [await sample(page, "before entering, still", WINDOW)];
       const steps = await page.evaluate(`window.__perf.enter(${Number(arg("world", "0"))}, ${Number(arg("gaps", "1"))})`);
       console.log(`entered at ${at()}s`, JSON.stringify(steps));
+      // The first run that had to assemble a party keeps a save, so every
+      // later run loads it and enters in three keys. A subject with no disk
+      // to save on has no saveGame and is left alone.
+      if (!loaded && !(await Bun.file(savePath).exists())) {
+        const bytes = await page.evaluate(
+          "window.__perf.saveGame ? window.__perf.saveGame(1).then(() => window.__perf.takeSave(1)) : null");
+        if (bytes) {
+          await Bun.write(savePath, JSON.stringify(bytes));
+          console.log(`kept a save at ${savePath}, ${bytes.length} bytes`);
+        }
+      }
 
       rows.push(await sample(page, "standing in the world", WINDOW));
       const stepped = await sample(page, "stepping", STEP_WINDOW, stepping(page, STEP_WINDOW));
@@ -274,24 +352,42 @@ try {
       // that answers it; a key reaches the guest's keyboard buffer directly,
       // so the pair says what the mouse path costs. `pointer` measures a bare
       // motion and is available but not run.
-      for (const kind of ["key", "tap"]) {
-        const all = await page.evaluate(`window.__perf.react(${JSON.stringify(kind)}, 4)`);
-        // A null is an input that drew nothing inside the contract's timeout,
-        // which is a fact about the subject, not a gap in the sample.
+      // A reaction row: the median of the answered inputs, and how many of
+      // them answered. A null is an input that drew nothing inside the
+      // contract's timeout, which is a fact about the subject, not a gap in
+      // the sample.
+      const reaction = (label, all) => {
         const ms = all.filter((x) => typeof x === "number");
-        const what = kind === "tap" ? "finger on the game to answer" : `${kind} to picture`;
         const row = {
-          at: at(), label: what, ms: median(ms), answered: ms.length, of: all.length,
+          at: at(), label, ms: median(ms), answered: ms.length, of: all.length,
           ...(ms.length ? { msRange: [Math.min(...ms), Math.max(...ms)] } : {}),
         };
         console.log(JSON.stringify(row));
         rows.push(row);
-      }
+      };
+      // Each reaction is measured against a quiet game: nothing queued from
+      // the stepping before it, nothing still drawing from the row before.
+      await quiet(page);
+      reaction("key to picture", await page.evaluate("window.__perf.react('key', 4)"));
+      await quiet(page);
+      // Taps come in pairs that undo each other, and the two halves are
+      // different things: on the cabinet the first opens the disk panel and
+      // the second presses RETURN in it, which pauses and resumes the game.
+      // So each half is its own row, named by what the subject says a pair is.
+      const taps = await page.evaluate("window.__perf.react('tap', 6)");
+      const names = (await page.evaluate("window.__perf.info().taps")) ?? ["first", "second"];
+      reaction(`finger, ${names[0]}`, taps.filter((_, i) => i % 2 === 0));
+      reaction(`finger, ${names[1]}`, taps.filter((_, i) => i % 2 === 1));
       // The floor the subject is measured against: the page still open, its
       // work stopped.
       await page.evaluate("window.__perf.stop()");
       await sleep(2000);
       rows.push(await sample(page, "stopped", WINDOW));
+      // The tare: Chrome with nothing in it. Every row above is read against
+      // this, since the phone is never at zero on its own.
+      await page.goto("about:blank");
+      await sleep(2000);
+      rows.push(await sample(page, "idle, about:blank", WINDOW));
       runs.push(rows);
     }
     if (runs.length > 1) { console.log("--"); summarize(runs); }
@@ -301,5 +397,8 @@ try {
     console.log("stopped; tab parked at about:blank");
   }
 } finally {
-  await close();
+  // Closing a DevTools connection to a phone can hang after the tab is
+  // parked, and a run whose numbers are printed has nothing left to wait for.
+  await Promise.race([close(), sleep(5000)]);
+  process.exit(0);
 }

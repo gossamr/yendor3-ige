@@ -109,11 +109,28 @@ export function cabinetPerf({ ci, frames, info, nextFrame, canvas, taps }) {
    * draws the world in, not the keys the page puts around it, since those are
    * the page's own and answer immediately.
    */
+  // Where a finger has something to press: the game's disk icon, which opens
+  // its panel, and RETURN inside that panel, which closes it. Alternating
+  // the two leaves the game where it was, and every tap is answered by a
+  // screen the game draws rather than by the cursor arriving. docs/running.md
+  // has both spots.
+  const DISK_ICON = { x: 0.956, y: 0.381 };
+  const PANEL_RETURN = { x: 0.572, y: 0.605 };
+
   async function tapTimes(n, timeout, spot) {
     const out = [];
     for (let i = 0; i < n; i++) {
+      // A fraction of the picture, not of the canvas's box: the canvas is
+      // drawn with object-fit contain, so the picture sits centered in the
+      // box at one scale, and the pointer handler at cabinet.js maps a
+      // finger back through that. A fraction of the box lands beside the
+      // icon wherever the box is letterboxed.
       const box = canvas.getBoundingClientRect();
-      const x = box.left + box.width * spot.x, y = box.top + box.height * spot.y;
+      const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
+      const w = canvas.width * scale, h = canvas.height * scale;
+      const at = spot ?? (i % 2 ? PANEL_RETURN : DISK_ICON);
+      const x = box.left + (box.width - w) / 2 + w * at.x;
+      const y = box.top + (box.height - h) / 2 + h * at.y;
       const delivered = taps();
       const sent = performance.now();
       finger("pointerdown", x, y);
@@ -136,7 +153,8 @@ export function cabinetPerf({ ci, frames, info, nextFrame, canvas, taps }) {
 
   return {
     name: "cabinet",
-    info,
+    // What a pair of taps is, for the rows a measurement prints.
+    info: () => ({ ...info(), taps: ["disk icon opens the panel", "RETURN closes it"] }),
     hasSave,
     ready: () => frames() > 0,
     frames,
@@ -223,11 +241,20 @@ export function cabinetPerf({ ci, frames, info, nextFrame, canvas, taps }) {
       await ci.fsWriteFile(`SAVGAME${slot}`, Uint8Array.from(bytes).slice());
     },
 
-    /** `n` steps, forward and back, so the party ends where it started. */
-    async step(n) {
+    /**
+     * `n` steps, forward and back, so the party ends where it started, one
+     * key every `pace` ms. Each key is held 60 ms so DOS sees it, and with
+     * no pace beyond that the keys arrive faster than the game steps, so its
+     * buffer fills and the frames counted are the rate the game itself can
+     * step at.
+     */
+    async step(n, pace = 0) {
       for (let i = 0; i < n; i++) {
-        await tap(ci, i % 2 ? KEYS.down : KEYS.up, 60);
-        await wait(150);
+        const key = i % 2 ? KEYS.down : KEYS.up;
+        ci.sendKeyEvent(key, true);
+        await wait(60);
+        ci.sendKeyEvent(key, false);
+        await wait(Math.max(10, pace - 60));
       }
     },
 
@@ -252,15 +279,16 @@ export function cabinetPerf({ ci, frames, info, nextFrame, canvas, taps }) {
      * slow guest to notice. `key` and `pointer` skip all of that by design,
      * which is why the three numbers differ by so much.
      *
-     * The tap lands in the top-left corner, where the cursor parks, because a
-     * measurement should not also be pressing things.
+     * The tap presses the game's disk icon and then RETURN in the panel it
+     * opens, in turn, so each one is answered by a screen the game draws and
+     * the game is left where it was.
      *
      * An input that draws nothing gets `null` rather than a wait with no end.
      * The game redraws on a step and on a cursor move, but only where there
      * is a party to step: asked at a menu, this reports what it found rather
      * than hanging on a picture that is not coming.
      */
-    async react(kind = "key", n = 8, timeout = 5000, spot = { x: 0.36, y: 0.3 }) {
+    async react(kind = "key", n = 8, timeout = 5000, spot = null) {
       if (kind === "tap") return tapTimes(n, timeout, spot);
       const out = [];
       for (let i = 0; i < n; i++) {

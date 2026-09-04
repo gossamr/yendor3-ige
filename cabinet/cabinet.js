@@ -796,7 +796,15 @@ function wireInput() {
     // nudged the rest of the way. A screen that hides the arrow gets the
     // press as aimed, and soon: the wait is long only where the arrow was
     // seen arrive at the corner, which says it will be seen leave it.
-    const tip = await seen(homed ? corner : before, (t) => !nearHome(t), homed ? 2500 : 300);
+    // The arrow is waited for at the spot itself, not merely away from the
+    // corner: a press sent while the arrow was still on its way landed where
+    // the arrow was, which is how RETURN in the disk panel went unpressed.
+    // The search is capped so a spot where the arrow cannot be seen, over a
+    // busy picture or under a panel, costs a tap about a second and no more,
+    // and having left the corner is settled for.
+    const nearSpot = (t) => Math.abs(t.x - p.x) <= 3 && Math.abs(t.y - p.y) <= 3;
+    const tip = await seen(homed ? corner : before, nearSpot, homed ? 1200 : 300)
+      ?? await seen(homed ? corner : before, (t) => !nearHome(t), 300);
     window.__cabinet.lastNudge = null;
     if (tip) {
       const dx = p.x - tip.x, dy = p.y - tip.y;
@@ -804,7 +812,7 @@ function wireInput() {
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         const nudged = read();
         ci.sendMouseRelativeMotion(Math.round(dx / MOUSE_SCALE), Math.round(dy / MOUSE_SCALE));
-        await seen(nudged, () => true, 400);
+        await seen(nudged, nearSpot, 500) ?? await seen(nudged, () => true, 200);
       }
     }
     // The press never goes on the heels of a move: the driver takes the
