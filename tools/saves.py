@@ -57,6 +57,10 @@ H_FILE, H_BUF_SEG, H_BUF_OFF, H_LEN, H_RECORD, H_BASE = 0, 2, 4, 6, 8, 10
 
 ROSTER_SLOT = 500
 ROSTER_SLOTS = 10
+# WORLD.DAT section 32 holds the same ten slots as a template, and its last
+# four are the party the game ships.
+ROSTER_TEMPLATE = 0x41D72F
+SHIPPED_SLOTS = (6, 7, 8, 9)
 
 # Gold, food and nuore, and a character's experience, are packed BCD: two
 # decimal digits to a byte, most significant byte first, four bytes wide. The
@@ -70,6 +74,18 @@ EXPERIENCE_AT, BCD_BYTES = 24, 4
 LIVE, MAXIMUM = 60, 124
 ATTRIBUTES = ("strength", "dexterity", "stamina", "intelligence",
               "wisdom", "charisma")
+# The portrait, a picture number in run 7 of PICTURES.VGA. docs/view.md,
+# "The character panel".
+PORTRAIT_AT = 18
+
+# The five words the equip dispatch seeds each combat word from, in the same
+# order (image 0x0649E). Two of them are the only attribute bonuses that reach
+# combat: a fifth of strength above 72 feeds melee damage, and a fifth of
+# dexterity above 72 feeds absorption. The rest of each combat word is what is
+# worn or held. docs/combat.md, "Where a character's numbers come from".
+SEEDS_AT = 0x32
+SEEDS = ("shot accuracy", "accuracy", "shot damage", "damage", "absorption")
+
 # The five combat words the equip dispatch derives, which tools/fight_probe.js
 # already writes at 0x48, 0x4A, 0x4C and 0x4E. The sheet's ACC and DAM rows are
 # the hand pair; the shot pair is not printed there.
@@ -263,6 +279,61 @@ def bcd(blob: bytes, at: int, length: int = BCD_BYTES) -> int:
     return out
 
 
+def character(roster: bytes, slot: int) -> dict | None:
+    """One 500-byte roster slot, in the terms the F1 sheet prints.
+
+    `roster` is the ten slots laid end to end, which is both a save's section
+    0 and WORLD.DAT's own template, so `shipped_roster()` reads the four the
+    game ships through this same function.
+    """
+    rec = roster[slot * ROSTER_SLOT:(slot + 1) * ROSTER_SLOT]
+    name = name_of(rec)
+    if not name or not name.isprintable():
+        return None
+
+    def w(at):
+        return rec[at] | (rec[at + 1] << 8)
+
+    def block(base):
+        return {
+            **{n: w(base + OFF_ATTRIBUTES + 2 * i)
+               for i, n in enumerate(ATTRIBUTES)},
+            **{n: w(base + OFF_COMBAT + 2 * i)
+               for i, n in enumerate(COMBAT)},
+            **{n: w(base + OFF_SKILLS + 2 * i)
+               for i, n in enumerate(SKILLS)},
+            "health": w(base + OFF_HEALTH),
+            "magic": w(base + OFF_MAGIC),
+            "capacity": w(base + OFF_CAPACITY) / 10,
+        }
+
+    panel = [(w(PANEL_AT + 4 * i), w(PANEL_AT + 4 * i + 2))
+             for i in range(PANEL_SLOTS)]
+    return {
+        "slot": slot, "name": name,
+        "class": w(14), "sex": w(16), "portrait": w(PORTRAIT_AT), "level": w(22),
+        "experience": bcd(rec, EXPERIENCE_AT),
+        "conditions": w(28),
+        "seeds": [w(SEEDS_AT + 2 * i) for i in range(len(SEEDS))],
+        "carried": w(CARRIED_AT) / 10,
+        "now": block(LIVE), "most": block(MAXIMUM),
+        "panel": [p for p in panel if p[0]],
+        "equipment": {k: w(at) for k, at in EQUIPMENT.items() if w(at)},
+    }
+
+
+def shipped_roster(world: str | Path = "game/WORLD.DAT") -> bytes:
+    """WORLD.DAT section 32: the same ten slots a save's section 0 holds."""
+    blob = Path(world).read_bytes()
+    return blob[ROSTER_TEMPLATE:ROSTER_TEMPLATE + ROSTER_SLOT * ROSTER_SLOTS]
+
+
+def shipped_party(world: str | Path = "game/WORLD.DAT") -> list[dict]:
+    """The four characters the game ships, slots 6 to 9 of the template."""
+    roster = shipped_roster(world)
+    return [c for c in (character(roster, s) for s in SHIPPED_SLOTS) if c]
+
+
 class Save:
     def __init__(self, blob: bytes, exe: Image | None = None):
         if len(blob) != SAVE_SIZE:
@@ -331,39 +402,7 @@ class Save:
 
     def character(self, slot: int) -> dict | None:
         """One roster slot, in the terms the F1 sheet prints."""
-        rec = self.blob[slot * ROSTER_SLOT:(slot + 1) * ROSTER_SLOT]
-        name = name_of(rec)
-        if not name or not name.isprintable():
-            return None
-
-        def w(at):
-            return rec[at] | (rec[at + 1] << 8)
-
-        def block(base):
-            return {
-                **{n: w(base + OFF_ATTRIBUTES + 2 * i)
-                   for i, n in enumerate(ATTRIBUTES)},
-                **{n: w(base + OFF_COMBAT + 2 * i)
-                   for i, n in enumerate(COMBAT)},
-                **{n: w(base + OFF_SKILLS + 2 * i)
-                   for i, n in enumerate(SKILLS)},
-                "health": w(base + OFF_HEALTH),
-                "magic": w(base + OFF_MAGIC),
-                "capacity": w(base + OFF_CAPACITY) / 10,
-            }
-
-        panel = [(w(PANEL_AT + 4 * i), w(PANEL_AT + 4 * i + 2))
-                 for i in range(PANEL_SLOTS)]
-        return {
-            "slot": slot, "name": name,
-            "class": w(14), "sex": w(16), "level": w(22),
-            "experience": bcd(rec, EXPERIENCE_AT),
-            "conditions": w(28),
-            "carried": w(CARRIED_AT) / 10,
-            "now": block(LIVE), "most": block(MAXIMUM),
-            "panel": [p for p in panel if p[0]],
-            "equipment": {k: w(at) for k, at in EQUIPMENT.items() if w(at)},
-        }
+        return character(self.blob, slot)
 
     def characters(self) -> list[dict]:
         return [c for c in (self.character(i) for i in range(1, ROSTER_SLOTS)) if c]

@@ -45,6 +45,8 @@ A monster that closes to melee is copied out of the map's spawn list into one of
 
 `[0x54b6]` is whichever of the three engaged monsters is selected, set from the click dispatcher at `0x00dea` and refilled by `0x14bd` when the selection dies.
 
+**The three buffers are the three places on screen, left to right.** A first arrival is copied to the middle one, `0x5554` (`0x12b77`). Every later arrival takes `0x54b8`, the left, and the group shifts right to make room: `0x12be1` and `0x12c86` step an occupant's blitter mode up as they move it, and `0x12c02` steps the newcomer's down. The shuffle at `0x12ed6` steps them back the same way when one dies. So the occupancy stays centered, **one monster in the middle, two in the outer two and three in all three**, and a buffer's index is the place it draws in. [view.md](view.md) has the six tables that place a picture, and the frames the reading is diffed against.
+
 The eighty spawn slots at `DS:0x122c` have the same shape, and the header carries what the monster is doing now:
 
 | Offset | Field |

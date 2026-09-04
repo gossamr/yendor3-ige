@@ -2,7 +2,7 @@
 
 How the game draws the world in front of the party: which cells it shows, where each one lands on screen, and what it draws them from. Settled findings only.
 
-The frustum is **code**, at image `0x107E9`, and **measured**: [tools/view_probe.js](../tools/view_probe.js) reads the game's own 51-entry table with the party poked anywhere and turned, and standing in the Athaneum facing north all 51 entries name the cells the frustum names. All four facings are **measured** too, by the compass the game prints beside the view: `0x8000` reads NORTH, `0x4000` SOUTH, `0x2000` WEST and `0x1000` EAST. Facing reaches the drawing in two places and no others: the axis bit below, and an object's four faces. Everything else is indexed by the cell number in `DS:0x53DC`, so it is the same whichever way the party looks. The slot geometry and the artwork are **shape**, tables that divide their section exactly, and **rendered**: [tools/view_check.py](../tools/view_check.py) redraws the floor, the ceiling and the strips from the files and diffs a frame the game drew. The wall pass and the object passes are **rendered** as well, against thirteen captures, under *What a redrawn frame accounts for*. The monster pass is **code** alone; *A monster in the view* says what is missing. [README.md](README.md) defines the classifiers.
+The frustum is **code**, at image `0x107E9`, and **measured**: [tools/view_probe.js](../tools/view_probe.js) reads the game's own 51-entry table with the party poked anywhere and turned, and standing in the Athaneum facing north all 51 entries name the cells the frustum names. All four facings are **measured** too, by the compass the game prints beside the view: `0x8000` reads NORTH, `0x4000` SOUTH, `0x2000` WEST and `0x1000` EAST. Facing reaches the drawing in two places and no others: the axis bit below, and an object's four faces. Everything else is indexed by the cell number in `DS:0x53DC`, so it is the same whichever way the party looks. The slot geometry and the artwork are **shape**, tables that divide their section exactly, and **rendered**: [tools/view_check.py](../tools/view_check.py) redraws the floor, the ceiling and the strips from the files and diffs a frame the game drew. The wall pass and the object passes are **rendered** as well, against thirteen captures, under *What a redrawn frame accounts for*. So is the character panel under the viewport, and so are the three places a monster in hand to hand stands. The monster pass out in the world is **code** alone; *A monster in the view* says what is missing. [README.md](README.md) defines the classifiers.
 
 ## The geometry is a table
 
@@ -196,9 +196,11 @@ Each is the same 51 six-byte corner records and two-level lists the object faces
 | mode 10, from 190 x 110 | 13 x 7 | 45 x 26 | 78 x 45 | 114 x 66 | 150 x 87 | 190 x 110 |
 | mode 13, from 140 x 155 | 13 x 15 | 33 x 35 | 55 x 57 | 80 x 82 | 102 x 105 | 140 x 136 |
 
-**Each run's three tables are the three places a monster in hand to hand stands.** Only cell `0x31` carries an entry in modes 9, 11, 12 and 14, and the six entries put the picture at viewport x 0, 17 and 74 for the wide ones and 0, 42 and 99 for the tall, which is left, middle and right. The mode image `0x126A8` gives a monster is the middle of its three, and images `0x12EFD` to `0x12F2C` step it up or down as the group of at most three re-forms ([monsters.md](monsters.md)).
+**Each run's three tables are the three places a monster in hand to hand stands.** Only cell `0x31` carries an entry in modes 9, 11, 12 and 14, and the six entries put the picture at viewport x 0, 17 and 74 for the wide ones and 0, 42 and 99 for the tall, which is left, middle and right.
 
-That is **code** throughout. Redrawing a stop from these tables puts the monster on the cell's own floor, but there is no capture of the game with a monster in view to diff against, so unlike the wall and object faces the placement is held to nothing.
+**A monster's place is the engaged buffer it sits in, and its mode is 9 or 12 plus that index.** Image `0x126A8` sets the mode to 10 or 13, the middle, when a spawn slot is claimed, and the three buffers at `DS:0x54B8`, `0x5554` and `0x55F0` are the left, the middle and the right. A first arrival is copied straight to the middle one (`0x12B77`). Every later arrival takes the left buffer and pushes the group right, `0x12BE1` and `0x12C86` stepping the mode up as they go and `0x12C02` stepping the newcomer's down; the shuffle at `0x12ED6` steps them back the same way after a death. So the occupancy stays centered: **one monster stands in the middle, two in the outer two with the middle empty, and three fill all three**. [combat.md](combat.md) has what decides whether a newcomer may join.
+
+The placement is **rendered**. `tools/view_check.py --melee=CENTIPEDE` draws the monster at each of the three places, in each of its ten pictures, and diffs the pixels its own picture writes against a capture of the game in hand to hand. Against the three frames [tools/fight_probe.js](../tools/fight_probe.js) took of a lone centipede, the best match is the middle place every time, on **2,705, 2,733 and 2,705 pixels**, which is every pixel the picture writes in each. A lone monster is what those runs set up, and the middle is where this reading puts one.
 
 ## Lighting
 
@@ -244,6 +246,27 @@ The 7,442 are the sky, and they are counted apart because the sky is not drawn w
 
 `tools/view_check.py --ledger` draws the whole view, every pass, from the lists above and diffs it against a probe ledger's captures index for index across the 30,464 pixels of the viewport, splitting the count by the pass that drew each pixel. On the thirteen poked stops beside objects, eleven match on every pixel, one on all but three of the sky step, and the other two differ on 25 pixels at the bases of bottles on a shelf and on 23 in a portal's sparkle, which the game may animate. On the walk under *Reproducing*, one poked stop and five walked to, four steps north from the courtyard and a turn east, all six match on every pixel but the sky step.
 
+## The character panel
+
+Under the viewport the game draws four places, one per character, 58 pixels apart across the 320 x 200 screen. Everything in a place is one of two drawings.
+
+| What | Where | Size |
+|---|---|---|
+| the portrait | `(8 + 58 x place, 148)` | 32 x 32, run 7 |
+| the health bar | `(9 + 58 x place, 181)` | 38 x 5 |
+| the magic bar | the same x, 186 | 38 x 5 |
+| the burden bar | the same x, 191 | 38 x 5 |
+
+**The portrait is a picture number the character record holds at offset 18**, in run 7 of `PICTURES.VGA`, which is 180 pictures of 32 x 32. The four the game ships name 42, 35, 34 and 29. [saves.md](saves.md) has the rest of that record.
+
+**A bar is one flat color filled from the left over a recess of index 6.** Health fills with index 89, magic with 202 and burden with 134. **The filled width is `38 x now / most`, dividing down.** A bar therefore shows nothing until `now` reaches a thirty-eighth of `most`. A character with no magic pool draws an empty bar rather than a full one, since `most` is zero and the width is taken as none.
+
+Each bar measures a pair of the character record's own fields. Health and magic are read against their maximum column, and weight carried at offset 280 against capacity at offset 86, both of those in tenths.
+
+That is **rendered**. `tools/view_check.py --panel` draws the four places from the roster `WORLD.DAT` ships and diffs them against a captured screen. Each of the fourteen frames the object walk took agrees on **6,376 of 6,376 pixels**, which is four portraits and twelve bars. All fourteen hold a party at full health. What they pin is the geometry, the four colors and the empty case. Of the fill rule they reach the two ends and the four burdens, 8.0 of 56.0, 6.5 of 59.0 twice and 7.5 of 56.0, which come out at 5, 4, 4 and 5 pixels.
+
+Six sunken boxes sit between the portrait and the bars, two columns of three. They are empty in every capture there is, and what they hold is **undecoded**.
+
 ## The sky
 
 **The sky's 32 colors are a window on a gradient, and the window slides with the time of day.** `DS:0x4D62` holds 143 colors, built at run time, running from black through deep blue, purple, red and orange to daylight blue and white. Image `0x0EDA0` copies 32 of them from `DS:0x4D62 + [0xD00F]`, uploads them to the DAC at index 224 (`0x0EE14`), and calls `0x178B0` to recompute the lighting.
@@ -259,6 +282,7 @@ Measured, standing in the Athaneum at nine in the morning: `[0xD00F]` reads `0x1
 - **The visibility pass at `0x108DF`.** It sets the skip bit that hides cells behind walls. A frame drawn far row first covers them anyway; what the pass decides beyond the picture, which cells count as seen for the map, is not read.
 - **The `0x2000` cell flag and the picture 5 overlay** in the wall pass, above.
 - **The one step of the sky ramp** above.
+- **The six boxes beside each portrait** in the character panel, above.
 
 ## Reproducing
 
@@ -273,3 +297,4 @@ Measured, standing in the Athaneum at nine in the morning: `[0xD00F]` reads `0x1
     bun tools/view_probe.js --walk=up,up,up,up,right --json=tmp/walk/readings.json
     PYTHONPATH=tools python tools/view_check.py --ledger=tmp/walk/readings.json
     make view-art
+    make view-panel                                        # the panel, and a monster in hand to hand

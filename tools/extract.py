@@ -458,6 +458,17 @@ def monster_art(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict[str, d
 MONSTER_BLOCK_FRAMES = 10
 
 
+# What the resolver takes, beside what the block draws. Every one of these is
+# already read by extract_enemies; naming them here keeps the two in step.
+COMBAT_FIELDS = ("health", "accuracy", "dexterity", "absorption", "damage",
+                 "level", "experience", "gold", "nuore", "food",
+                 "ordinary_attack_id")
+# Word 96's top three bits: bit 15 lets a monster join a fight already in hand
+# to hand and bit 13 lets a third join, so the three combinations the records
+# use cap a group at one, two or three (image 0x12B9C).
+ENEMY_GROUP_SHIFT = 13
+
+
 def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
     """Every monster's ten pictures, and the record fields that draw them.
 
@@ -497,6 +508,12 @@ def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
             "sprite": e["sprite"], "walk": e["walk"],
             "recolor": [[s["from"], s["to"]] for s in e["recolor"]],
             "blend": bool(w98 >> P.GRAY_BIT[1] & 1),
+            # What a caller resolving a blow needs, in one place beside the
+            # drawing. The four rewards are the whole battle's accumulators
+            # (docs/combat.md), and `group` is word 96's top three bits, which
+            # decide how many of the monster can engage at once.
+            "combat": {k: e[k] for k in COMBAT_FIELDS},
+            "group": w96 >> ENEMY_GROUP_SHIFT & 7,
         })
     return {"blocks": blocks, "monsters": listed}
 

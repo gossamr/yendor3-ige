@@ -29,6 +29,9 @@ import tiles
 RUNS = (17, 17, 5, 3, 3, 3, 3)
 DEPTHS = (6, 5, 4, 3, 2, 1, 0)
 CELLS = sum(RUNS)
+# The middle cell of the last row, which is the one the party stands on, and
+# the one the hand-to-hand tables carry.
+PARTY_CELL = CELLS - 2
 
 # Which way each facing word points, and which way right is from it. Image
 # `0x107E9` holds these as the two strides it walks the map window with, eight
@@ -94,6 +97,29 @@ STRIP_W, STRIP_H, STRIP_HALF = 7, 0x71, 7
 # `DS:0x7B5C` into `DS:0x0FC5`: 0x40, 0x50 and 0x10.
 RUN = {FLOOR: 4, CEILING: 5, WALL: 1, STRIP: 6}
 
+# The character panel, under the viewport: four places 58 pixels apart, each a
+# 32 x 32 portrait from run 7 and three bars below it. Which picture a place
+# draws is the character record's own offset 18, which tools/saves.py reads.
+# The bars are health, magic and burden, top to bottom, 38 pixels across and 5
+# down, drawn in one flat color over a recess of index 6. docs/view.md, "The
+# character panel".
+PANEL_PLACES = 4
+PANEL_STRIDE = 58
+PORTRAIT_RUN = 7
+PORTRAIT_X, PORTRAIT_Y = 8, 148
+PORTRAIT_W = PORTRAIT_H = 32
+BAR_X, BAR_W, BAR_H = 9, 38, 5
+BAR_Y = (181, 186, 191)
+BAR_EMPTY = 6
+BAR_FILL = (89, 202, 134)
+
+
+def bar_width(now: int, most: int) -> int:
+    """How much of one bar is filled, in pixels."""
+    if most <= 0 or now <= 0:
+        return 0
+    return min(BAR_W, BAR_W * now // most)
+
 
 @dataclass
 class Slot:
@@ -154,9 +180,16 @@ def slots(world: bytes, mode: int, directory: SEC.Directory) -> list[Slot | None
 # 4 `side`, mode 7 reads `object_wide`, and mode 13 `object_tall`. A monster
 # takes mode 10 when its word 96 carries bit 0 and mode 13 otherwise (image
 # 0x126A8), so `monster_wide` is the run 3 monster's own table and the tall
-# one shares the small object's.
+# one shares the small object's. Modes 9 and 11 flank mode 10, and 12 and 14
+# flank 13: only cell 0x31, the party's own, carries an entry in those four,
+# and they are the three places a monster in hand to hand stands. Image
+# 0x12B5C seats the first arrival in the middle buffer and pushes the group
+# outward as it grows, so a buffer's index is its place and its blitter mode
+# is 9 or 12 plus that index.
 FACE_TABLES = {"front": 0x0000, "side": 0x13B6, "object_wide": 0x3B76,
-               "monster_wide": 0x3DF2, "object_tall": 0x4460}
+               "monster_wide": 0x3DF2, "object_tall": 0x4460,
+               "melee_wide_left": 0x3CA8, "melee_wide_right": 0x41D2,
+               "melee_tall_left": 0x4316, "melee_tall_right": 0x4858}
 
 
 def runs(blob: bytes, at: int) -> tuple[list[tuple[int, int, int]], int]:
@@ -168,9 +201,13 @@ def runs(blob: bytes, at: int) -> tuple[list[tuple[int, int, int]], int]:
     """
     out = []
     while True:
-        repeat, draw, skip = struct.unpack_from("<hhh", blob, at)
+        # The terminator is one word, and the last list in the section ends on
+        # the section's own last two bytes, so the repeat is read before the
+        # rest of a record is asked for.
+        repeat = struct.unpack_from("<h", blob, at)[0]
         if repeat == 0:
             return out, at
+        _, draw, skip = struct.unpack_from("<hhh", blob, at)
         out.append((repeat, draw, skip))
         at += 6
 

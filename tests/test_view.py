@@ -138,6 +138,52 @@ def test_a_terrain_record_is_four_view_pictures_and_a_map_tile(directory):
     assert named == {22, 23}
 
 
+def test_the_three_hand_to_hand_places_are_one_cell_each(directory):
+    """Modes 9, 11, 12 and 14 carry the party's own cell and nothing else, and
+    with the two middle tables they put a monster at viewport x 0, 17 and 74
+    drawn wide, and 0, 42 and 99 drawn tall."""
+    party = V.PARTY_CELL
+    wide = ["melee_wide_left", "monster_wide", "melee_wide_right"]
+    tall = ["melee_tall_left", "object_tall", "melee_tall_right"]
+    for name in ("melee_wide_left", "melee_wide_right", "melee_tall_left", "melee_tall_right"):
+        table = V.faces(directory.world, name, directory)
+        assert [i for i, f in enumerate(table) if f] == [party], name
+    at = lambda names: [V.faces(directory.world, n, directory)[party]["x"] - V.VIEW_X
+                        for n in names]
+    assert at(wide) == [0, 17, 74]
+    assert at(tall) == [0, 42, 99]
+
+
+def test_the_character_panel_is_four_places_of_a_portrait_and_three_bars():
+    """58 pixels apart, a 32 x 32 portrait from run 7 and three bars of 38 by 5.
+    tools/view_check.py --panel holds all of it to a capture."""
+    assert (V.PANEL_PLACES, V.PANEL_STRIDE) == (4, 58)
+    assert (V.PORTRAIT_X, V.PORTRAIT_Y, V.PORTRAIT_W, V.PORTRAIT_H) == (8, 148, 32, 32)
+    assert (V.BAR_X, V.BAR_W, V.BAR_H) == (9, 38, 5)
+    assert V.BAR_Y == (181, 186, 191)
+    # The last bar ends one row above the panel's own bottom edge.
+    assert V.BAR_Y[-1] + V.BAR_H == 196
+
+
+def test_a_bar_is_filled_by_integer_division():
+    """The four the game ships: 8.0 of 56.0, 6.5 of 59.0 twice and 7.5 of 56.0
+    come out at 5, 4, 4 and 5 pixels, which is what the capture holds."""
+    assert [V.bar_width(now, most) for now, most
+            in ((80, 560), (65, 590), (65, 590), (75, 560))] == [5, 4, 4, 5]
+    assert V.bar_width(13, 13) == V.BAR_W
+    assert V.bar_width(0, 0) == 0, "a class with no magic pool draws no magic bar"
+    assert V.bar_width(5, 0) == 0
+
+
+def test_the_shipped_party_names_a_portrait_each():
+    """Offset 18 of the character record, a picture in run 7."""
+    import saves
+
+    people = saves.shipped_party()
+    assert [c["name"] for c in people] == ["SQUIRE", "DIANA", "YENDOR", "JOSEPHINE"]
+    assert [c["portrait"] for c in people] == [42, 35, 34, 29]
+
+
 @pytest.mark.skipif(not PROBE.exists(), reason="no tmp/view-north.json; "
                                                 "run tools/view_probe.js")
 def test_the_frustum_is_the_table_the_game_built(directory):

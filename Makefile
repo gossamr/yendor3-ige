@@ -42,7 +42,7 @@ TEST_ARGS ?= /NOM /NOS
         serve serve-byo serve-stock serve-headless session clean patched patched-debug \
         pages panel-shell trainer test-trainer test-decode test-away \
         hosted hosted-dev cabinet-deps test-hosted-trainer \
-        characters icons perf perf-paths perf-device view-art
+        characters icons perf perf-paths perf-device view-art view-panel
 
 all: data panel
 
@@ -68,6 +68,15 @@ data:
 ## frame the game drew.
 view-art:
 	PYTHONPATH=tools $(PY) tools/view_art.py
+
+## The character panel and the hand-to-hand places, against captured frames.
+##
+## Both draw over the viewport's own frames, so they are checked separately:
+## the panel from the roster WORLD.DAT ships, and a monster at each of the
+## three places a fight puts one in. docs/view.md has both.
+view-panel:
+	PYTHONPATH=tools $(PY) tools/view_check.py --panel --shot=tmp/view-objects-frames/00-after-entering.png
+	PYTHONPATH=tools $(PY) tools/view_check.py --melee=CENTIPEDE --shot=tmp/fight-view/blow-01.png
 
 ## Record what this build decodes the panel's source data to, which the page
 ## holds a decode in the player's browser to. Run after any change to a decoder.

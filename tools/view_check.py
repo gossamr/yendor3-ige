@@ -30,8 +30,10 @@ import json
 import struct
 from pathlib import Path
 
+import extract as EX
 import pictures as P
 import pngutil
+import saves
 import sections as SEC
 import tiles
 import view as V
@@ -386,6 +388,94 @@ def check_ledger(exe, world, pics, d, palette, ledger: str, frames_dir: str | No
 SKY_CURSOR_MAX = 0x14D // 3
 
 
+def panel(pics: bytes, runs: list[P.Run], people: list[dict]) -> dict[tuple[int, int], int]:
+    """The character panel's own pixels, by screen position.
+
+    One place per character: the portrait record 18 names, from run 7, and the
+    three bars under it, each filled from the left by the pair it measures.
+    Only the pixels the panel writes are returned, so a diff against a capture
+    covers the panel and not the artwork it sits on.
+    """
+    run = runs[V.PORTRAIT_RUN]
+    out: dict[tuple[int, int], int] = {}
+    for place, who in enumerate(people[:V.PANEL_PLACES]):
+        x0 = V.PORTRAIT_X + place * V.PANEL_STRIDE
+        raw = P.picture(pics, run, who["portrait"])
+        for y in range(V.PORTRAIT_H):
+            for x in range(V.PORTRAIT_W):
+                out[(x0 + x, V.PORTRAIT_Y + y)] = raw[y * run.width + x]
+        pairs = ((who["now"]["health"], who["most"]["health"]),
+                 (who["now"]["magic"], who["most"]["magic"]),
+                 (round(who["carried"] * 10), round(who["now"]["capacity"] * 10)))
+        bar_x = V.BAR_X + place * V.PANEL_STRIDE
+        for bar, ((now, most), top) in enumerate(zip(pairs, V.BAR_Y)):
+            filled = V.bar_width(now, most)
+            for y in range(V.BAR_H):
+                for x in range(V.BAR_W):
+                    out[(bar_x + x, top + y)] = V.BAR_FILL[bar] if x < filled else V.BAR_EMPTY
+    return out
+
+
+# The three places a monster in hand to hand stands, by the buffer it sits in:
+# image 0x12B5C seats the first arrival in the middle and pushes the group
+# outward, so buffer 0 is the left. Each run has its own three tables.
+MELEE_TABLES = {3: ("melee_wide_left", "monster_wide", "melee_wide_right"),
+                2: ("melee_tall_left", "object_tall", "melee_tall_right")}
+
+
+def check_melee(world: bytes, exe: bytes, pics: bytes, d: SEC.Directory,
+                palette: list[bytes], name: str, shot_path: str) -> None:
+    """A monster drawn at each of the three hand-to-hand places, against a capture.
+
+    Which of its ten pictures the capture caught is not known, so every
+    picture is tried at every place and the best is reported. Only the pixels
+    the monster's own picture writes are counted, since everything else on
+    screen is the world behind it.
+    """
+    runs = P.read_runs(exe, len(pics))
+    found = EX.monster_frames(d, pics, EX.extract_enemies(d))
+    who = next(m for m in found["monsters"] if m["name"] == name)
+    block = found["blocks"][who["block"]]
+    run = runs[block["run"]]
+    swaps = {a: b for a, b in who["recolor"]}
+    shot = captured(shot_path, palette)
+    best = None
+    for place, table in enumerate(MELEE_TABLES[block["run"]]):
+        face = V.faces(world, table, d)[V.PARTY_CELL]
+        if not face:
+            continue
+        for picture in range(len(block["frames"])):
+            raw = P.recolored(P.picture(pics, run, who["sprite"] + picture), swaps)
+            frame = Frame()
+            draw_two_level(frame, raw, run.width, face, 0)
+            drawn = [(x, y) for y in range(200) for x in range(320)
+                     if frame.stage[y * 320 + x]]
+            if not drawn:
+                continue
+            same = sum(1 for x, y in drawn if shot(x, y) == frame.screen[y * 320 + x])
+            if best is None or same / len(drawn) > best[0]:
+                best = (same / len(drawn), place, picture, same, len(drawn))
+    if best is None:
+        print(f"{name}: the tables place it nowhere")
+        return
+    share, place, picture, same, total = best
+    print(f"{name} against {Path(shot_path).name}: {same}/{total} pixels "
+          f"({100 * share:.1f}%) at place {place} of 3, picture {picture} of "
+          f"{len(block['frames'])}")
+
+
+def check_panel(pics: bytes, runs: list[P.Run], palette: list[bytes],
+                people: list[dict], shot_path: str) -> None:
+    """The panel drawn from the roster, against a capture of the same screen."""
+    shot = captured(shot_path, palette)
+    drawn = panel(pics, runs, people)
+    wrong = [(x, y) for (x, y), v in drawn.items() if shot(x, y) != v]
+    print(f"panel: {len(drawn) - len(wrong)}/{len(drawn)} pixels agree with "
+          f"{Path(shot_path).name}")
+    for x, y in wrong[:10]:
+        print(f"  ({x}, {y}): the capture holds {shot(x, y)}, the panel draws {drawn[(x, y)]}")
+
+
 def terrain(world: bytes, x: int, y: int) -> int:
     """The terrain id of one world cell. docs/map.md has the arithmetic."""
     area, band = divmod(y, 24)
@@ -425,6 +515,10 @@ def main() -> None:
     ap.add_argument("--out-dir", default="tmp/view-check")
     ap.add_argument("--poked", action="store_true",
                     help="treat every stop as poked, even those the ledger marks walked")
+    ap.add_argument("--panel", action="store_true",
+                    help="draw the character panel from the shipped roster and diff --shot")
+    ap.add_argument("--melee", metavar="NAME",
+                    help="draw one monster at each hand-to-hand place and diff --shot")
     a = ap.parse_args()
 
     game = Path(a.game)
@@ -432,6 +526,13 @@ def main() -> None:
     exe = (game / "REGISTER.EXE").read_bytes()
     world = (game / "WORLD.DAT").read_bytes()
     pics = (game / "PICTURES.VGA").read_bytes()
+    if a.melee:
+        check_melee(world, exe, pics, d, tiles.palette(d, PALETTE), a.melee, a.shot)
+        return
+    if a.panel:
+        check_panel(pics, P.read_runs(exe, len(pics)), tiles.palette(d, PALETTE),
+                    saves.shipped_party(game / "WORLD.DAT"), a.shot)
+        return
     if a.ledger:
         check_ledger(exe, world, pics, d, tiles.palette(d, PALETTE), a.ledger, a.frames, a.out_dir,
                      a.poked)

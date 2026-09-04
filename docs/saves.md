@@ -93,9 +93,11 @@ A step costs the clock 2 or 3 minutes and a rest about 483. The clock wraps at 1
 | 0 | name, NUL terminated | screens: F1 |
 | 14 | class | screens: F1; code, `0x04CC3` |
 | 16 | sex, 1 or 2 | screens: F1 |
+| 18 | portrait, a picture in run 7 of `PICTURES.VGA` | rendered, the four shipped ([view.md](view.md)) |
 | 22 | level | screens: F1 |
 | 24 | experience, packed BCD, four bytes | screens: F1 |
 | 28 | conditions, the word the cure prices are read from | code, `0x092B1`; screens: F1 |
+| 50–58 | the five seeds the equip dispatch derives the combat words from | code, `0x0649E`, see [combat.md](combat.md) |
 | 60–110 | the live block, 26 words, below | screens: F1, every field |
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
 | 280 | weight carried, in tenths | code, `0x05C44`; shape: `10 x` strength |
@@ -122,6 +124,8 @@ The live block, in the order the F1 sheet prints it:
 | +22 | health | +50 | linguistic |
 | +24 | magic | | |
 | +26 | weight capacity, in tenths | | |
+
+The five seeds at 50 sit in the same order as the five combat words the block holds at `+12`: shot accuracy, melee accuracy, shot damage, melee damage, absorption. `0x0649E` rebuilds each word as its seed plus what is worn or held, so nothing but the seed survives taking the equipment off. Two of them are the only attribute bonuses that reach combat, a fifth of strength above 72 into melee damage and a fifth of dexterity above 72 into absorption. All five read zero on the four the game ships, whose attributes are all below 72 and who carry nothing that adds to a combat word.
 
 The four combat words are the ones [tools/fight_probe.js](../tools/fight_probe.js) writes, at `0x48`, `0x4A`, `0x4C` and `0x4E`. The ACC and DAM rows of the sheet are the hand pair, and the shot pair is not printed there. The block at 124 is the maximum column. Health and magic differ from the live copy whenever the party is hurt or has cast, and the attributes and skills do not. Every field in both blocks, and the purse, agree with what the game prints on F1 to F5 for a save loaded back into it.
 
@@ -195,6 +199,8 @@ This is the one section that the game does not keep up to date as it plays. It i
 
     .venv/bin/python tools/saves.py SAVGAME1        # parse against this model
     .venv/bin/python tools/saves.py --layout        # the sections
+
+`saves.character()` reads one 500-byte slot and takes the ten slots as bytes, so it reads a save's section 0 and `WORLD.DAT`'s template alike. `saves.shipped_party()` is the template's last four through it.
 
 The cabinet's save editor writes one too: it opens a `SAVGAMEn` the cabinet is holding, edits the roster at the displacements above, and puts the bytes back. [panel.md](panel.md) has what it edits and where the bytes go.
 
