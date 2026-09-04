@@ -148,6 +148,84 @@ def slots(world: bytes, mode: int, directory: SEC.Directory) -> list[Slot | None
     return out
 
 
+# The four corner-and-list tables the wall and object passes read, by the
+# offsets image 0x13082 writes at DS:0x546A upward and the dispatch at
+# 0x19DC9 pairs with each mode: mode 0 and mode 8 share `front`, modes 3 and
+# 4 `side`, mode 7 reads `object_wide` and mode 13 `object_tall`.
+FACE_TABLES = {"front": 0x0000, "side": 0x13B6, "object_wide": 0x3B76,
+               "object_tall": 0x4460}
+
+
+def runs(blob: bytes, at: int) -> tuple[list[tuple[int, int, int]], int]:
+    """(repeat, draw, skip) records up to a zero word, and where that word is.
+
+    The walkers at 0x1A98E and 0x1AA1A read six bytes at a time and stop at
+    a record whose first word is zero, so the terminator is one word and the
+    last record's skip sits right before it.
+    """
+    out = []
+    while True:
+        repeat, draw, skip = struct.unpack_from("<hhh", blob, at)
+        if repeat == 0:
+            return out, at
+        out.append((repeat, draw, skip))
+        at += 6
+
+
+def two_level(blob: bytes, at: int) -> dict:
+    """A front or object face's list: image 0x19F39.
+
+    A pointer to the row list, then the column list. A row record draws
+    `draw` destination rows from consecutive source rows and skips `skip`
+    source rows, `repeat` times; a column record does the same along a row,
+    and one column list serves every row.
+    """
+    rows_at = struct.unpack_from("<H", blob, at)[0]
+    cols, _ = runs(blob, at + 2)
+    rows, _ = runs(blob, rows_at)
+    return {"rows": rows, "cols": cols}
+
+
+def side_list(blob: bytes, at: int) -> list[dict]:
+    """A side face's records: image 0x1A09F for the left, 0x1A121 for the right.
+
+    Each is a column count, a source column step, and a row list shared by
+    those columns. A column draws the list down from the picture's top, then
+    the source moves on by one column plus the step. After a record the
+    destination drops one row on the left and rises one on the right. A
+    record whose list is empty only moves the source by its step.
+    """
+    out = []
+    while True:
+        count, step, first = struct.unpack_from("<hhh", blob, at)
+        if count == 0:
+            return out
+        if first == 0:
+            out.append({"count": 0, "step": step, "rows": []})
+            at += 6
+            continue
+        rows, end = runs(blob, at + 4)
+        out.append({"count": count, "step": step, "rows": rows})
+        at = end + 2
+
+
+def faces(world: bytes, table: str, directory: SEC.Directory) -> list[dict | None]:
+    """The 51 entries of one face table: a screen corner and its lists, or
+    None where the entry is empty. `FACE_TABLES` names the tables."""
+    section = directory.sections[GEOMETRY]
+    blob = world[section.offset:section.end]
+    base = FACE_TABLES[table]
+    out: list[dict | None] = []
+    for cell in range(CELLS):
+        x, y, at = struct.unpack_from("<HHH", blob, base + cell * 6)
+        if x == 0 or at == 0:
+            out.append(None)
+            continue
+        shape = {"records": side_list(blob, at)} if table == "side" else two_level(blob, at)
+        out.append({"x": x, "y": y, **shape})
+    return out
+
+
 def frustum(x: int, y: int, facing: int) -> list[tuple[int, int]]:
     """The 51 map cells the view shows, in the order the passes draw them."""
     (fx, fy), (rx, ry) = FACINGS[facing]

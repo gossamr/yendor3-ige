@@ -105,6 +105,28 @@ def test_the_band_table_is_where_the_rows_meet(directory):
             for cell in near_to_far] == list(V.CEILING_BAND)
 
 
+def test_the_front_lists_draw_the_widths_the_rule_gives(directory):
+    """Each list's runs sum to the face the band rule places: 210 by 105 one
+    cell ahead down to 14 by 7 six ahead."""
+    front = V.faces(directory.world, "front", directory)
+    total = lambda rows: sum(r * d for r, d, _ in rows)
+    near_to_far = list(reversed(centers()))[1:]
+    assert [total(front[c]["cols"]) for c in near_to_far] == [210, 166, 126, 86, 50, 14]
+    assert [total(front[c]["rows"]) for c in near_to_far] == [105, 83, 63, 43, 25, 7]
+    assert all(total(front[c]["cols"]) <= V.VIEW_W for c in range(51) if front[c])
+
+
+def test_a_side_face_is_columns_of_one_shared_row_list(directory):
+    """Cell 45, one ahead on the left: 22 columns in eleven records of two,
+    the first 105 rows tall and each after two rows shorter."""
+    side = V.faces(directory.world, "side", directory)
+    records = side[45]["records"]
+    assert sum(r["count"] for r in records) == 22
+    heights = [sum(a * b for a, b, _ in r["rows"]) for r in records]
+    assert heights == list(range(105, 83, -2))
+    assert side[46] is None, "the cell straight ahead has no side face"
+
+
 def test_a_terrain_record_is_four_view_pictures_and_a_map_tile(directory):
     """All twelve bytes: floor, ceiling, wall face, strip, the strip's first
     column, and the tile tools/tiles.py reads at +0x0A."""

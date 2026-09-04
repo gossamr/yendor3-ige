@@ -2,7 +2,7 @@
 
 How the game draws the world in front of the party: which cells it shows, where each one lands on screen, and what it draws them from. Settled findings only.
 
-The frustum is **code**, at image `0x107E9`, and **measured**: [tools/view_probe.js](../tools/view_probe.js) reads the game's own 51-entry table with the party poked anywhere and turned, and standing in the Athaneum facing north all 51 entries name the cells the frustum names. All four facings are **measured** too, by the compass the game prints beside the view: `0x8000` reads NORTH, `0x4000` SOUTH, `0x2000` WEST and `0x1000` EAST. Facing reaches the drawing in two places and no others: the axis bit below, and an object's four faces. Everything else is indexed by the cell number in `DS:0x53DC`, so it is the same whichever way the party looks. The slot geometry and the artwork are **shape**, tables that divide their section exactly, and **rendered**: [tools/view_check.py](../tools/view_check.py) redraws the floor, the ceiling and the strips from the files and diffs a frame the game drew. The wall pass and the object passes are **code**. [README.md](README.md) defines the classifiers.
+The frustum is **code**, at image `0x107E9`, and **measured**: [tools/view_probe.js](../tools/view_probe.js) reads the game's own 51-entry table with the party poked anywhere and turned, and standing in the Athaneum facing north all 51 entries name the cells the frustum names. All four facings are **measured** too, by the compass the game prints beside the view: `0x8000` reads NORTH, `0x4000` SOUTH, `0x2000` WEST and `0x1000` EAST. Facing reaches the drawing in two places and no others: the axis bit below, and an object's four faces. Everything else is indexed by the cell number in `DS:0x53DC`, so it is the same whichever way the party looks. The slot geometry and the artwork are **shape**, tables that divide their section exactly, and **rendered**: [tools/view_check.py](../tools/view_check.py) redraws the floor, the ceiling and the strips from the files and diffs a frame the game drew. The wall pass and the object passes are **rendered** as well, against thirteen captures, under *What a redrawn frame accounts for*. [README.md](README.md) defines the classifiers.
 
 ## The geometry is a table
 
@@ -72,7 +72,7 @@ Image `0x100CE` draws the view. It builds the table, sets the skip bits, then:
 
 All of them call one blitter, image `0x19DC9`, which switches on the mode in `DS:0x53C8` to pick which slot table to read. `DS:0x0FC5` names the run, as that run's own offset into the picture table at `DS:0x7B5C` ([pictures.md](pictures.md)).
 
-**The axis bit is bit 0 of every ceiling and floor picture number.** Image `0x1021D` takes it from the party's own cell where that cell names a ceiling, and from the facing otherwise: 0 for north and south, 1 for east and west. So a corridor is drawn from one picture along one axis and another along the other.
+**The axis bit is bit 0 of every ceiling and floor picture number.** The ceiling pass ORs `DS:0xF32` into it (`0x101DE`) and the floor pass `DS:0xF3A` (`0x1030D`). Image `0x1021D` fills both from the party's own cell, whose offset in the map window `DS:0x537A` holds: the ceiling word's bit 0 where the word is nonzero, else 0 facing north or south and 1 otherwise, and the floor word's bit 0. **Measured**, on a walk: [tools/view_probe.js](../tools/view_probe.js) stepping the party north from the Athaneum's courtyard reads `DS:0xF3A` as 1, 0, 1 on 307, 306, 307 and both words as 1 on a 305, and the frame at each step matches the redraw on every pixel. The room ids come in pairs whose words differ in that bit, so a step flips every floor in view between two pictures, which is the game's cue that a step landed. A position the probe pokes leaves `DS:0x537A` on the cell last stepped to, so a poked frame draws with that cell's bits, floor 0 and the ceiling's by facing in every poked capture here, and the checks below draw poked stops that way.
 
 ## Where a cell lands
 
@@ -100,7 +100,25 @@ So a slot is a trapezoid: a length per row, and a step that walks its left edge.
 
 Each half draws 43 of the 51 slots. Row 1's outer four cells on each side fall outside the viewport and carry a shape offset of zero.
 
-Mode 3 reads its shape a column at a time instead, walking down the source by the picture's width per pixel (image `0x1AA1A`), which is how it maps a flat wall face into a slot. That format is not read yet.
+**Modes 0, 7, 8 and 13 read a two-level list** (image `0x19F39`, and `0x1A1A3` and `0x1A235` for the object modes, which pick their table and fall into the same walker). The list opens with a pointer to a row list and continues with a column list, both runs of six-byte records ending at a word of zero:
+
+    +0  int16  repeat
+    +2  int16  draw: pixels copied from consecutive source pixels
+    +4  int16  skip: source pixels passed over after them
+
+A row record draws `draw` destination rows from consecutive source rows and then skips `skip` source rows, `repeat` times; a column record does the same along a row, and one column list serves every row (image `0x1A98E`). The terminator is one word, so the walker's six-byte read at it takes in the next list's head, which is harmless. A face two cells ahead is `(16, 4, 1)`, `(1, 1, 0)`, `(12, 3, 1)`, `(1, 1, 0)`, `(16, 4, 1)` across and `(8, 4, 1)`, `(1, 1, 0)`, `(6, 3, 1)`, `(8, 4, 1)` down: 166 by 83 from 210 by 105. The source starts at the picture's top left, and a transparent pixel advances the destination without writing.
+
+**Modes 3 and 4 read column records** (images `0x1A09F` and `0x1A121`):
+
+    +0  int16  count: destination columns drawn from this record
+    +2  int16  step: source columns passed over after each of them
+    +4  ...    a row list as above, ended by one zero word, or a zero word alone
+
+Each column draws the record's row list down from the picture's top (image `0x1AA1A`), then the source moves on by one column plus `step`. After a record the destination drops one row in mode 3 and rises one in mode 4, which is the slant of the top edge, and the next record begins two bytes past the zero. A record whose list is empty only moves the source by its step. The side face one cell ahead is eleven records of two columns, steps alternating 9 and 8, whose lists run 105, 103, 101 and so on down to 85 rows.
+
+[tools/view.py](../tools/view.py) reads all four tables as `faces`, and `tests/test_view.py` holds the front lists to the widths and heights the rule below gives. Mode 4 raising the destination is what makes a right-hand face's top edge climb toward the party.
+
+**The wall pass walks a row in a fixed order** (image `0x104A8`): the left half from the outside in, then the right half from the outside in, then the middle cell last, so the middle's front face covers whatever the side faces beside it drew. For each cell it draws the front face in mode 0, then a side face in mode 3 or 4 only where the cell toward the center names neither a wall face nor a strip (`0x10520`), then the object: mode 8 with the front table for ids 200 and up, mode 7 for 100 to 199, mode 13 with run 2 for the rest (`0x10699`). Two things there are not read: a cell flag `0x2000` makes the pass draw a second front face from the record's first word (`0x10633`), and an object whose face is `DS:0xEA2` under flag `0x1000` draws picture 5 over itself (`0x106DC`).
 
 **Mode 6 needs no shape at all.** It takes its place from mode 3's own table, the `x` and `y` of the same cell, and copies a fixed rectangle: 7 pixels a row for `0x71` rows, from the column `DS:0x53E2` names (image `0x1A055`). The pair of cells either side of the view take the two halves of one 14-column strip, the first from the record's own column and the second from that column plus 7 (`0x10723` and `0x10764`).
 
@@ -192,6 +210,8 @@ The loop at `0x179FA` adds the row's number to the row's offset and clamps at ze
 
 The 7,442 are the sky, and they are counted apart because the sky is not drawn with the stored palette. *The sky* below says what it is drawn with, and why every frame reads one step below section 12.
 
+`tools/view_check.py --ledger` draws the whole view, every pass, from the lists above and diffs it against a probe ledger's captures index for index across the 30,464 pixels of the viewport, splitting the count by the pass that drew each pixel. On the thirteen poked stops beside objects, eleven match on every pixel, one on all but three of the sky step, and the other two differ on 25 pixels at the bases of bottles on a shelf and on 23 in a portal's sparkle, which the game may animate. On the walk under *Reproducing*, one poked stop and five walked to, four steps north from the courtyard and a turn east, all six match on every pixel but the sky step.
+
 ## The sky
 
 **The sky's 32 colors are a window on a gradient, and the window slides with the time of day.** `DS:0x4D62` holds 143 colors, built at run time, running from black through deep blue, purple, red and orange to daylight blue and white. Image `0x0EDA0` copies 32 of them from `DS:0x4D62 + [0xD00F]`, uploads them to the DAC at index 224 (`0x0EE14`), and calls `0x178B0` to recompute the lighting.
@@ -204,12 +224,20 @@ Measured, standing in the Athaneum at nine in the morning: `[0xD00F]` reads `0x1
 
 ## What is not read yet
 
-- **The wall pass's slot format**, modes 0, 3 and 4, and the object passes, modes 7, 8 and 13. The seven band numbers above place the same faces, so what these formats add is a frame reproduced pixel for pixel.
-- **The visibility pass at `0x108DF`.** It sets the skip bit that hides cells behind walls. Until it is read, a redrawn frame needs a probe's reading of the bits.
+- **The visibility pass at `0x108DF`.** It sets the skip bit that hides cells behind walls. A frame drawn far row first covers them anyway; what the pass decides beyond the picture, which cells count as seen for the map, is not read.
+- **The `0x2000` cell flag and the picture 5 overlay** in the wall pass, above.
 - **The one step of the sky ramp** above.
 
 ## Reproducing
 
     bun tools/view_probe.js --json=tmp/view-north.json     # about 15 minutes
     PYTHONPATH=tools python tools/view_check.py
+    bun tools/view_probe.js --json=tmp/view-objects.json \
+        --at=456,26,0x8000 --at=461,28,0x4000 --at=478,28,0x8000 --at=441,28,0x8000 \
+        --at=444,37,0x4000 --at=454,28,0x8000 --at=465,28,0x8000 --at=444,27,0x1000 \
+        --at=472,43,0x4000 --at=442,25,0x2000 --at=447,43,0x4000 --at=470,36,0x8000 \
+        --at=478,25,0x1000                                    # one stop beside each of 13 objects
+    PYTHONPATH=tools python tools/view_check.py --ledger=tmp/view-objects.json
+    bun tools/view_probe.js --walk=up,up,up,up,right --json=tmp/walk/readings.json
+    PYTHONPATH=tools python tools/view_check.py --ledger=tmp/walk/readings.json
     make view-art

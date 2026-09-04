@@ -3,6 +3,7 @@
 //   bun tools/view_probe.js                       where the save left the party
 //   bun tools/view_probe.js --x=460 --y=46 --facing=0x8000
 //   bun tools/view_probe.js --at=460,46,0x8000 --at=460,46,0x1000   one boot
+//   bun tools/view_probe.js --walk=up,up,up,up,right             step, keep a frame per key
 //   bun tools/view_probe.js --serve=7777                        stays up
 //   bun tools/view_probe.js --save=tmp/perf-save.json --json=tmp/view.json
 //
@@ -277,6 +278,17 @@ async function stand([x, y, facing, clock = -1]) {
 
 for (const stop of stops) await stand(stop);
 
+// `--walk=up,up,right` presses keys from cabinet/keys.js in turn after the
+// stops, keeping a frame and a reading per key, marked walked: a key moves
+// the party the way the game does, which a poke does not (docs/view.md, the
+// axis bits), so these are the frames a step's picture is held to.
+for (const k of (arg("walk", "")).split(",").filter(Boolean)) {
+  if (!(k in KEYS)) throw new Error(`no key ${k}`);
+  await press(k);
+  readings.push({ party: where(), keys: [k], walked: true, shot: shot(`key-${k}`) });
+  keep();
+}
+
 // Getting to the world is what a run spends its time on, so `--serve=PORT`
 // pays it once and then answers stops over a socket for as long as it is left
 // running. `GET /at?x=&y=&facing=` stands there and hands back the reading it
@@ -313,8 +325,14 @@ if (port) {
           if (!(k in KEYS)) return Response.json({ error: `no key ${k}` }, { status: 400 });
           await press(k);
         }
-        return Response.json({ pressed: names, party: where(),
-                               shot: shot(`key-${names.join("-")}`) });
+        // A key that moves the party is a stop the game walked to, which a
+        // poke is not: the axis words the view draws with come from the cell
+        // last stepped to (docs/view.md). So it goes in the ledger, marked.
+        const reading = { party: where(), keys: names, walked: true,
+                          shot: shot(`key-${names.join("-")}`) };
+        readings.push(reading);
+        keep();
+        return Response.json(reading);
       }
       // Anything else the game holds, for a question the table above does not
       // answer: `peek?at=0x71c6&len=72` reads DS-relative, `poke?at=&v=` writes
@@ -343,4 +361,7 @@ if (port) {
 }
 
 if (readings.length) say(`\nwrote ${ledger}`);
+// Outside serve mode the work is done, and holding an emulator open past it
+// is only a process to hunt down.
+if (!port) process.exit(0);
 await ci.exit();
