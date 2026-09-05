@@ -18,10 +18,12 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 | `32` | attack table id, which says what the effect does | code, `0x1c5e1`, and seven further branches pass it the same way |
 | `34` | amount, whose meaning follows the effect | code, `0x1d9f1`, on the restorative branch; shape elsewhere, below |
 | `46` | damage | screens: the prose quotes it on 64 of 65 |
+| `52` | what a condition it leaves takes off a monster a turn | code, `0x12863` |
+| `66` | how many turns that condition stands | code, `0x12863` |
 | `68` | scroll mask, six bits | screens: F3 class rows, 224/224 |
 | `70` | bit 10 is the out-of-melee restriction | screens: F3 WHEN, 98/98 |
 | `72` | scope, what the spell acts on, and how far it reaches | screens: F3 AFFECTS and WHEN, 98/98 |
-| `74` | element | screens: the prose, bit by bit; four bits **undecoded**, below |
+| `74` | element, whose top six bits are the conditions it leaves | screens: the prose, bit by bit; code, `0x1D649` for the six; four bits **undecoded**, below |
 | `76` | blow word | screens: F3 AFFECTS, bits 1, 2 and 8, 98/98; code, `0x1D72F` for the upper bits and `0x1c5a4` for bit 0, which no page shows, below |
 
 **MP and nuore** are exact on all 98 spells the clue book lists, against the game's own F3 SPELL INFORMATION screen.

@@ -17,6 +17,26 @@ Everything here is **code**, read off the disassembly, except the counts, which 
 
 Each holds a **character handle**, the same kind the four party slots at `DS:0xD0C9` hold, and zero means nobody. They sit with the party's own state, beside the position at `DS:0xCF75`, the clock at `DS:0xCF7F` and the purse at `DS:0xCF91` ([saves.md](saves.md)), so they travel with the party rather than with a character.
 
+## The three the whole party shares
+
+**Evidence is code.** Image `0x05CB0` walks the four handles at `DS:0xD0C9`, skips anyone carrying `0x1C40`, and sums three skills out of each record it keeps: mapping at `+0x64`, navigation at `+0x66` and survival at `+0x58`. It then divides each sum by the number of characters it summed, leaving a sum of zero alone rather than dividing it, and writes the three averages to `DS:0xCF23`, `DS:0xCF25` and `DS:0xCF27`. **So which character holds the points makes no difference**, and a character who is dead, stoned, frozen or paralyzed is out of the average altogether.
+
+Each average is then read against rungs of its own.
+
+**Mapping** sets a bit of `DS:0xCEFD` per rung, in the same routine: `0x400` at 45, `0x8000` at 50, `0x200` at 60, `0x800` at 70 and `0x100` at 80. Bit `0x200` is the one the map screen tests before it will draw at all ([map.md](map.md)).
+
+**Survival** decides how much of a monster is shown, at image `0x130CA`:
+
+| Average | What the monster shows |
+|---|---|
+| 60 | a bar of what is left of its health, drawn from the struct's `+0x10` against its full at `+0x50` |
+| 75 | a mark per condition it is under, the pictures picked off its state word at `+0x0C` |
+| 80 | those conditions in words: DISEASED, POISONED, SICK, STONED, FROZEN, PARALYZED, CURSED, HEXED, JINXED |
+
+Under 60 the party is told nothing about it at all.
+
+**Navigation** sets the travel window at image `0x19022`, at 65, 80 and 95, each rung a smaller box of four words.
+
 The other eight skills are personal. Four are the weapon skills a swing reads, casting is what a cast rolls against, survival is what a character saves a BREAK or a DESTROY with ([combat.md](combat.md)), and mapping and navigation are read where the party is drawn rather than asked of anyone.
 
 ## The character sheet names them, and moves them

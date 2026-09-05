@@ -172,3 +172,24 @@ def test_the_two_kinds_raise_open_and_search(directory):
 
     assert prompt(5) == "WHO WILL OPEN?"
     assert prompt(6) == "WHO WILL SEARCH?"
+
+
+def test_every_trap_number_names_an_attack_entry(directory):
+    """A trap indexes the same table a monster's special attack does, and one
+    at or over 50 is the party's with that much taken off first (image
+    0x018EA3)."""
+    import extract as EX
+    table = EX.attack_table(directory.exe)
+    rows = LO.containers(directory) + LO.passages(directory)
+    traps = {r["trap"] for r in rows if r["trap"]}
+    assert len(traps) == 22
+    for trap in traps:
+        at = trap - LO.TRAP_PARTY if trap >= LO.TRAP_PARTY else trap
+        assert 0 < at <= 13, trap
+    # Both halves land on the same thirteen entries, and the two that take
+    # nothing off are carried by one cell each: entry 1 routes to a handler
+    # nothing has read, and entry 3 is a sound and an animation.
+    inside = {t % LO.TRAP_PARTY for t in traps}
+    assert inside == set(range(1, 14))
+    assert sorted(t for t in inside if not table[t]["effect"]) == [1, 3]
+    assert sorted(t for t in inside if table[t]["effect"] & 0xFF80) == [5, 7, 9, 11]

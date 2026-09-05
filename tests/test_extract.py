@@ -1616,3 +1616,27 @@ def test_the_mark_is_kept_in_the_casters_own_record(data):
     by = {s["name"]: s for s in data["spells"]}
     assert by["MARK OR RETURN"]["mark_at"] == 240
     assert "FOR EACH CHARACTER" in by["MARK OR RETURN"]["description"]
+
+
+def test_the_attack_table_is_the_executables_own(data, directory):
+    """Twelve bytes an entry at DS:0x96DA, which a monster's two attack ids and
+    a trap number all index."""
+    import extract as EX
+    table = EX.attack_table(directory.exe)
+    assert len(table) == EX.ATTACK_COUNT == 49
+    # The bandit's special: no damage of its own, disease and health, saved
+    # against. Its ordinary one routes to the resolver instead.
+    assert table[29] == {"sound": 34, "animation": 5, "least": 0, "most": 0,
+                         "effect": 0x2010, "flags": 0x1000}
+    assert table[0]["flags"] & 0x0400
+    ids = {m["ordinary_attack_id"] for m in data["enemies"]}
+    ids |= {m["attack_id"] for m in data["enemies"]}
+    assert max(ids) < len(table)
+
+
+def test_the_nine_conditions_are_worded_by_the_game(directory):
+    """The strings the monster detail prints, in condition-bit order."""
+    import extract as EX
+    assert EX.condition_words(directory.exe) == [
+        "DISEASED", "POISONED", "SICK", "STONED", "FROZEN", "PARALYZED",
+        "CURSED", "HEXED", "JINXED"]

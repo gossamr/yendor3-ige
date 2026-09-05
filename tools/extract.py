@@ -170,6 +170,57 @@ def palette_swaps(rec: bytes, at: int = None, length: int = None) -> list[dict]:
     return out
 
 
+# The twelve bytes of one entry, which both a monster's attack id and a trap
+# number index (docs/combat.md). 49 are filled and the rest of the table is
+# zero. The flags say how the damage is arrived at and whether the attack is
+# saved against; the effect mask says what lands.
+ATTACK_FIELDS = {"sound": 0, "animation": 2, "least": 4, "most": 6,
+                 "effect": 8, "flags": 10}
+ATTACK_COUNT = 49
+
+
+# The three skills the party shares rather than a character holding them.
+#
+# Image 0x05CB0 walks the four handles, skips anyone carrying 0x1C40, sums
+# mapping, navigation and survival out of each record and divides each sum by
+# the number it summed. A sum of zero is left alone rather than divided.
+# docs/party.md reads the whole routine.
+PARTY_SKILLS = {"mapping": 0x64, "navigation": 0x66, "survival": 0x58}
+# What each average buys, in the order the code tests it. Mapping sets a bit of
+# DS:0xCEFD per rung, survival gates how much of a monster is shown at image
+# 0x130CA, and navigation sets the travel window at image 0x19022.
+PARTY_RUNGS = {
+    "mapping": (45, 50, 60, 70, 80),
+    "survival": (60, 75, 80),
+    "navigation": (65, 80, 95),
+}
+
+# The nine conditions as the game words them, nine strings from DS:0x7DFC in
+# the order the condition bits are listed, which is the order the protection
+# words sit in the character record (docs/combat.md). The monster detail the
+# survival ladder buys at 80 prints these.
+CONDITION_WORDS = 0x7DFC
+CONDITION_COUNT = 9
+
+
+def condition_words(exe: bytes) -> list[str]:
+    """The nine words, in condition-bit order."""
+    out, at = [], L.DGROUP + CONDITION_WORDS
+    for _ in range(CONDITION_COUNT):
+        end = exe.index(b"\x00", at)
+        out.append(exe[at:end].decode("latin1"))
+        at = end + 1
+    return out
+
+
+def attack_table(exe: bytes) -> list[dict]:
+    """Every entry of the table at DS:0x96DA, in id order."""
+    return [{name: struct.unpack_from(
+                "<H", exe, L.DGROUP + ATTACK_TABLE + n * ATTACK_ENTRY + off)[0]
+             for name, off in ATTACK_FIELDS.items()}
+            for n in range(ATTACK_COUNT)]
+
+
 def attack_effects(exe: bytes, attack_id: int) -> list[str]:
     """The conditions an attack id inflicts, read from the executable's table."""
     at = L.DGROUP + ATTACK_TABLE + attack_id * ATTACK_ENTRY + ATTACK_MASK_AT
@@ -466,11 +517,16 @@ SPELL_FACING_FIELDS = ("family", "immunity", "resistance")
 
 COMBAT_FIELDS = ("health", "accuracy", "dexterity", "absorption", "damage",
                  "level", "experience", "gold", "nuore", "food",
-                 "ordinary_attack_id")
+                 "ordinary_attack_id", "attack_id", "steal")
 # Word 96's top three bits: bit 15 lets a monster join a fight already in hand
 # to hand and bit 13 lets a third join, so the three combinations the records
 # use cap a group at one, two or three (image 0x12B9C).
 ENEMY_GROUP_SHIFT = 13
+# The rest of word 96 that a blow reads: bit 12 loops the attack over the whole
+# party, and bits 11 and 10 name what a break takes, the missile weapon or the
+# hand weapon, with neither meaning the shield (image 0x0144C).
+ENEMY_PARTY_ATTACK = 0x1000
+ENEMY_BREAKS = 0x0C00
 
 # Word 98's bits 9 to 12, read as five tiers at image 0x129F8. The word does
 # two jobs at that one reading: it is how often a monster at range shoots
@@ -537,6 +593,10 @@ def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
             # decide how many of the monster can engage at once.
             "combat": {k: e[k] for k in COMBAT_FIELDS},
             "group": w96 >> ENEMY_GROUP_SHIFT & 7,
+            # The rest of word 96 a blow reads: which piece a break takes, and
+            # whether the attack reaches the whole party (docs/combat.md).
+            "breaks": w96 & ENEMY_BREAKS,
+            "party_attack": bool(w96 & ENEMY_PARTY_ATTACK),
             # What a cast reads and a swing does not: the family a
             # family-restricted spell singles out, and the two words a spell's
             # element and damage type are matched against (docs/combat.md).
@@ -688,6 +748,12 @@ SPELL_SCROLL_MASK = 68
 # spell does".
 SPELL_RESTORE = {"field": 36, "max": 38, "mask": 40}
 
+# What a condition a spell leaves on a monster costs it: record 52 is the
+# health it loses a turn and record 66 is how many turns it lasts. The bits
+# themselves are the element word's own top six, tested against the monster's
+# immunity at image 0x1D649 (docs/combat.md).
+SPELL_PER_TURN, SPELL_TURNS = 52, 66
+
 # What a spell does to the world rather than to a body. Any low bit of word 72
 # blanks the AFFECTS row, and the dispatcher at image 0x1C4E4 branches on each
 # of them. Eleven records carry one: the nine utility spells and two ERROR
@@ -718,6 +784,7 @@ MARK_AT = 64
 
 SPELL_UNKNOWN = [c for c in range(22, 80, 2)
                 if c not in (*SPELL_FIELDS.values(), SPELL_AMOUNT,
+                             SPELL_PER_TURN, SPELL_TURNS,
                              SPELL_ELEMENT, SPELL_FAMILY, SPELL_SCROLL_MASK,
                              SPELL_AFFECTS_WORD, SPELL_BLOW,
                              SPELL_KIND, SPELL_WHEN_WORD,
@@ -918,6 +985,8 @@ def extract_spells(d: S.Directory) -> list[dict]:
         s["when_word"] = u16(rec, SPELL_WHEN_WORD)
         s["restore"] = {name: u16(rec, off) for name, off in SPELL_RESTORE.items()}
         s["listed"] = i + 1 in book
+        s["per_turn"] = u16(rec, SPELL_PER_TURN)
+        s["turns"] = u16(rec, SPELL_TURNS)
         s.update(spell_world(rec))
         s["unknown"] = {f"u{off}": u16(rec, off) for off in SPELL_UNKNOWN}
         out.append(s)

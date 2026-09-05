@@ -50,4 +50,8 @@ export const EXPECTED = {
     restoration: "73a1d4cc7f5341ab216ff3bd2f06241bef98966f4e0d991f16924ffe52009130",
     worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
   },
+  "fff7cbf4e0226523": {
+    restoration: "0ccb7e84f6fd81183b8919a08c3390eb9ead5b1159133660bcf102853f698a3a",
+    worldMap: "4bb90b6024331fed54a0ad80a961b3e461bfff1370b3ff6d30015a27078443dd",
+  },
 };
