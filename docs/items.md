@@ -39,7 +39,7 @@ A name is a stored string, so it uses the game's character set. The game has no 
 | 10 | WEIGHT, uint16, tenths | screens: F5, 169/169 |
 | 12 | category: the properties-table selector and the equip slot | code, `0x04237` and `0x0F4CC`; shape |
 | 14 | FITS IN, a container mask | screens: F5, 170/170 |
-| 16 | a group, **undecoded**, see below | |
+| 16 | the merchant class a shop buys it under | code, `0x047D3`; shape, below |
 
 Bytes 4 and 18 are zero on all 631. Byte 9 is the high byte of the artwork word at 8, and 234 records carry artwork above 255, so it is not spare.
 
@@ -53,7 +53,9 @@ The Evidence column uses the classifiers [README.md](README.md) defines. Three o
 
 **FITS IN is the word at 14**, or three bits of it, and `0x071d3` prints them in order: `0x8000` is BACKPACK, `0x4000` is BOX and `0x2000` is BAG. With none of the three set, the line reads CHARACTER PANEL when the record's category word carries `0x2000`, and ANY PANEL otherwise. The reading is exact on all 170 captured pages. Over the 631 records the totals are 221 BACKPACK, 193 BACKPACK BOX, 201 BACKPACK BOX BAG, 15 ANY PANEL and one CHARACTER PANEL. The 15 are the three currencies and twelve items too bulky to stow, among them the weapons of Light and the ANVIL OF LIGHT. The one is the BACKPACK, which is the one thing no container holds. Bit `0x0001` of the same word is set on 46 items, and nothing prints it.
 
-**The word at 16 is a group, and the code that reads it has not been found.** It partitions the records cleanly. `0x8000` is on all 420 armor and weapon records, `0x4000` is on the twelve potions, and `0x2000` is on the lockpick, the hourglass, the torch and the three containers. One bit each then covers the twelve gems and bars, the five dwarf artifacts, the five elf artifacts, the four treasures of the Order, and the four ores. Zero is left on the remaining 163 records, which are the currencies, the keys, the parchments and the quest loot. That is the shape a shop's stock list would have.
+**The word at 16 is the merchant class**, which is what a shop tests before it will take an item off your hands. Image `0x047D3` reads a SELL topic's own word at `+0x12` and tests it against this word, answering "I HAVE NO NEED FOR THAT TYPE OF ITEM" where the two share no bit ([shops.md](shops.md)). The 17 SELL topics in the game name exactly the eight bits the records carry, one bit per topic.
+
+It partitions the records cleanly. `0x8000` is on all 420 armor and weapon records, `0x4000` is on the twelve potions, and `0x2000` is on the lockpick, the hourglass, the torch and the three containers. One bit each then covers the twelve gems and bars, the five dwarf artifacts, the five elf artifacts, the four treasures of the Order, and the four ores. Zero is left on the remaining 163 records, which are the currencies, the keys, the parchments and the quest loot. Nothing in the game buys those.
 
 **There are three properties tables.** `lcall 0x0f44c` copies the 58-byte record into a scratch buffer, reads the category word at `+0x0c`, and copies a properties entry from whichever table that category selects:
 
@@ -77,6 +79,10 @@ Enhancement runs to **+10**, and nine items reach it, among them CROSSBOW, GOLD 
 |---|---|---|
 | weapon, 12 B | `+4` | `+6` |
 | armor, 12 B | `+8` | `+0xa` |
+
+**The weapon entry's `+0xa` is the sound a landed blow makes**, 1-based into the 141 of section 15 ([audio.md](audio.md)). Image `0x00EB5` reads it off the entry image `0x0F44C` returns for the character's hand weapon, and image `0x00E86` plays sound 35 instead where the blow took nothing off. 16 distinct values cover 174 of the 210 entries, one per weapon family: a KNIFE is 37, a CLUB 41, a SHORT SWORD 96, an AX 97, a LONG SWORD 110 and a WHIP 113. The other 36 entries hold 0 and are silent.
+
+An empty hand reads a stale pointer. Image `0x0F44C` returns `DS:0x0FE3`, and an item id of 0 takes the branch at image `0x0F475` that skips both writes to it, so the swing plays whatever the last resolved entry's `+0xa` held.
 
 ## What using an item does
 

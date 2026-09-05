@@ -27,10 +27,10 @@ Every field is a uint16 unless the size column states otherwise.
 | 36 | dexterity | sets turn order, see [combat.md](combat.md) | screens: F2, 71/71 |
 | 38 | absorption | | screens: F2, 71/71 |
 | 40 | damage | | screens: F2, 71/71 |
-| 42 | sound on a hit | index into the executable's 141-entry VOC table | code, `0x01053` |
+| 42 | sound on a hit | 1-based into the 141 VOC sounds of section 15 ([audio.md](audio.md)) | code, `0x01053` |
 | 44 | sound on a miss | | code, `0x0109E` |
 | 46 | shot picture | in `PICTURES.VGA` run 1 | code, `0x12579` |
-| 48 | shot sound | played where the shot lands | code, `0x123B8` |
+| 48 | shot sound | played where the shot lands ([audio.md](audio.md)) | code, `0x123AA` |
 | 50 | ranged accuracy | | screens: F2, 13/13 |
 | 52 | ranged damage | | screens: F2, 13/13 |
 | 54, 56 | effect offset | where a hit graphic is drawn on the monster | code, `0x10443` |

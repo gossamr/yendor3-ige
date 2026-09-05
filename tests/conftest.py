@@ -12,6 +12,7 @@ import pytest  # noqa: E402
 
 import extract  # noqa: E402
 import items as I  # noqa: E402
+import npcs as NP  # noqa: E402
 import sections as S  # noqa: E402
 
 GAME = ROOT / "game"
@@ -20,6 +21,11 @@ GAME = ROOT / "game"
 @pytest.fixture(scope="session")
 def directory():
     return S.load(GAME)
+
+
+@pytest.fixture(scope="session")
+def people(directory):
+    return NP.People(directory)
 
 
 @pytest.fixture(scope="session")
@@ -32,6 +38,6 @@ def data(directory):
         "legend": extract.extract_legend(directory),
         "items": extract.extract_items(directory),
         "enhancers": I.Items(directory).enhancers(),
-        "transports": I.Items(directory).transports(),
+        "transports": I.Items(directory).transport_pages(),
         "map_pages": extract.MAP_PAGES,
     }

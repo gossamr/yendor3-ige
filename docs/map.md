@@ -259,36 +259,46 @@ The offsets are from the section's own start. It holds 2,597 records in six kind
 | `0x2000` door | 139 | the destination record below, 1-based |
 | `0x1000` person | 139 | the NPC's own index in the table at `DS:0x0EC8`, not 1-based, and records 0 and 140 stand nowhere |
 | `0x0800` monster | 1,862 | a spawn id. Section 30 names the monster, and that id's bit in save section 5 says whether it is still there ([encounters.md](encounters.md)) |
-| `0x0400` script | 6 | a hand-written handler. The one at image `0x0B704` draws Saxon's ship on Yendor's shore once a flag is set |
+| `0x0400` script | 6 | a hand-written handler. The argument is the script number. Image `0x0B751` says which object the cell draws, and image `0x0B7A8` runs when the party steps on the cell. Four of the six test a quest flag, and five of the six move the party ([quests.md](quests.md)) |
 
 A `STAT = N` legend square is a person: that NPC's `+0x14` is the stat's offset in the character record's maximum block ([saves.md](saves.md)) and `+0x16` is N.
 
 **`DS:0xBA95` is the destination table** the door kind indexes: 139 eighteen-byte records, ending where the flag-gate table at `DS:0xC45B` begins.
 
-    +0x00 uint16  destination x        +0x0A uint16  -> DS:0xCF31
+    +0x00 uint16  destination x        +0x0A uint16  night song -> DS:0xCF31
     +0x02 uint16  destination y        +0x0C uint16  -> DS:0xCF33
     +0x04 uint16  facing               +0x0E uint16  gate mask
     +0x06 uint16  sound                +0x10 uint16  flags, bit 0 -> DS:0xCF3F
-    +0x08 uint16  -> DS:0xCF2F
+    +0x08 uint16  day song -> DS:0xCF2F
 
-Image `0x05512` reads it. It copies x, y and facing into the party's own words, rebuilds the map window and redraws. A record whose `+0x0E` carries either of the top two bits is gated. Image `0x055A3` walks the 22-byte records at `DS:0xC45B` looking for the door's own number, and tests the flag word that one of them points at.
+Image `0x05512` reads it. It copies x, y and facing into the party's own words, rebuilds the map window and redraws. `+0x06` is a sound played on arrival, 1-based into the 141 of section 15, and 0 on 65 of the 139 records; the two song words are 0 on every record ([audio.md](audio.md)). A record whose `+0x0E` carries either of the top two bits is gated. Image `0x055A3` walks the 22-byte records at `DS:0xC45B` looking for the door's own number, and tests the flag word that one of them points at.
 
 **The gate table is 35 records of 22 bytes**, ending at a word of `0xFFFF`, and image `0x1DB02` walks it the same way for a traveling item ([items.md](items.md)).
 
-    +0x00 uint16  the destination this gates, 1-based
-    +0x02 uint16  the address of the flag word to test
-    +0x04 uint16  the bit to test in it
-    +0x06 uint16  26 where a password follows, 0 otherwise
-    +0x08 uint16  an item id the party must carry, 0 for none
+    +0x00 uint16  destination, 1-based
+    +0x02 uint16  test flag word address
+    +0x04 uint16  test bit @ address
+    +0x06 uint16  password prompt, 0 where there is none
+    +0x08 uint16  item id required to open, 0 for none
     +0x0A 12 chars  the password, space padded
 
-The flag words are the thirteen at `DS:0xCFB1` to `DS:0xCFC9`, which are header offsets 212 to 236 of the roster ([saves.md](saves.md)). 13 of the 35 carry a password: NOBLEMAN, GAUNTLET, COMPASSION, PATRIARCH, PARCHMENT, RUSE, GEMSTONE, CALANTHA, ALLIANCE, TIMBER, SOLITAIRE, DELIA and DRAGONSKIN. One carries an item, destination 58 wanting the JEWELED PORTAL KEY, item 374, which is the portal the game's own walkthrough says a jeweled key opens. The other 21 are the flag alone. What the 26 at `+0x06` names is **undecoded**.
+The flag words a gate can name are thirteen of the fourteen the resolver walks, `DS:0xCFB1` to `DS:0xCFC9`, which are header offsets 212 to 236 of the roster ([saves.md](saves.md)). No gate names the first. The 35 pointer-and-bit pairs resolve to flag numbers 19 to 218, and [quests.md](quests.md) says what each one is.
+
+**A gate is opened once and stays open.** Both the password and the key write the flag the door tests, so the door never asks a second time.
+
+- **13 carry a password**: NOBLEMAN, GAUNTLET, COMPASSION, PATRIARCH, PARCHMENT, RUSE, GEMSTONE, CALANTHA, ALLIANCE, TIMBER, SOLITAIRE, DELIA and DRAGONSKIN. `+0x06` holds 26 on all thirteen, and 26 is a **prompt number**. Image `0x058F0` indexes the pointer table at `DS:0xE265` 1-based, and prompt 26 reads "WHAT IS THE PASSWORD". Image `0x05644` compares the answer against the twelve characters at `+0x0A` and stops at the first space. Image `0x05653` sets the flag on a match.
+- **One carries an item.** Destination 58 names item 374, the JEWELED PORTAL KEY, and the game's own walkthrough calls that door the portal a jeweled key opens. The party uses the key rather than carrying it. Image `0x19763` asks which cell, reads that cell's destination, compares `+0x08` against the item in hand at `0x197CA`, and sets the flag at `0x197CF`.
+- **The other 21 test the flag alone**, and nothing at the door opens one of them. Image `0x05672` prints "YOU CANNOT ENTER HERE RIGHT NOW" and refuses.
+
+The destination record's own `+0x0E` picks the branch. Bit `0x8000` asks for the password, and bit `0x4000` gives the fixed refusal. Image `0x055A3` answers the door handler with 1 where the flag was already set, 2 where the party has just opened the gate, and 0 where it refuses. Image `0x05512` opens the door on any answer of 1 or more.
 
 A door records no source, and its destination is a pair of world coordinates rather than a slot number or an `(area, level)` pair.
 
 [tools/links.py](../tools/links.py) reads the door destinations at `DS:0xBA95`. Nothing reads the pad table at `DS:0xB71F`.
 
 **`DS:0xB71F`** is a second, smaller table, nineteen 20-byte records keyed by a cell's *tile* rather than its position: matched on the terrain id when `+2` bit 15 is set and on the object id otherwise (image `0x0AE45`). A record with `+2` bit 14 teleports, taking x, y and facing from `+4`, `+6` and `+8`. These are the pads inside Acoknight's Cave, the Way of the Order and Vishan's Stronghold.
+
+Image `0x0AC45` writes the record's remaining fields the way image `0x05512` writes a door's: `+0x0A` the environment into `DS:0xCEF9`, `+0x0C` into `DS:0xCF33`, `+0x0E` a sound played on arrival, and `+0x10` and `+0x12` the day and night songs into `DS:0xCF2F` and `DS:0xCF31`. The sound is 43 on all thirteen pads that teleport and 0 on the six that only refuse a rest, and both song words are 0 on all nineteen ([audio.md](audio.md)).
 
 The six records without bit 14 teleport nobody, and they are not dead entries: the rest routine calls the same matcher without the teleport test, so **standing on any of the nineteen refuses a rest** ([encounters.md](encounters.md)).
 

@@ -1359,7 +1359,7 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         "items": extract_items(d),
         "leveling": extract_leveling(d),
         "enhancers": I.Items(d).enhancers(),
-        "transports": I.Items(d).transports(),
+        "transports": I.Items(d).transport_pages(),
         "propers": [],
         "labels": {
             "effects": L.EFFECTS,

@@ -69,7 +69,7 @@ The first bytes ship holding `PRE-CREATED PARTY`, and the name typed at a save s
 | 180 | gold, packed BCD, four bytes | screens: the F5 purse |
 | 184 | food, the same | screens: the F5 purse |
 | 188 | nuore, the same | screens: the F5 purse |
-| 212–236 | thirteen quest flag words, 208 bits, below | code, `0x1DB19`; measured, across a played save |
+| 210–236 | fourteen quest flag words, 224 bits, below | code, `0x17AFE` and `0x1DB19`; measured, across a played save |
 | 282–305 | the party's own six inventory slots, four bytes each, below | code, `0x0B242`; measured, against a played save |
 | 310 | the sky ramp: 32 colors of three six-bit components | measured; shape: 96 bytes, every component 63 or below |
 | 430 | the next container record to hand out | code, `0x16044`; measured, 3 in every save |
@@ -92,7 +92,7 @@ The item search at image `0x0B242` walks those six **before** it walks any chara
 
 **Nothing binds a slot to a particular item.** The six are a store like every other, and what sits in one is what that player put there, so a save's contents are a habit rather than a rule. What a played save shows is the shape: all six filled with ordinary item ids, and a second word carrying the item's own state the way it does everywhere else. One save has 24 beside a TORCH and 240 beside a LIT TORCH: the minutes each has left to burn ([items.md](items.md)), one mostly spent and one at the full 240 its page prints.
 
-**Thirteen words at 212 to 236 are the quest flags**, 208 bits, `DS:0xCFB1` to `DS:0xCFC9` in the running game. The gate table a door is gated on points straight at one of the thirteen and carries the bit to test ([map.md](map.md)). All thirteen are zero in the `WORLD.DAT` template, and across one played game's six save slots the bits set run 3, 3, 8, 10, 13 and 3 as the party gets further, so the words fill as the game is played. Which bit is which quest is not read.
+**Fourteen words at 210 to 236 are the quest flags**, 224 bits, `DS:0xCFAF` to `DS:0xCFC9` in the running game. Image `0x17AFE` resolves a 1-based flag number against them, high bit first. The roster's own base is `DS:0xCEDD`, which puts the array's first word at header offset 210 and its last at 236. The gate table a door is gated on points at one of the last thirteen and carries the bit to test ([map.md](map.md)), and 383 conversation topics carry a flag number in one field or the other ([shops.md](shops.md)). All fourteen are zero in the `WORLD.DAT` template, and across one played game's six save slots the bits set run 11, 7, 15, 21, 24 and 8 as the party gets further, so the words fill as the game is played. [quests.md](quests.md) says what each of the 224 bits is, what writes it and what reads it.
 
 ### The character record
 
@@ -107,16 +107,32 @@ The item search at image `0x0B242` walks those six **before** it walks any chara
 | 22 | level | screens: F1 |
 | 24 | experience, packed BCD, four bytes | screens: F1 |
 | 28 | conditions, the word the cure prices are read from | code, `0x092B1`; screens: F1 |
+| 30 | how many levels are owed, rewritten on every shop visit | code, `0x065BA`, see [leveling.md](leveling.md) |
 | 32–48 | the nine protection words, in the order the condition bits are listed | code, `0x03875`, see [combat.md](combat.md); screens: F5 |
 | 50–58 | the five seeds the equip dispatch derives the combat words from | code, `0x0649E`, see [combat.md](combat.md) |
 | 60–110 | the live block, 26 words, below | screens: F1, every field |
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
+| 180 | which flights this character owns, one bit each | code, `0x09E6E`, see [shops.md](shops.md) |
+| 202–214 | which spells this character knows, one bit per spell number | code, `0x0CF28`, `0x09CAF`, `0x1DC3E` and `0x14FD9` |
 | 240–252 | the place MARK OR RETURN wrote down: x, y, facing, two words, and the arrival word at `+12` | code, `0x1CA3F` |
+| 268 | one bit per once-per-character service taken | code, `0x17ABC` and `0x08FB2` |
 | 280 | weight carried, in tenths: the sum over everything held | shape, below |
 | 282–313 | the eight panel slots, four bytes each | code, `0x0437E`, see [items.md](items.md) |
 | 314, 318, 322, 326, 330, 334 | missile, container, hand, shield, two rings | code, `0x04237`, see [items.md](items.md) |
 | 338–346 | the worn slots, a word each: head, body, nothing, feet, hands | code, `0x0431D`, see [items.md](items.md) |
 | 348 | equipment flags; bit `0x20` is a two-handed weapon in hand | code, `0x06568` and `0x042D6` |
+
+**Two of those are a conversation's bookkeeping.** Word 180 holds the four transport bits the table at `DS:0x7AF4` carries in its own records, so a flight belongs to a character rather than to the party. The word at 268 is what the fourteen NPCs that raise one stat spend. Each of them holds a bit index of 1 to 14 at its own `+0x1A`, and image `0x08FB2` tests that index against the word before it offers the service ([shops.md](shops.md)).
+
+**The seven words at 202 are the character's spell book.** Each bit stands for one 1-based spell number, spell 1 taking the high bit of the first word, so all 107 spells fit in 202 to 214. Three routines set a bit, and they are the three routes [spells.md](spells.md) already names from the other side.
+
+- Image `0x14FD9` runs at creation. It reads the pair of spell numbers the class starts with, at `DS:0xB89D + 4 x class`.
+- Image `0x09CAF` runs on a training. It reads the four-byte slot that the class's row at `DS:0xB8B5 + 0x50 x class` holds for the level reached.
+- Image `0x1DC3E` runs on learning a scroll.
+
+Image `0x0CF28` builds the cast menu. It walks the spell numbers and lists the ones whose bit is set. Image `0x1DCB7` refuses a scroll the character already knows.
+
+**Three resolvers reach three bit arrays, and their nine wrappers are consecutive in the image.** Image `0x17AFE` takes no base and reaches the party's quest flags at `DS:0xCFAF` ([quests.md](quests.md)). Image `0x17B27` adds `0xCA` to a base in `si` and reaches the spell book. Image `0x17AD4` adds `0x10C` and reaches the word at 268. Each resolver has a clear, a set and a test wrapper, at `0x17A90`/`0x17AAC`/`0x17AC4`, `0x17A9A`/`0x17AB4`/`0x17ACC` and `0x17A86`/`0x17AA4`/`0x17ABC`. Picking the wrong wrapper out of the run puts a field in the wrong record.
 
 **The mark is the caster's own.** The spell record carries the offset rather than the code, at its word 64, and MARK OR RETURN carries 240 ([spells.md](spells.md)). A character who has never cast it holds zeros there, and the description says one spot per character.
 

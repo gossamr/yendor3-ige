@@ -32,11 +32,13 @@ The list below records how far the decode of the game's own file formats has pro
 - [x] Enemy record (every offset except one is named, [docs/monsters.md](docs/monsters.md))
 - [x] Monster encounters (which monster stands on each cell, how many stand on each map, and that a kill is permanent, [docs/encounters.md](docs/encounters.md))
 - [x] Spell record (every row of a clue book page, and which classes may cast, [docs/spells.md](docs/spells.md))
-- [ ] NPCs, conversation, shops (the records, the services and the prices are decoded, what gates a service and what a shop stocks are not, [docs/shops.md](docs/shops.md))
+- [x] NPCs, conversation, shops (the three tables, the menu a conversation walks, the quest flags it reads and writes, the eleven services and every price, [docs/shops.md](docs/shops.md))
 - [x] Combat (the resolver, damage, resistance and rewards, [docs/combat.md](docs/combat.md))
 - [x] Save file (the seven sections, the seek that addresses them, the header's position and clock, and the seen grid, [docs/saves.md](docs/saves.md))
 - [x] Map transitions (the cell event table, and the destination of each door, [docs/map.md](docs/map.md))
 - [x] First-person view (the 51 cells it shows, where each one lands on screen, and the artwork it draws them from, [docs/view.md](docs/view.md))
+
+Every format above is read, and single fields inside some of them are not. What is left is one word of the NPC record, two of the armor and weapon properties entries, a dozen offsets of the spell record, a handful of the save file's header words, and the code that spends a flight once a stable has sold one. Each is named where it belongs, under the document that covers the record it sits in.
 
 ## Running it locally
 

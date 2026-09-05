@@ -263,7 +263,7 @@ Twelve bytes per entry at `DS:0x96da`:
 
 | Offset | Field |
 |---|---|
-| `+0` | sound |
+| `+0` | sound, 1-based into the 141 of section 15 ([audio.md](audio.md)) |
 | `+2` | animation |
 | `+4`, `+6` | minimum and maximum damage |
 | `+8` | effect mask |
@@ -299,7 +299,7 @@ Where it does not, `0x0144c` names the slot: bit `0x0800` the missile weapon at 
 
 **PARTY ATTACK is bit `0x1000` of the same word.** It branches at `0x1008` and loops all four characters inside the monster's one turn.
 
-Record 42 is the sound played on a hit, and record 44 is the sound played on a miss. With sound turned off the game delays instead, so the pacing is the same either way.
+Record 42 is the sound played on a hit, and record 44 is the sound played on a miss. With sound turned off the game delays instead, so the pacing is the same either way: the wrappers at image `0x0C6D8` and image `0x1D91F` wait six timer ticks in the sound's place ([audio.md](audio.md)).
 
 ## Conditions
 

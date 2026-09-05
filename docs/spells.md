@@ -15,8 +15,8 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 | `24` | magic points | screens: F3, 98/98 |
 | `26` | nuore | screens: F3, 98/98 |
 | `30` | what the spell singles out: 9 insects, 13 undead, read with 76 bit 8 | screens: F3 AFFECTS, 98/98 |
-| `32` | attack table id, which says what the effect does | code, `0x1c5e1`, and seven further branches pass it the same way |
-| `34` | amount, whose meaning follows the effect | code, `0x1d9f1`, on the restorative branch; shape elsewhere, below |
+| `32` | attack table id on the 19 restoratives, a sound index on the other 88 | code, `0x1c5e1` and seven further branches for the id; `0x1D2E9` and five siblings for the sound, below |
+| `34` | amount on the 19 restoratives, a sound index on the other 88 | code, `0x1d9f1` on the restorative branch; `0x1CCF5` and five siblings for the sound, below |
 | `46` | damage | screens: the prose quotes it on 64 of 65 |
 | `52` | what a condition it leaves takes off a monster a turn | code, `0x12863` |
 | `66` | how many turns that condition stands | code, `0x12863` |
@@ -25,6 +25,8 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 | `72` | scope, what the spell acts on, and how far it reaches | screens: F3 AFFECTS and WHEN, 98/98 |
 | `74` | element, whose top six bits are the conditions it leaves | screens: the prose, bit by bit; code, `0x1D649` for the six; four bits **undecoded**, below |
 | `76` | blow word | screens: F3 AFFECTS, bits 1, 2 and 8, 98/98; code, `0x1D72F` for the upper bits and `0x1c5a4` for bit 0, which no page shows, below |
+
+**Words 32, 34 and 40 each do two jobs, split by family.** The 19 records whose word 72 carries bit 15 or bit 14 are the restoratives, and on those the readings below hold: 32 is attack id 18 on every one, 34 is an amount of 0 to 9,999, and 40 is a condition mask. On the other 88 the effect branches hand 32 and 34 to the sound routine at image `0x1D91F`, and one branch hands 40. Every value of 32 and of 34 on those 88 falls inside 1 to 141, and so does every value of 40 but 208, 219 and 225. [audio.md](audio.md) lists the branch each field is read on.
 
 **MP and nuore** are exact on all 98 spells the clue book lists, against the game's own F3 SPELL INFORMATION screen.
 

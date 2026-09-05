@@ -7,6 +7,8 @@
 - **Master table, `REGISTER.EXE:0x2CF37`**, 36 consecutive little-endian dwords, each a byte offset into `WORLD.DAT`. Consecutive entries bound the 35 sections. The last entry equals the length of the file, so it also serves as an end marker. Entries 5 and 6 hold the same offset, which makes section 5 empty.
 - **Restoration table, `REGISTER.EXE:0x2D4AF`**, five offsets covering the clue book's own corpora. Its last entry has no successor, so the upper bound of the spell descriptions comes from the next master table offset instead.
 
+Four more tables follow the master table, running from `0x2CFC7` to `0x2D3A3` with no gap: the offsets and lengths of the 24 songs in section 14 and of the 141 sounds in section 15 ([audio.md](audio.md)).
+
 The map grid sits **before** section 0. Seven areas of 76,800 bytes fill `0x000000` to `0x083400`, and the first section begins exactly where they end.
 
 ## The sections that are decoded
@@ -16,11 +18,14 @@ The map grid sits **before** section 0. Seven areas of 76,800 bytes fill `0x0000
 | 0 | `0x0083400` | 840 | the map registry, 140 × 6 ([map.md](map.md)) |
 | 1 | `0x0083748` | 760 | map names, 38 × 20 ([map.md](map.md)) |
 | 2 | `0x0083a40` | 912 | area names, 12 + 12 |
+| 3 | `0x0083dd0` | 280 | the song each map slot plays, 140 x 2 ([audio.md](audio.md)) |
 | 4 | `0x0083ee8` | 36,598 | item names and records ([items.md](items.md)) |
 | 10 | `0x008f00a` | 26,000 | loot bundles, 1,000 x 26 ([map.md](map.md)) |
 | 11 | `0x009559a` | 1,600 | cell locks in the first 284 bytes, 71 x 4 ([map.md](map.md)) |
 | 12 | `0x0095bda` | 5,376 | seven 768-byte VGA palettes ([map.md](map.md)) |
-| 13–15 | `0x00970da` | | CT-VOICE driver, CMF music, VOC audio |
+| 13 | `0x00970da` | 2,493 | Creative's CT-VOICE driver ([audio.md](audio.md)) |
+| 14 | `0x0097a97` | 144,419 | 24 CMF songs ([audio.md](audio.md)) |
+| 15 | `0x00baeba` | 3,174,774 | 141 VOC sounds ([audio.md](audio.md)) |
 | 16 | `0x03c2030` | 6,864 | in-game books and lore |
 | 21 | `0x03d8eb9` | 5,640 | NPC records, 141 × 40 ([shops.md](shops.md)) |
 | 22–23 | `0x03da4c1` | 64,380 | conversation topics, 1,073 × 60 ([shops.md](shops.md)) |

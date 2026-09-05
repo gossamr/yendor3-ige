@@ -150,12 +150,24 @@ ENHANCER_KINDS = ("SCROLLS", "PARCHMENTS", "WANDS", "RODS", "GEMS", "STONES")
 # word; `0x07937` walks entries 0, 1 and 3, skipping the FLYING RUG.
 TRANSPORT_TABLE = 0x7AF4
 TRANSPORT_RECORD = 26
+TRANSPORT_COUNT = 4
 TRANSPORT_NAME = 0
-TRANSPORT_VALUE = 0x0E   # packed BCD, four bytes
+TRANSPORT_VALUE = 0x0E   # packed BCD, four bytes, what a stable charges
+TRANSPORT_PAID = 0x12    # the same shape, what a stable pays: half of it
 TRANSPORT_USES = 0x16
 TRANSPORT_WHEN = 0x18
 TRANSPORT_ANYTIME = 0x0002
+# The word at 0x18 also carries the flight's own bit, in its top nibble, which
+# is what a character record's word 180 records ownership in and what a SELL
+# topic names at its `+0x14` (docs/shops.md).
+TRANSPORT_BIT = 0xF000
 TRANSPORT_PAGE = (0, 1, 3)
+# What the page prints, which is what `transports` keeps. The other two are a
+# stable's own and go out through `flights` instead.
+# The page's own four column names, which data/restoration.json carries and
+# the panel reads, against the field each comes from.
+PAGE_FIELDS = {"name": "name", "value": "chargedPrice", "uses": "usesAllowed",
+               "when": "whenFlyable"}
 
 # The potion lines are the one part of an F5 page that is neither in WORLD.DAT
 # nor in a table: `0x07429` switches on the item id and prints immediates held
@@ -489,18 +501,38 @@ class Items:
             out.append({"kind": kind, "amount": digit, "raises": raises})
         return out
 
-    def transports(self) -> list[dict]:
-        """The TRANSPORTATIONS page: the book prints three of the four."""
+    def transport_pages(self) -> list[dict]:
+        """The TRANSPORTATIONS page: the book prints three of the four.
+
+        These are the rows the page has, and nothing else: `0x0797E` reads a
+        name, a BCD value, a use count and a flag word, and `0x07937` walks
+        entries 0, 1 and 3, skipping the FLYING RUG.
+        """
+        return [{page: one[field] for page, field in PAGE_FIELDS.items()}
+                for k, one in enumerate(self.flight_records()) if k in TRANSPORT_PAGE]
+
+    def flight_records(self) -> list[dict]:
+        """All four records, with the two fields a stable reads and the page
+        does not.
+
+        Image `0x19338` prices a purchase off `+0x0E` and image `0x0A03F`
+        prices a sale off `+0x12`, which is half of it on all four. The top
+        nibble of `+0x18` is the flight's own bit, which is what a character
+        record's word 180 records ownership in and what a stable's topic names
+        at its `+0x14` ([shops.md](../docs/shops.md)).
+        """
         out = []
-        for k in TRANSPORT_PAGE:
+        for k in range(TRANSPORT_COUNT):
             rec = _ds(self.exe, TRANSPORT_TABLE + k * TRANSPORT_RECORD,
                       TRANSPORT_RECORD)
             out.append({
                 "name": rec[TRANSPORT_NAME:].split(b"\x00")[0].decode("latin1").strip(),
-                "value": bcd(rec, TRANSPORT_VALUE, 4),
-                "uses": _u16(rec, TRANSPORT_USES),
-                "when": ("ANYTIME" if _u16(rec, TRANSPORT_WHEN) & TRANSPORT_ANYTIME
-                         else "BETWEEN 7P.M. AND 7A.M."),
+                "chargedPrice": bcd(rec, TRANSPORT_VALUE, 4),
+                "paidBack": bcd(rec, TRANSPORT_PAID, 4),
+                "ownedBit": _u16(rec, TRANSPORT_WHEN) & TRANSPORT_BIT,
+                "usesAllowed": _u16(rec, TRANSPORT_USES),
+                "whenFlyable": ("ANYTIME" if _u16(rec, TRANSPORT_WHEN) & TRANSPORT_ANYTIME
+                                else "BETWEEN 7P.M. AND 7A.M."),
             })
         return out
 
@@ -645,5 +677,5 @@ if __name__ == "__main__":
         article = "an" if rule["raises"][0] in "AEIOU" else "a"
         print(f"  {rule['kind']:<12} +{rule['amount']} to {article} {rule['raises'].lower()}")
     print()
-    for t in items.transports():
+    for t in items.transport_pages():
         print(f"  {t['name']:<14} {t['value']:>6,}  {t['uses']} uses  {t['when']}")
