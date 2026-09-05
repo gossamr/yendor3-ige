@@ -523,10 +523,12 @@ COMBAT_FIELDS = ("health", "accuracy", "dexterity", "absorption", "damage",
 # use cap a group at one, two or three (image 0x12B9C).
 ENEMY_GROUP_SHIFT = 13
 # The rest of word 96 that a blow reads: bit 12 loops the attack over the whole
-# party, and bits 11 and 10 name what a break takes, the missile weapon or the
-# hand weapon, with neither meaning the shield (image 0x0144C).
+# party, and bits 11, 10 and 9 are what sends a special attack down the break
+# branch at all. Image 0x01328 tests the three together, and image 0x0144C then
+# picks the slot: bit 11 the missile weapon, bit 10 the hand weapon, and bit 9
+# alone the shield, which is why the one monster carrying a break carries 9.
 ENEMY_PARTY_ATTACK = 0x1000
-ENEMY_BREAKS = 0x0C00
+ENEMY_BREAKS = 0x0E00
 
 # Word 98's bits 9 to 12, read as five tiers at image 0x129F8. The word does
 # two jobs at that one reading: it is how often a monster at range shoots
@@ -593,8 +595,9 @@ def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
             # decide how many of the monster can engage at once.
             "combat": {k: e[k] for k in COMBAT_FIELDS},
             "group": w96 >> ENEMY_GROUP_SHIFT & 7,
-            # The rest of word 96 a blow reads: which piece a break takes, and
-            # whether the attack reaches the whole party (docs/combat.md).
+            # The rest of word 96 a blow reads: whether a special attack
+            # breaks a piece and which one it takes, and whether the attack
+            # reaches the whole party (docs/combat.md).
             "breaks": w96 & ENEMY_BREAKS,
             "party_attack": bool(w96 & ENEMY_PARTY_ATTACK),
             # What a cast reads and a swing does not: the family a

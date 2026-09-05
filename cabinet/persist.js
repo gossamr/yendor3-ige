@@ -20,6 +20,11 @@ const KEY = "files";
 // restored as a file. See roster.js for why WORLD.DAT is the only place a
 // created character can live.
 const ROSTER_KEY = "roster";
+// Each save file's timestamp, by path. The emulated filesystem has no clock
+// the game can set, so a save file carries no date of its own: this is when
+// this cabinet last wrote each one, which is what lets an export say how old
+// each save is rather than only when the export was taken.
+const SAVE_TIMES_KEY = "saveTimes";
 // The panel's tables, decoded from the player's own copy. Hosted there is no
 // data/ on the server, so this is the only place they exist, and producing
 // them is about five seconds of Python, which is worth not repeating on every
@@ -193,6 +198,28 @@ export async function saveDecoded(key, { restoration, worldMap }, decoder = null
 
 export async function clearDecoded() {
   await tx("readwrite", (s) => s.delete(DECODED_KEY));
+}
+
+/** Each stored file's timestamp, by path, in epoch milliseconds. */
+export async function saveTimes() {
+  try {
+    return (await tx("readonly", (s) => s.get(SAVE_TIMES_KEY))) ?? {};
+  } catch (err) {
+    console.warn("could not read the save times:", err.message);
+    return {};
+  }
+}
+
+/** Stamp these paths with the time, leaving every other file's alone. */
+async function stampSaveTimes(paths, at = Date.now()) {
+  if (!paths.length) return;
+  try {
+    const times = (await tx("readonly", (s) => s.get(SAVE_TIMES_KEY))) ?? {};
+    for (const path of paths) times[path] = at;
+    await tx("readwrite", (s) => s.put(times, SAVE_TIMES_KEY));
+  } catch (err) {
+    console.warn("could not write the save times:", err.message);
+  }
 }
 
 /** The kept-character roster, as 5,000 bytes, or null if none was ever kept. */
@@ -388,6 +415,7 @@ export async function putFile(path, contents) {
   const record = (await tx("readonly", (s) => s.get(KEY))) ?? {};
   record[path] = contents;
   await tx("readwrite", (s) => s.put(record, KEY));
+  await stampSaveTimes([path]);
 }
 
 /** The changed files that are worth writing to storage. */
@@ -422,6 +450,10 @@ export async function saveNow(ci, originals) {
   let bytes = 0;
   for (const f of files) { record[f.path] = f.contents; bytes += f.contents.length; }
   await tx("readwrite", (s) => s.put(record, KEY));
+  // A save file has no date of its own, so its timestamp is kept beside it.
+  // An export carries these, which is how a reader tells one save from another
+  // by age rather than by name alone.
+  await stampSaveTimes(files.map((f) => f.path));
   return { count: files.length, bytes, changed };
 }
 
@@ -494,11 +526,17 @@ const FORMATS = [FORMAT, "yendorian-tales-3-shim"];
 export async function exportBundle() {
   const files = await loadFiles();
   const roster = await loadRoster();
+  const times = await saveTimes();
   return {
     format: FORMAT,
     version: EXPORT_VERSION,
     saved: new Date().toISOString(),
     files: Object.fromEntries(files.map((f) => [f.path, b64(f.contents)])),
+    // Each file's timestamp, under the same path the file goes under. A
+    // reader that does not know the key ignores it; one that does can say how
+    // old each save is.
+    saveTimes: Object.fromEntries(
+      files.filter((f) => times[f.path]).map((f) => [f.path, times[f.path]])),
     roster: roster ? b64(roster) : null,
   };
 }
@@ -516,6 +554,15 @@ export async function importBundle(bundle) {
     record[path] = unb64(text);
   }
   if (Object.keys(record).length) await tx("readwrite", (s) => s.put(record, KEY));
+  // The timestamps come back with the files. A bundle from a build that kept
+  // none has no key here, and those files are dated from the bundle itself.
+  const stamped = bundle.saveTimes ?? {};
+  const taken = Date.parse(bundle.saved) || Date.now();
+  const times = (await tx("readonly", (s) => s.get(SAVE_TIMES_KEY))) ?? {};
+  for (const path of Object.keys(record)) times[path] = stamped[path] ?? taken;
+  if (Object.keys(record).length) {
+    await tx("readwrite", (s) => s.put(times, SAVE_TIMES_KEY));
+  }
   if (bundle.roster) await saveRoster(unb64(bundle.roster));
   return { files: Object.keys(record).length, roster: Boolean(bundle.roster) };
 }

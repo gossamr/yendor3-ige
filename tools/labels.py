@@ -128,6 +128,50 @@ RESTORATION_MENU = [
     "F6 COMPLETE WALK THROUGH OF THE GAME",
 ]
 
+# The words the three screens in front of the world are built out of, at their
+# own DS offsets rather than in the Restoration run: the game draws these with
+# its own text routine as each screen is put up (docs/creation.md). The five
+# words the first menu offers are not here, because that screen is a picture:
+# they are painted into run 0 picture 2 along with its wall.
+CREATION_LABELS = {
+    "screen": 0x7C94,           # CHARACTER CREATION
+    "pick_class": 0x7CA7,
+    "quit": 0x7D17,             # QUIT "CREATE"
+    "male": 0x7D25,
+    "female": 0x7D2C,
+    "pick_portrait": 0x7D33,
+    "select": 0x7D43,           # SELECT AN
+    "option": 0x7D4D,
+    "class": 0x7D54,
+    "take_four": 0x7D5A,        # TAKE UP TO FOUR
+    "items": 0x7D6A,
+    "name_character": 0x7D70,
+    "enter_name": 0x7D7F,
+    "keep_character": 0x7D8E,
+    "preview": 0x7D9D,          # CHARACTER PREVIEW
+    "delete": 0x7DAF,
+    "return": 0x7DB6,
+    "sure": 0x7DBD,             # ARE YOU SURE?
+    "yes_delete": 0x7DCB,
+    "no_keep": 0x7DD7,
+    "portrait": 0x8863,
+    "roll_attributes": 0x8899,
+    "pick_items": 0x88A9,
+    # The disk panel's own, which is where a party is written down and read
+    # back: the game reaches it from inside the world rather than from the
+    # menu, but the words are the same ones.
+    "save": 0x7C20,
+    "load": 0x7C25,
+    "new_game": 0x8712,
+}
+
+
+def creation_labels(exe: bytes) -> dict[str, str]:
+    """The creation screens' own words, by the name this module gives each."""
+    return {name: text(exe[DGROUP + at:DGROUP + at + 32])
+            for name, at in CREATION_LABELS.items()}
+
+
 # Every string above must actually be present in the EXE; verify() proves it.
 _ALL = (EFFECTS + MONSTER_STATS + SPECIAL_ATTACKS + ITEM_CATEGORIES
         + CONTAINERS + SKILL_RATINGS + EFFECT_VALUES + SPELL_WHEN

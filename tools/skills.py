@@ -90,6 +90,42 @@ FLAT: dict[str, dict[int, int]] = {
 
 HEALTH_PCT_OF_STAMINA = 25  # at creation; the level-up uses 30 instead
 
+# --- The rest of what creation hands out -----------------------------------
+#
+# The roll at image 0x14E38 is `rand(15) + 45` per attribute, written into the
+# live column and the maximum column both. Stamina is rolled last because
+# health is taken from it two instructions later. docs/creation.md reads the
+# screens these numbers sit behind.
+ROLL_LEAST = 45
+ROLL_SPAN = 15
+ROLL_ORDER = ("strength", "dexterity", "intelligence", "wisdom", "charisma",
+              "stamina")
+CAPACITY_PER_STRENGTH = 10    # image 0x14E49
+
+# The eight items a new character chooses from, in the order the list draws
+# them, and how many of them one takes. Image 0x0F040 writes the eight into
+# DS:0x0F18 at startup and nothing changes them, so every class is offered the
+# same: SLING, KNIFE, CLUB, BO STICK, CLOTHES, ROBES, BAG, MAGIC GRAPES.
+STARTING_ITEMS = (8, 14, 18, 22, 4, 25, 28, 31)
+STARTING_ITEM_LIMIT = 4
+
+# The portrait gallery: nine cells, and the picture of run 7 a cell draws is
+# `PORTRAIT_FIRST + PORTRAIT_STRIDE * cell + sex - 1`, so the eighteen
+# portraits are the two galleries interleaved (image 0x145E3).
+PORTRAIT_FIRST = 28
+PORTRAIT_CELLS = 9
+PORTRAIT_STRIDE = 2
+MALE, FEMALE = 1, 2
+
+NAME_LIMIT = 13               # image 0x1453F passes it to the text input
+PARTY_LIMIT = 4               # the four handles at DS:0xD0C9 are the whole of it
+ROSTER_CHARACTERS = 9         # roster slots 1 to 9; slot 0 is the party header
+
+
+def portrait_picture(cell: int, sex: int) -> int:
+    """The run 7 picture a gallery cell draws for one sex."""
+    return PORTRAIT_FIRST + PORTRAIT_STRIDE * cell + sex - MALE
+
 
 def derived_skill(name: str, class_code: int, attrs: dict[str, int]) -> int:
     if class_code in FLAT.get(name, {}):

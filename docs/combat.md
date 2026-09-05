@@ -279,11 +279,23 @@ The effect mask names what lands. Nine condition bits share their layout with th
 |---|---|---|---|---|---|---|
 | | health and magic | health | magic | steal food | steal nuore | steal gold |
 
-The flags at `+0xa` decide how the number is arrived at. `0x4000` takes `+4` flat, and `0x2000` takes `+4` multiplied by the **character's level**. With neither flag set, the entry rolls `+4..+6` and then multiplies by the character's level. `0x1000` marks the entry as needing the condition save. `0x0600` and `0x0180` route to two other handlers.
+The flags at `+0xa` decide how the number is arrived at. `0x4000` takes `+4` flat, and `0x2000` takes `+4` multiplied by the **character's level**. With neither flag set, the entry rolls `+4..+6` and then multiplies by the character's level. `0x1000` marks the entry as needing the condition save. `0x0600` sends the applier to the equipment handler below and `0x0180` to the gain and lose one.
 
 **A steal takes a fixed sum.** Record 92 is a 4-byte packed BCD amount, and only the three monsters carrying attack id 15 have one. THIEF takes 100, and ELF ASSASSIN and FROST DWARF TOWER take 1,000.
 
-**BREAK and DESTROY name their target in record word 96.** `0x0144c` picks bit `0x0800` the missile weapon at `+0x13a`, bit `0x0400` the hand weapon at `+0x142`, and neither the shield at `+0x146`.
+### BREAK SHIELD
+
+**Word 96 bits 11, 10 and 9 are what send a special attack down the break branch.** `0x01328` tests the three together and `0x013ff` is the branch. One monster in the game carries any of them: CROCODILE carries bit 9, and its special attack is entry 22, whose flags are `0x0400`.
+
+The branch makes the same opposed save the other specials make, with **half the character's survival skill** as the resistance: `0x01415` shifts the word at `+0x58` right once before the call. Where the save holds, `0x013e3` drops back to the monster's ordinary attack id and swings with that instead.
+
+Where it does not, `0x0144c` names the slot: bit `0x0800` the missile weapon at `+0x13a`, bit `0x0400` the hand weapon at `+0x142`, and neither of those the shield at `+0x146`. It reads the id in the slot, asks `0x05fad` what that piece breaks into, and fills a readout with the slot, the piece and the broken form. **A landed break is the whole of the monster's turn**: nothing goes through the resolver, so it takes the piece and no health.
+
+`0x0368c` is what then changes the slot, the handler the applier reaches on flags `0x0600`. Flag `0x0200` is a DESTROY and empties the slot, subtracting the piece's own weight from the total at `+0x118`; otherwise the broken form goes in the slot and **the id that was there goes into the slot's second word**, which is where a repair reads back what to give ([items.md](items.md)). A broken shield still absorbs, at its own record's number.
+
+`0x05fad` answers 0 for an empty slot and for a piece that names no broken form, and the branch then writes a zero over the readout's slot offset rather than dropping the readout, so the applier still runs with `[si+0xe]` at 0. That makes the slot the character record's own base, and what it writes lands on the first two words of the name.
+
+**The other three break entries are nobody's special attack.** Entry 0 is what a worn-out piece breaks through, and a record holding 0 at offset 60 has no special attack at all, which is what makes entry 0 unreachable as one. Entries 1 and 43 are a trap's, reached from `0x0acf9` ([map.md](map.md)).
 
 **PARTY ATTACK is bit `0x1000` of the same word.** It branches at `0x1008` and loops all four characters inside the monster's one turn.
 

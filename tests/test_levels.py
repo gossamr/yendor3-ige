@@ -137,6 +137,70 @@ def test_creation_writes_both_stat_columns_identically():
     assert all(w["columns_identical"] for w in skills.shipped_party())
 
 
+def test_the_creation_roll_window_holds_the_shipped_party():
+    """45 to 60 inclusive, and the four the game shipped were rolled by it."""
+    import skills
+
+    assert skills.ROLL_LEAST == 45 and skills.ROLL_SPAN == 15
+    for who in skills.shipped_party():
+        for name, value in who["attributes"].items():
+            top = skills.ROLL_LEAST + skills.ROLL_SPAN
+            assert skills.ROLL_LEAST <= value <= top, (who["name"], name, value)
+    assert set(skills.ROLL_ORDER) == set(skills.ATTRS)
+    assert skills.ROLL_ORDER[-1] == "stamina"
+
+
+def test_the_creation_screens_say_the_games_own_words():
+    """Every label on those screens is a string in the data segment, so the
+    engine can say what the game says rather than making words up."""
+    import labels as L
+
+    words = L.creation_labels(L.load("game"))
+    assert words["screen"] == "CHARACTER CREATION"
+    assert words["pick_class"] == "PICK A CLASS"
+    assert words["keep_character"] == "KEEP CHARACTER"
+    assert words["take_four"] == "TAKE UP TO FOUR"
+    assert words["roll_attributes"] == "ROLL ATTRIBUTES"
+    assert words["quit"] == 'QUIT "CREATE"'
+    # Nothing is blank, and nothing has run into the string after it.
+    assert all(w and w.isupper() for w in words.values())
+
+
+def test_the_portrait_gallery_is_two_interleaved_nines():
+    """Eighteen pictures at 28 to 45, even for male and odd for female, and
+    every shipped character holds one of them."""
+    import skills
+
+    male = [skills.portrait_picture(c, skills.MALE) for c in range(skills.PORTRAIT_CELLS)]
+    female = [skills.portrait_picture(c, skills.FEMALE) for c in range(skills.PORTRAIT_CELLS)]
+    assert male == list(range(28, 46, 2))
+    assert female == list(range(29, 46, 2))
+    shipped = [42, 35, 34, 29]          # SQUIRE, DIANA, YENDOR, JOSEPHINE
+    assert all(n in male + female for n in shipped)
+
+
+def test_the_shipped_party_holds_four_of_the_eight_starting_items():
+    """The offer is eight items and a character takes up to four, which is
+    what the four the game shipped hold."""
+    import skills
+
+    assert len(skills.STARTING_ITEMS) == 8
+    assert skills.STARTING_ITEM_LIMIT == 4
+    offered = set(skills.STARTING_ITEMS)
+    # The template's own four, read out of WORLD.DAT section 32 the way
+    # skills.shipped_party() reads the stat columns. The run of slot words
+    # covers the eight panel places and the eleven equipment words.
+    blob = Path("game/WORLD.DAT").read_bytes()[
+        skills.PARTY_OFFSET:skills.PARTY_OFFSET + skills.PARTY_SIZE]
+    for slot in skills.PARTY_SLOTS:
+        rec = blob[slot:slot + L.REC_SIZE]
+        held = {int.from_bytes(rec[at:at + 2], "little")
+                for at in range(0x11a, 0x160, 4)}
+        held.discard(0)
+        assert held and held <= offered, (rec[:12], held)
+        assert len(held) <= skills.STARTING_ITEM_LIMIT
+
+
 def test_blends_are_whole_percentages_of_attributes():
     import skills
 

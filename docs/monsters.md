@@ -143,13 +143,15 @@ Rows three and five are the pair. The same resistance word halves the enchanted 
 | 4 | 23 | the walk cycle runs up and back down | code, `0x153B1` |
 | 5 | 48 | the walk cycle runs up and snaps back | code, `0x153A8` |
 | 6 | 0 | the monster does not animate | code, `0x15398` |
-| 9 | 1 | BREAK SHIELD | screens: F2 attack rows, 30/30 |
-| 10 | | a DESTROY names the hand weapon at character `+0x142` | code, `0x01457` |
-| 11 | | a DESTROY names the missile weapon at `+0x13A` | code, `0x0144C` |
+| 9 | 1 | BREAK SHIELD: none of the three slot bits, which is the shield at character `+0x146` | screens: F2 attack rows, 30/30; code, `0x0145F` |
+| 10 | 0 | the break names the hand weapon at character `+0x142` instead | code, `0x01457` |
+| 11 | 0 | the break names the missile weapon at `+0x13A` instead | code, `0x0144C` |
 | 12 | 14 | PARTY ATTACK: the monster swings at all four characters in its turn | screens: F2 attack rows, 30/30 |
 | 13, 14, 15 | | how many of this monster can engage at once | code, `0x12B9C`, below |
 
-Every monster the game lists carries exactly one of bits 4 and 5. Bits 10 and 11 are read only when the attack is a BREAK or DESTROY, so the monster counts above would not mean anything for them.
+Every monster the game lists carries exactly one of bits 4 and 5.
+
+**The three break bits are one branch and one slot.** Image `0x01328` tests `0x0E00` together, so any of them sends a special attack to the branch that breaks a piece, and image `0x0144C` then reads bits 11 and 10 for a slot and falls through to the shield. CROCODILE is the one record carrying any of them, so the shield is the only piece the party ever loses this way. [combat.md](combat.md) reads the branch.
 
 Six of the 38 monsters carrying bit 2 hold nothing at 64 to 69. Eleven of the twelve carrying bit 1 hold nothing at 70.
 

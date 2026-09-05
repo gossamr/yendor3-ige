@@ -1634,6 +1634,31 @@ def test_the_attack_table_is_the_executables_own(data, directory):
     assert max(ids) < len(table)
 
 
+def test_one_monster_breaks_a_piece_and_it_takes_the_shield(data, directory):
+    """Word 96 bits 11, 10 and 9 are the break branch, and its entry says
+    whether the piece is broken or gone.
+
+    Image 0x01328 tests the three bits together, so any of them sends a special
+    attack to the branch that makes the survival save, and image 0x0144C then
+    reads bits 11 and 10 for a slot and falls through to the shield. CROCODILE
+    carries bit 9 alone, which is that fall-through, and its special attack is
+    entry 22, whose flags are the break the applier at image 0x0368C reads.
+    """
+    import extract as EX
+    table = EX.attack_table(directory.exe)
+    breakers = [e for e in data["enemies"] if e["masks"]["w96"] & EX.ENEMY_BREAKS]
+    assert [e["name"] for e in breakers] == ["CROCODILE"]
+    croc = breakers[0]
+    assert croc["masks"]["w96"] & EX.ENEMY_BREAKS == 0x0200
+    assert croc["attack_id"] == 22
+    assert table[22]["flags"] == 0x0400
+    assert table[1]["flags"] == 0x0200
+    # The other three break entries are nobody's special attack: 0 is what a
+    # worn-out piece breaks through, and a record holding 0 there has no
+    # special attack at all, while 1 and 43 are a trap's own.
+    assert not [e for e in data["enemies"] if e["attack_id"] in (0x01, 0x2b)]
+
+
 def test_the_nine_conditions_are_worded_by_the_game(directory):
     """The strings the monster detail prints, in condition-bit order."""
     import extract as EX

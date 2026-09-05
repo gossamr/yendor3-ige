@@ -49,7 +49,7 @@ NEW GAME rebuilds all seven sections from zeros, at image `0x151E4` to `0x15348`
 
 ## Section 0, the roster
 
-Ten 500-byte slots. Slot 0 is a header, slots 1–5 are the created characters and 6–9 the four the game ships. `WORLD.DAT 0x41D72F`, the `PRE-CREATED PARTY` section, holds the same 5,000 bytes as a template.
+Ten 500-byte slots. Slot 0 is a header, slots 1–5 are the created characters and 6–9 the four the game ships. `WORLD.DAT 0x41D72F`, the `PRE-CREATED PARTY` section, holds the same 5,000 bytes as a template. [creation.md](creation.md) reads the screens that fill a slot and pick the four that walk.
 
 **`CURGAME`'s roster is written but never read.** KEEP CHARACTER writes the 5,000 bytes immediately, and SAVE writes them again. The only reads of `CURGAME` belong to the save routine, and they start at offset 5,000. Every launch truncates `CURGAME` and rewrites all 81,037 bytes, and NEW GAME does the same, both from the `WORLD.DAT` template. A character kept at the menu therefore survives a relaunch only if it is written into that template, which is what [tools/keep_characters.py](../tools/keep_characters.py) and the cabinet's **Keep characters** button do, for slots 1 to 5.
 
