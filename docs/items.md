@@ -78,6 +78,34 @@ Enhancement runs to **+10**, and nine items reach it, among them CROSSBOW, GOLD 
 | weapon, 12 B | `+4` | `+6` |
 | armor, 12 B | `+8` | `+0xa` |
 
+## What using an item does
+
+Image `0x19978` is the dispatch. It takes the item's own properties entry, tests the word at 2 for the scroll and potion families first, and then tests the word at 0:
+
+| Word 0 bit | Items | What it does |
+|---|---|---|
+| `0x04` | 2 | walk the party through the door destination word 4 names |
+| `0x08` | 3 | the PARTY MAP and the two torches |
+| `0x10` | 31 | used on what is in front of the party: the 26 magic scrolls, which word 2 marks `0x2600`, and the LOCKPICK, the JEWELED PORTAL KEY, the ENHANCED LENS and the ORB OF ZAMORA, which carry a word 2 of zero |
+| `0x20` | 1 | the KEY RING, with `0x10` beside it |
+
+Counts are over the 147 records the misc table covers. 25 of those carry a word 0 of zero, 68 carry `0x02`, and the twelve enhancers carry a pair of high bits apiece.
+
+**Two items in the game carry `0x04`**, and both are a way home. Image `0x1DA90` reads word 4 of the entry, looks that number up in the gate table at `DS:0xC45B`, and calls the door handler at image `0x05512` with it where the table does not name it or names it with its flag set. The number is 1-based into the destination table at `DS:0xBA95`, the same way a door's cell event is.
+
+| Item | Word 4 | Where it lands |
+|---|---|---|
+| ATHANEUM KEY, 33 | 2 | (460, 46) facing north, the Athaneum, which is where a new game starts |
+| ANKH OF PORTALS, 84 | 3 | (365, 76) facing west, Thaine Map 10, the Room of Portals |
+
+Neither destination is in the gate table, so neither use is gated. The guard the routine does carry is the weapons of Light: with quest flag 157 set, a party holding any of items 383 to 385 is refused with YOU CAN NOT USE THAT HERE, and a party holding none of them clears the flag and travels. Both uses are refused in hand to hand.
+
+**Evidence is code** at the addresses above, corroborated by the game's own walkthrough, which says to return to Flagell in the Athaneum by using the key and puts the Room of Portals in the northwestern corner of Thaine Map 10. Neither item id appears in a comparison anywhere in the load image, which is why the reading had to come through the properties entry rather than through a handler named for the item.
+
+## The fourteen keys, and which lock each opens
+
+Items 36 to 42 are the CHEST KEYs and items 43 to 49 the DOOR KEYs, in one order of seven metals: brass, bronze, copper, iron, steel, silver, gold. The key bits on a lock word name the metal and not the item, and which of the two items that metal is follows what the lock stands on: a container takes the chest key and a bare lock takes the door key ([map.md](map.md)). The KEY RING, item 50, is what the keyboard's `K` puts up, and the seven rows it draws are the lines at `DS:0x3FE4`, one per metal with a count beside it.
+
 ## What a repair does
 
 A repair puts a broken piece back to exactly the item it was. Two things start one, a shop's own screen ([shops.md](shops.md)) and the party's repairer, and the swap below is what both come down to.

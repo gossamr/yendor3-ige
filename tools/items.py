@@ -87,6 +87,18 @@ MISC_MAGIC = 0x8000     # +4 is magic points, printed as a percentage
 MISC_SCROLL = 0x2600    # +4 is a 1-based spell id
 MISC_DURATION = 0x1000  # the category word's bit, not the entry's
 
+# A misc entry's word 0 says what using the item does. The dispatch is image
+# 0x19978: word 2 picks the scroll and potion families first, and then word 0
+# bit 0x04 sends the use to image 0x1DA90, which walks the party through the
+# door destination word 4 names. Two items in the game carry it.
+PROP_USE = 0            # in a misc entry: what using the item does
+MISC_TRAVEL = 0x0004
+
+# The lit form of a torch, whose page prints no duration because a burning one
+# carries what is left of it in its place instead, and the unlit form it takes
+# its fresh figure from.
+UNLIT_TORCH, LIT_TORCH = 34, 35
+
 SPELL_NAME_LEN = 21
 
 # --- REGISTER.EXE ----------------------------------------------------------
@@ -293,6 +305,48 @@ class Items:
         _bits, offset, size = TABLES[table]
         at = self.pool + offset + _u16(rec, PROPS_PTR)
         return self.world[at:at + size]
+
+    def charge(self, item_id: int) -> int:
+        """How long a fresh one of this burns for, 0 for what does not burn.
+
+        The gate is the record's own category bit `0x1000`, and the figure is
+        the properties entry's word 2 times ten, which is what the item's page
+        prints (image `0x06C14`): TORCH holds 24 and its page says 240 MINUTES.
+        That is the number a place counts down, since the tick at `0x0EB7C`
+        subtracts the clock's own minutes from it.
+
+        **A torch is not read from this once it is in a place.** The place's
+        second word is what is left of that torch, and the tick reaches it only
+        while it is LIT TORCH, so putting one out pauses it where it stands
+        ([items.md](../docs/items.md)). This is the fresh figure and nothing
+        else. LIT TORCH's own page prints zero for the same reason, so a fresh
+        lit one takes the unlit torch's figure.
+        """
+        minutes = int(str(self.page(item_id).get("duration", "0")).split()[0])
+        if not minutes and item_id == LIT_TORCH:
+            return self.charge(UNLIT_TORCH)
+        return minutes
+
+    def travels_to(self, rec: bytes) -> int | None:
+        """The door destination using this item walks the party through.
+
+        Image `0x1DA90`: it loads the item's own properties entry, takes the
+        word at 4, looks that number up in the gate table at `DS:0xC45B`, and
+        calls the door handler at image `0x05512` with it where the table does
+        not name it or names it with its flag set. The number is 1-based into
+        the destination table at `DS:0xBA95`, the same way a door's cell event
+        is ([map.md](../docs/map.md)).
+
+        The ATHANEUM KEY answers 2, which is the Athaneum's own start cell, and
+        the ANKH OF PORTALS answers 3, which is the Room of Portals on Thaine
+        Map 10. No other item in the game carries the bit.
+        """
+        props = self.properties(rec)
+        if props is None or self.table_of(rec) != "misc":
+            return None
+        if not _u16(props, PROP_USE) & MISC_TRAVEL:
+            return None
+        return _u16(props, PROP_PARAM) or None
 
     def scroll_spell(self, rec: bytes) -> str | None:
         """The spell a magic scroll teaches, by name.

@@ -69,6 +69,8 @@ The first bytes ship holding `PRE-CREATED PARTY`, and the name typed at a save s
 | 180 | gold, packed BCD, four bytes | screens: the F5 purse |
 | 184 | food, the same | screens: the F5 purse |
 | 188 | nuore, the same | screens: the F5 purse |
+| 212–236 | thirteen quest flag words, 208 bits, below | code, `0x1DB19`; measured, across a played save |
+| 282–305 | the party's own six inventory slots, four bytes each, below | code, `0x0B242`; measured, against a played save |
 | 310 | the sky ramp: 32 colors of three six-bit components | measured; shape: 96 bytes, every component 63 or below |
 | 430 | the next container record to hand out | code, `0x16044`; measured, 3 in every save |
 | 432 | the head of the free list of container records, 0 for none | code, `0x1600F` and `0x051E1`; measured, 0 in every save |
@@ -83,6 +85,14 @@ The template's own fields state where a new game starts: x 460, y 46, facing nor
 **Gold, food and nuore are party-wide**, and are what the game's F5 panel prints. All three are **packed BCD, most significant byte first**: 3,557 gold reads `00 00 35 57`. It is the encoding [items.md](items.md) records on the item table's BASE VALUE. A new game starts with none of the three.
 
 A step costs the clock 2 or 3 minutes and a rest about 483. The clock wraps at 1,440 and the day at 156 advances with the wrap. The sky ramp is rewritten as the clock moves: blue to white by day, near black at night, with every component 63 or below, as a VGA palette entry requires.
+
+**The party has six inventory slots of its own**, at header offsets 282 to 305, four bytes each in the same (item, state) shape every other slot takes. They are the first six of the eight the character record keeps its panel slots in, which is what the header slot's own 500 bytes leave sitting there.
+
+The item search at image `0x0B242` walks those six **before** it walks any character's pack: given a low and a high item id in `DS:0x53EE` and `DS:0x53F0`, it answers with the id it found in `DS:0x5426` and where in `DS:0x542C` for a party slot or `DS:0x542E` for a character's. `K`, `M` and `T` are that search, for the KEY RING, the PARTY MAP and the HOURGLASS ([items.md](items.md)).
+
+**Nothing binds a slot to a particular item.** The six are a store like every other, and what sits in one is what that player put there, so a save's contents are a habit rather than a rule. What a played save shows is the shape: all six filled with ordinary item ids, and a second word carrying the item's own state the way it does everywhere else. One save has 24 beside a TORCH and 240 beside a LIT TORCH: the minutes each has left to burn ([items.md](items.md)), one mostly spent and one at the full 240 its page prints.
+
+**Thirteen words at 212 to 236 are the quest flags**, 208 bits, `DS:0xCFB1` to `DS:0xCFC9` in the running game. The gate table a door is gated on points straight at one of the thirteen and carries the bit to test ([map.md](map.md)). All thirteen are zero in the `WORLD.DAT` template, and across one played game's six save slots the bits set run 3, 3, 8, 10, 13 and 3 as the party gets further, so the words fill as the game is played. Which bit is which quest is not read.
 
 ### The character record
 
@@ -160,7 +170,9 @@ The cabinet's save editor does the same arithmetic when it puts a container in a
 
 ## Sections 3 and 4, bundles and what has been taken from them
 
-`WORLD.DAT` section 10 is **1,000 records of 26 bytes**, and the low four hundred of them are bundles of loot: eight item ids at words 2 to 9 and a gold amount at word 10. Past about record 400 the section holds something else, text among it.
+`WORLD.DAT` section 10 is **1,000 records of 26 bytes**, and the low four hundred of them are bundles of loot: a lock at word 0, a pick-and-trap number at word 1, eight item ids at words 2 to 9, and three counts at words 10, 11 and 12 for the three items that stack. [map.md](map.md) has the whole record and both lock tables. Past about record 400 the section holds something else, text among it.
+
+**Words 10, 11 and 12 are not one gold amount.** Image `0x02881` walks the eight places, and a place holding item 1, 2 or 3 takes its own second word out of word 10, 11 or 12 in turn, which are GOLD COINS, FOOD and NUORE.
 
 A record is a **bundle** rather than a chest, because a chest is only one of the ways the game hands one over.
 
@@ -182,7 +194,7 @@ The table has **two entry points**, and they index section 3 differently.
 
 Image `0x10BDA` decides which entry an object is recorded through, using a flag in the map object that names it. `[si+2] & 0x8000` takes the first entry and `& 0x4000` takes the second, and the object's number is at `[si+4]` in both cases. Three further bits (`0x1000`, `0x800` and `0x400`) are other kinds of object with no bit array at all. `0x800` is a monster, gated on a section 5 flag tested at image `0x10CC3` ([encounters.md](encounters.md)). Both entries are followed by `test [0x588F], al`, so the bit is read as "this one has already been dealt with".
 
-The second entry has no per-item bits at all, so whatever reaches a bundle that way is recorded by its bank-1 bit alone.
+The second entry has no per-item bits at all, and it reads no bundle either: it takes a four-byte record out of the head of section 11, which is a lock and nothing behind it ([map.md](map.md)). So bank 1 records that a lock has been opened, one bit each over 71 locks, and bank 0 records that a container has been opened, one bit each over 380.
 
 ## Section 5, which monsters are still on the map
 

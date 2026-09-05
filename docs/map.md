@@ -230,6 +230,10 @@ The step at image `0x032E9` happens only when two classifiers both return zero: 
 | `200..299` | blocked | | |
 | `300` and over | clear | | |
 
+**The classifier answers three things, not two.** Image `0x02EEA` writes 2 for a terrain of 0 or 1, 1 for 2 to 99 and 200 to 299, and leaves 0 for the rest; image `0x02F13` writes 3 for an object of 200 to 399. The step at `0x032E9` takes only a pair of zeros, so both refusals stop it.
+
+**Terrain 200 to 207 is a doorway, not a wall.** The eight ids are what a map puts in one, and the step refuses them along with the walls because a door is opened rather than walked onto. **Evidence is shape**: all 281 cells carrying one of the eight are walkable on both sides, against 1,948 of the 8,118 cells carrying terrain 2, the plain wall. 46 of the 281 also carry a lock, which is the cell event that says what holds that door shut; the other 235 carry none.
+
 **Tinting the cells this calls clear draws the floor plan.** The Athaneum then shows its rooms and corridors, the Cave of Fire as the paths with the lava left out, Delia's Island as the island with the sea left out.
 
 **Id 2 is a wall.** 434 of the Athaneum's 960 cells carry it, so a map is not mostly floor, and on a map that is mostly water the commonest id is water.
@@ -250,8 +254,8 @@ The offsets are from the section's own start. It holds 2,597 records in six kind
 
 | Kind | Records | Argument |
 |---|---|---|
-| `0x8000` treasure | 380 | a 26-byte record, gated on a `CURGAME` bit, which is what "already looted" means (image `0x0252E`) |
-| `0x4000` container | 71 | image `0x025CB` |
+| `0x8000` container | 380 | a bundle in section 10, 1-based: the chest or barrel on the cell and what is in it, below (image `0x0252E`) |
+| `0x4000` lock | 71 | a four-byte record at the head of section 11, 1-based: a lock on the cell with nothing behind it, below (image `0x025CB`) |
 | `0x2000` door | 139 | the destination record below, 1-based |
 | `0x1000` person | 139 | the NPC's own index in the table at `DS:0x0EC8`, not 1-based, and records 0 and 140 stand nowhere |
 | `0x0800` monster | 1,862 | a spawn id. Section 30 names the monster, and that id's bit in save section 5 says whether it is still there ([encounters.md](encounters.md)) |
@@ -269,6 +273,17 @@ A `STAT = N` legend square is a person: that NPC's `+0x14` is the stat's offset 
 
 Image `0x05512` reads it. It copies x, y and facing into the party's own words, rebuilds the map window and redraws. A record whose `+0x0E` carries either of the top two bits is gated. Image `0x055A3` walks the 22-byte records at `DS:0xC45B` looking for the door's own number, and tests the flag word that one of them points at.
 
+**The gate table is 35 records of 22 bytes**, ending at a word of `0xFFFF`, and image `0x1DB02` walks it the same way for a traveling item ([items.md](items.md)).
+
+    +0x00 uint16  the destination this gates, 1-based
+    +0x02 uint16  the address of the flag word to test
+    +0x04 uint16  the bit to test in it
+    +0x06 uint16  26 where a password follows, 0 otherwise
+    +0x08 uint16  an item id the party must carry, 0 for none
+    +0x0A 12 chars  the password, space padded
+
+The flag words are the thirteen at `DS:0xCFB1` to `DS:0xCFC9`, which are header offsets 212 to 236 of the roster ([saves.md](saves.md)). 13 of the 35 carry a password: NOBLEMAN, GAUNTLET, COMPASSION, PATRIARCH, PARCHMENT, RUSE, GEMSTONE, CALANTHA, ALLIANCE, TIMBER, SOLITAIRE, DELIA and DRAGONSKIN. One carries an item, destination 58 wanting the JEWELED PORTAL KEY, item 374, which is the portal the game's own walkthrough says a jeweled key opens. The other 21 are the flag alone. What the 26 at `+0x06` names is **undecoded**.
+
 A door records no source, and its destination is a pair of world coordinates rather than a slot number or an `(area, level)` pair.
 
 [tools/links.py](../tools/links.py) reads the door destinations at `DS:0xBA95`. Nothing reads the pad table at `DS:0xB71F`.
@@ -278,3 +293,57 @@ A door records no source, and its destination is a pair of world coordinates rat
 The six records without bit 14 teleport nobody, and they are not dead entries: the rest routine calls the same matcher without the teleport test, so **standing on any of the nineteen refuses a rest** ([encounters.md](encounters.md)).
 
 **A destination says what the place it lands on is like.** The word at `+0x10` of a door's 18-byte destination record, and at `+0x0A` of a pad's, is written whole into `DS:0xCEF9` by image `0x05555` and image `0x0AC45`. Nothing else moves it, so it stands until the next door or pad. Two of its bits are read. Bit 0 refuses a rest ([encounters.md](encounters.md)) and bit 13 is the indoor flag the view shades by ([view.md](view.md)). Across the 139 destinations the word takes eight values, 63 of them zero. Six carry bit 0, all in the Dwarven Homeland or the Cave of Ice, and 29 carry bit 13.
+
+## What a container holds, and what a lock refuses
+
+Two of the six cell-event kinds put something on the cell for the party to open. **Evidence is code** throughout this section, at the image addresses given, with **shape** behind the second table: its 71 records tile the head of section 11 exactly, and the seven key bits fall one each on the Athaneum's six gates and Yendor's seventh.
+
+**A container's argument is a bundle**, 1-based into `WORLD.DAT` section 10, which is 1,000 records of 26 bytes. Image `0x0252E` copies thirteen words of one to `DS:0x5890`.
+
+    +0  uint16  the lock
+    +2  uint16  the pick difficulty and the trap, one number
+    +4  uint16  eight item ids, one per place
+    ...
+    +18
+    +20  uint16  how many GOLD COINS
+    +22  uint16  how much FOOD
+    +24  uint16  how much NUORE
+
+**The last three words are counts, not one gold amount.** Image `0x02881` walks the eight places, and where a place holds item 1, 2 or 3 it takes the count out of `+20`, `+22` or `+24` and writes it as that place's own second word. Every other place takes its second word from the item record: a broken weapon gets the whole form it repairs into ([items.md](items.md)), and anything else gets zero. So the three that stack occupy a place like everything else and carry their amount beside them.
+
+**A lock's argument indexes a second table**, 71 records of four bytes, which is a bundle's first two words and nothing else. Image `0x025CB` reads it at `(arg - 1) * 4` past `26 * [DS:0x545E]`, and `DS:0x545E` is written once with 1,000 at image `0x0F070`, which is section 10's own record count. Both tables are read out of one buffer, so the second begins where the first ends: section 11's first 284 bytes. What is behind a lock is the cell, not eight places.
+
+**The lock word is a kind in its low two bits and a state above them.** Image `0x02692` walks the state bits to pick what the panel says, from the lines at `DS:0x3EE9` up. Over the 380 containers and 71 locks the six combinations below account for every record, so one state bit is set at most.
+
+| Low byte | Records | State | What the panel says |
+|---|---|---|---|
+| `0x01` | 45 | a key opens it, and a key bit names which | REQUIRES BRASS KEY, and six more |
+| `0x09` | 25 | not locked, and the trap is armed | LOCKED |
+| `0x21` | 30 | magically locked | MAGICALLY LOCKED |
+| `0x41` | 55 | picked against word 1's difficulty | LOCKED |
+| `0x81` | 119 | open | NOT LOCKED |
+| `0x82` | 177 | open | NOT LOCKED |
+
+The seven key bits are `0x8000` down to `0x0200`, high bit first: brass, bronze, copper, iron, steel, silver, gold. A key bit names the metal rather than the item, and which of two items that metal is follows what the lock stands on: a container takes the CHEST KEY, items 36 to 42, and a bare lock takes the DOOR KEY, items 43 to 49 ([items.md](items.md)). The Athaneum's six gates carry six different metals and Yendor's gate carries the seventh. Every one of the 45 keyed records carries exactly one key bit, and no record carries a key bit and a state bit together.
+
+**The low two bits are the kind, and 2 is always open.** Image `0x027AD` puts up prompt 6 for kind 2 and prompt 5 for kind 1, and image `0x02978` plays a sound and steps a picture for kind 1 and neither for kind 2. Every locked, trapped or magical record is kind 1, and kind 2 is 177 records that are open. Which drawing each kind is remains **undecoded**.
+
+**What a character can tell about a lock follows their thievery**, at character record offset 108 ([saves.md](saves.md)). Under 55 the panel says only whether it is locked. At 55 NOT LOCKED BUT TRAPPED appears, at 65 LOCKED AND TRAPPED appears, and at 80 the key is named.
+
+**Word 1 carries two numbers in one.** Image `0x025BB` divides it by 100: the quotient is a difficulty, 0 to 67, and the remainder is the trap. A trap of zero is no trap. A trap at or over 50 hits the whole party and the table is indexed by what is left after subtracting 50, so the numbers run 1 to 13 either way (image `0x018EA3`).
+
+**The difficulty serves the lock and the trap both.** A `0x41` record is picked against it, and every record with a trap is rolled against it whether it is locked or not: 71 of the 296 open records carry a trap, 65 of them with a difficulty beside it. A `0x09` record is a trap at difficulty 0.
+
+**A trap springs once.** Image `0x027FF` tests the bank bit first and sends a thing that already carries it straight to the hand-over at `0x02870`, past the roll at `0x02846`, so the roll belongs to the one pass that sets the bit.
+
+**Both the pick and the trap are one roll**, at image `0x17882`:
+
+    chance = max(5, 5 x (level - difficulty) + thievery)
+
+against `rand(100)`, which succeeds at or under the chance. Image `0x18E6E` is the caller: it returns at once where the trap is zero, and otherwise rolls and springs the trap on a failure. **What a trap does is a spell.** It queues the trap number and a 12-byte record at `DS:0x96DA + 12 x number` into the pending-effect table at `DS:0xF4A`, which is the same table and the same record size a monster's special attack uses (image `0x124D8`). `DS:0x96DA` is zero in the load image and is filled at startup from a file nothing found reads, so **which spell a trap number names is undecoded**.
+
+**What records that a thing has been dealt with** follows the kind, and both banks are described in [saves.md](saves.md). A container's bundle takes a bit in section 3's bank 0 and one bit per place in section 4, set as each place is handed over. A lock takes a bit in bank 1 and nothing else. Image `0x027FF` tests the bank bit first: a bundle already carrying it skips the lock entirely, which is what makes unlocking permanent.
+
+25 of the 380 containers stand on cells in area 0, which carries no map, so no party reaches them. The other 355 are spread over 89 of the 140 slots.
+
+[tools/loot.py](../tools/loot.py) reads both tables.

@@ -17,6 +17,8 @@ The map grid sits **before** section 0. Seven areas of 76,800 bytes fill `0x0000
 | 1 | `0x0083748` | 760 | map names, 38 × 20 ([map.md](map.md)) |
 | 2 | `0x0083a40` | 912 | area names, 12 + 12 |
 | 4 | `0x0083ee8` | 36,598 | item names and records ([items.md](items.md)) |
+| 10 | `0x008f00a` | 26,000 | loot bundles, 1,000 x 26 ([map.md](map.md)) |
+| 11 | `0x009559a` | 1,600 | cell locks in the first 284 bytes, 71 x 4 ([map.md](map.md)) |
 | 12 | `0x0095bda` | 5,376 | seven 768-byte VGA palettes ([map.md](map.md)) |
 | 13–15 | `0x00970da` | | CT-VOICE driver, CMF music, VOC audio |
 | 16 | `0x03c2030` | 6,864 | in-game books and lore |
