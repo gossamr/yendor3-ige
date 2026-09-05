@@ -214,9 +214,9 @@ The seven offsets, one per row, are assembled at image `0x178B0` in two steps.
 
 That table is **measured**. Poking the clock and redrawing, the floor changes where the table says it changes: dark at 00:01, 05:00, 06:01 and 07:00, flat from 08:00 to 18:00, dark again at 20:00 and 21:01. 19:01 stays flat because that record's offsets are zero for the near rows, which are the rows those pixels belong to.
 
-**A light then brightens it, row by row.** `DS:0x7A06` is 7 rows of 6 words, stride 12, and the light's level picks the column:
+**A light then brightens it, row by row.** `DS:0x7A06` is 7 rows of 6 words, stride 12, and the light's strength picks the column. The six run from the brightest to the dimmest:
 
-| | rung 1 | 2 | 3 | 4 | 5 | 6 |
+| | strength 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---|---|---|---|---|---|
 | 6 cells ahead | 10 | 8 | 5 | 4 | 3 | 2 |
 | 5 | 10 | 8 | 5 | 4 | 3 | 2 |
@@ -226,11 +226,13 @@ That table is **measured**. Poking the clock and redrawing, the floor changes wh
 | 1 | 7 | 6 | 5 | 4 | 3 | 2 |
 | 0 | 6 | 6 | 5 | 4 | 3 | 2 |
 
-The loop at `0x179FA` adds the row's number to the row's offset and clamps at zero, so a light lifts the dark toward none and never past it. Rung 1 cancels night outright, since its column is the night fog negated. A row whose offset is already zero is skipped, so a light does nothing in daylight.
+The loop at `0x179FA` adds the row's number to the row's offset and clamps at zero, so a light lifts the dark toward none and never past it. Strength 1 cancels night outright, since its column is the night fog negated. A row whose offset is already zero is skipped, so a light does nothing in daylight.
 
-**Which rung applies** is decided at `0x17971` by `DS:0xCEF7`, a word of light flags. Each rung answers to either of two bits, `0x200` or `0x8` for the first down to `0x4000` or `0x100` for the sixth. Eight instructions in the whole executable change that word, and they set three of the six: `0x2000` at image `0xFE29`, `0x800` at `0xFE35` and `0x400` at `0xFE41`, which are rungs 5, 3 and 2. Each also steps a counter at `DS:0xCF03`, `DS:0xCF07` or `DS:0xCF09`, all cleared together at `0xFE0A`, so a light is a timed effect rather than a state.
+**Which strength applies** is decided at `0x17971` by `DS:0xCEF7`, a word of light flags. Each strength answers to either of two bits, `0x200` or `0x8` for the first down to `0x4000` or `0x100` for the sixth. Of the eight instructions that change that word, three set the high bit of a pair: `0x2000` at image `0xFE29`, `0x800` at `0xFE35` and `0x400` at `0xFE41`, which are strengths 5, 3 and 2, and each steps a counter at `DS:0xCF03`, `DS:0xCF07` or `DS:0xCF09`, all cleared together at `0xFE0A`. A carried light is therefore a timed effect rather than a state.
 
-**A light standing in the world** would take the last three rungs. Image `0x17918` walks nine eight-byte entries at `DS:0x71C6`, which the game fills with the 3x3 block of cells about the party in the same shape as the view table, far row first. It looks for one whose object word is `DS:0x5486`, or that id plus one, two or three, and takes the match only if the party faces the matching way: `+0` north, `+1` south, `+2` east, `+3` west. The index of the match divided by three, plus one, is a level of 1, 2 or 3, which satisfies rungs 6, 5 and 4, so a nearer light is a brighter one.
+**A cast light sets the low bit of the pair**, and keeps its own timer. Image `0x1C676` reads the spell's offset 42 as a strength of 1 to 6, ORs `0x8000` with that strength's low bit, `0x100` for 1 down to `0x8` for 6, and writes offset 44 onto the timer at `DS:0xCF11 + 2 x (42 - 1)`. So the spell's number runs the other way from the column: 1 is the sixth strength and 6 the first. The tick at `0x0EBC0` subtracts the elapsed minutes from each of the six timers, clears the bit of any that reaches zero, and drops `0x8000` when none is left, so two cast lights burn side by side and the brighter one draws. [spells.md](spells.md) has the two records.
+
+**A light standing in the world** would take the last three strengths. Image `0x17918` walks nine eight-byte entries at `DS:0x71C6`, which the game fills with the 3x3 block of cells about the party in the same shape as the view table, far row first. It looks for one whose object word is `DS:0x5486`, or that id plus one, two or three, and takes the match only if the party faces the matching way: `+0` north, `+1` south, `+2` east, `+3` west. The index of the match divided by three, plus one, is a level of 1, 2 or 3, which satisfies strengths 6, 5 and 4, so a nearer light is a brighter one.
 
 `DS:0x5486` is written once in the executable, at image `0xF160`, and holds 47. **No cell in the world carries object 47, 48, 49 or 50**, and none carries those as terrain either, so this path cannot fire in the game as it shipped. It is a facility for a wall-mounted light that the maps do not use.
 

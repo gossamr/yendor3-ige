@@ -36,7 +36,8 @@ import argparse
 import struct
 
 import sections as S
-from links import CELLS, events
+from links import BANDS, CELLS, events
+from solve_maps import AREA_STRIDE, BAND_STRIDE, CELL, LEVEL_STRIDE
 from registry import map_registry
 
 BUNDLES = 10                # the section a container's argument indexes
@@ -94,6 +95,33 @@ PARTY_ITEMS = {
     "lockpick": [11],       # LOCKPICK
     "torch": [34, 35],      # TORCH, and the same torch lit
 }
+
+# What a container is drawn as, keyed by the object id on its cell.
+#
+# The 380 containers stand on 27 object ids, and an id's record names one
+# picture per facing, so the four ids of a group are one drawing turned four
+# ways. Fourteen drawings cover 26 of the ids and object 0 draws nothing at
+# all, and every id of a group carries the same kind: kind 1 is the barrel, the
+# chest and the dresser, the three with a lid to lift, and kind 2 is the rest.
+# Named by eye off the art (docs/map.md).
+DRAWINGS = {
+    "barrel": [136],
+    "chest": [128, 130, 132, 134],
+    "dresser": [105, 107, 109, 111],
+    "dirt mound": [143],
+    "bed": [100, 101, 102, 103],
+    "sewer grate": [228],
+    "nest": [149],
+    "table": [113],
+    "basket": [142],
+    "throne": [235, 237],
+    "pit": [161],
+    "bookcase": [152, 153, 154],
+    "well": [104],
+    "dead tree": [2],
+    "ground": [0],          # no object, so the cell itself is searched
+}
+DRAWN_AS = {o: name for name, ids in DRAWINGS.items() for o in ids}
 
 ITEMS_AT, ITEM_SLOTS = 2, 8
 # The three items that carry a count rather than standing one to a place. The
@@ -159,10 +187,25 @@ def lock(d: S.Directory, n: int) -> dict:
     return {"number": n} | _lock_fields(r[0], r[1])
 
 
+def object_at(d: S.Directory, x: int, y: int) -> int:
+    """The cell's object word, the second of its two."""
+    area, band = divmod(y, BANDS)
+    level, cell = divmod(x, CELLS)
+    at = area * AREA_STRIDE + band * BAND_STRIDE + level * LEVEL_STRIDE + cell * CELL
+    return struct.unpack_from("<H", d.world, at + 2)[0]
+
+
 def containers(d: S.Directory) -> list[dict]:
-    """Every cell a container stands on, with the bundle it holds."""
-    return [{"x": e["x"], "y": e["y"]} | bundle(d, e["arg"] - 1)
-            for e in events(d) if e["kind"] == "treasure"]
+    """Every cell a container stands on, with the bundle it holds and what the
+    cell draws it as."""
+    out = []
+    for e in events(d):
+        if e["kind"] != "treasure":
+            continue
+        drawn = object_at(d, e["x"], e["y"])
+        out.append({"x": e["x"], "y": e["y"], "object": drawn,
+                    "drawn": DRAWN_AS[drawn]} | bundle(d, e["arg"] - 1))
+    return out
 
 
 def passages(d: S.Directory) -> list[dict]:

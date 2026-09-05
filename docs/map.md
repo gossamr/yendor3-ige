@@ -326,7 +326,26 @@ Two of the six cell-event kinds put something on the cell for the party to open.
 
 The seven key bits are `0x8000` down to `0x0200`, high bit first: brass, bronze, copper, iron, steel, silver, gold. A key bit names the metal rather than the item, and which of two items that metal is follows what the lock stands on: a container takes the CHEST KEY, items 36 to 42, and a bare lock takes the DOOR KEY, items 43 to 49 ([items.md](items.md)). The Athaneum's six gates carry six different metals and Yendor's gate carries the seventh. Every one of the 45 keyed records carries exactly one key bit, and no record carries a key bit and a state bit together.
 
-**The low two bits are the kind, and 2 is always open.** Image `0x027AD` puts up prompt 6 for kind 2 and prompt 5 for kind 1, and image `0x02978` plays a sound and steps a picture for kind 1 and neither for kind 2. Every locked, trapped or magical record is kind 1, and kind 2 is 177 records that are open. Which drawing each kind is remains **undecoded**.
+**The low two bits are the kind, and 2 is always open.** Image `0x027AD` puts up prompt 6 for kind 2 and prompt 5 for kind 1, which are WHO WILL SEARCH? and WHO WILL OPEN? ([party.md](party.md)), and image `0x02978` plays a sound and steps a picture for kind 1 and neither for kind 2. Every locked, trapped or magical record is kind 1, and kind 2 is 177 records that are open. Which drawing each kind is follows below.
+
+**What stands on a cell, read for a spell.** Image `0x10BC8` takes a cell and answers with one of eleven states in `DS:0x53E0`, which is how the three spells that open something decide whether they reach it ([spells.md](spells.md)). Image `0x10CD5` picks the cell first: the party's own where an event stands on it, the cell in front otherwise.
+
+| State | What the cell holds |
+|---|---|
+| 0 | nothing, or a bundle or lock whose bank bit is already set |
+| 1 | a lock that is neither pickable, trapped nor magically locked |
+| 2 | a magically locked lock |
+| 3 | a magically locked bundle |
+| 4 | a person |
+| 5 | a monster |
+| 6 | a lock carrying word 0 bit `0x10`, which no record does |
+| 7 | a lock carrying the trap bit alone |
+| 8 | a pickable bundle |
+| 9 | a bundle whose difficulty and trap word is not zero |
+| 10 | a pickable lock |
+| 11 | a script |
+
+SAFE UNLOCK takes 8, 9 and 10, UNLOCK MAGIC takes 2 and 3, and DISPEL ILLUSION takes 6 and 7. So the 25 locks whose only bit is the trap are the walls that are illusions, and nothing else opens them.
 
 **What a character can tell about a lock follows their thievery**, at character record offset 108 ([saves.md](saves.md)). Under 55 the panel says only whether it is locked. At 55 NOT LOCKED BUT TRAPPED appears, at 65 LOCKED AND TRAPPED appears, and at 80 the key is named.
 
@@ -345,5 +364,31 @@ against `rand(100)`, which succeeds at or under the chance. Image `0x18E6E` is t
 **What records that a thing has been dealt with** follows the kind, and both banks are described in [saves.md](saves.md). A container's bundle takes a bit in section 3's bank 0 and one bit per place in section 4, set as each place is handed over. A lock takes a bit in bank 1 and nothing else. Image `0x027FF` tests the bank bit first: a bundle already carrying it skips the lock entirely, which is what makes unlocking permanent.
 
 25 of the 380 containers stand on cells in area 0, which carries no map, so no party reaches them. The other 355 are spread over 89 of the 140 slots.
+
+## What a container is drawn as
+
+**Evidence is code** for which pictures an object id names, the record walk at image `0x1069C`. The names themselves are none of the six classifiers: each id's pictures were drawn out of `PICTURES.VGA` and read by eye, so they are this project's words for what the art shows.
+
+The 380 containers stand on 27 object ids. An object record holds one picture per facing, so ids carrying the same pictures in another order are one thing turned four ways, and **fourteen drawings cover 26 of the ids**. The twenty-seventh is object 0, which draws nothing. The kind bit falls on the drawing rather than the cell: kind 1 is the barrel, the chest and the dresser, the three with a lid to lift, and everything else is kind 2. That is the split the two prompts make, open against search.
+
+| Drawing | Object ids | Cells | Kind |
+|---|---|---|---|
+| chest | 128, 130, 132, 134 | 106 | 1 |
+| barrel | 136 | 77 | 1 |
+| dirt mound | 143 | 59 | 2 |
+| bed | 100, 101, 102, 103 | 28 | 2 |
+| dresser | 105, 107, 109, 111 | 20 | 1 |
+| sewer grate | 228 | 14 | 2 |
+| nest | 149 | 11 | 2 |
+| table | 113 | 10 | 2 |
+| basket | 142 | 9 | 2 |
+| throne | 235, 237 | 6 | 2 |
+| pit | 161 | 5 | 2 |
+| bookcase | 152, 153, 154 | 3 | 2 |
+| well | 104 | 2 | 2 |
+| dead tree | 2 | 1 | 2 |
+| ground, which draws nothing | 0 | 29 | 2 |
+
+**A name is stored nowhere.** A bundle is a lock, a difficulty, eight item ids and three counts, and what draws the thing is a picture number. What the game prints over one is LOCKED or NOT LOCKED, and which of the two prompts it raises is the only other word it offers. Object 0 covers 29 cells: 25 are the unreachable ones above and the other four are open floor.
 
 [tools/loot.py](../tools/loot.py) reads both tables.

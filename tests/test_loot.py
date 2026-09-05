@@ -8,8 +8,15 @@ into the next section. The six states the lock word takes partition all 451
 records with nothing left over, and the seven key bits fall one each on the
 Athaneum's six gates and Yendor's seventh.
 """
+import collections
+import struct
+
+import labels as L
 import loot as LO
 import sections as S
+
+# The table of panels the WHO WILL prompts are numbered into (docs/party.md).
+PROMPTS = 0xE265
 
 
 def test_the_bundle_table_divides_exactly(directory):
@@ -123,3 +130,45 @@ def test_the_pick_chance_is_the_roll_the_code_makes():
     assert LO.chance(10, 4, 25) == 55
     assert LO.chance(1, 60, 0) == 5
     assert LO.chance(40, 40, 88) == 88
+
+
+def test_every_container_cell_draws_something_named(directory):
+    """All 380 stand on one of 27 object ids, and the table names each."""
+    drawn = {c["object"] for c in LO.containers(directory)}
+    assert len(drawn) == 27
+    assert drawn <= set(LO.DRAWN_AS)
+
+
+def test_the_kind_bit_is_the_lid(directory):
+    """Kind 1 is the barrel, the chest and the dresser, the three drawings with
+    a lid to lift, which is why image 0x02978 steps a picture for that kind
+    alone. Every other drawing is kind 2."""
+    kinds = collections.defaultdict(set)
+    for c in LO.containers(directory):
+        kinds[c["drawn"]].add(c["kind"])
+    assert all(len(k) == 1 for k in kinds.values())
+    assert {name for name, k in kinds.items() if k == {1}} == {"barrel", "chest", "dresser"}
+
+
+def test_a_drawing_is_one_object_turned_four_ways(directory):
+    """The ids of a group name the same pictures in another order, since an
+    object's record holds one picture per facing (docs/map.md)."""
+    from view_art import OBJECT_FACES, object_record
+    from tiles import _word
+    for name, ids in LO.DRAWINGS.items():
+        pictures = {frozenset(_word(directory.exe, object_record(directory.exe, o) + off)
+                              for off in OBJECT_FACES) for o in ids}
+        assert len(pictures) == 1, name
+
+
+def test_the_two_kinds_raise_open_and_search(directory):
+    """Image 0x027AD passes 5 for kind 1 and 6 for kind 2 to the prompt at
+    0x058F0, which reads a panel out of the word table at DS:0xE265."""
+    def prompt(n: int) -> str:
+        at = struct.unpack_from("<H", directory.exe, L.DGROUP + PROMPTS + (n - 1) * 2)[0]
+        text = struct.unpack_from("<H", directory.exe, L.DGROUP + at + 8 + 6)[0]
+        said = directory.exe[L.DGROUP + text:L.DGROUP + text + 40].split(b"\x00")
+        return b" ".join(said[:2]).decode()
+
+    assert prompt(5) == "WHO WILL OPEN?"
+    assert prompt(6) == "WHO WILL SEARCH?"

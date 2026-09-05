@@ -316,7 +316,8 @@ LIGHT_FIXED = 0x7A68            # used where DS:0xCEF9 bit 0x2000 is set
 LIGHT_BY_CLOCK = 0x7556         # 32-byte records, the seven words at +0x12
 LIGHT_RECORD, LIGHT_OFFSETS = 0x20, 0x12
 LIGHT_RUNGS_AT, LIGHT_RUNGS, LIGHT_ROWS = 0x7A06, 6, 7
-# Which bits of DS:0xCEF7 answer for each rung, brightest first (`0x17971`).
+# Which bits of DS:0xCEF7 answer for each brightness, brightest first
+# (`0x17971`).
 LIGHT_BITS = ((0x200, 0x8), (0x400, 0x10), (0x800, 0x20),
               (0x1000, 0x40), (0x2000, 0x80), (0x4000, 0x100))
 
@@ -330,7 +331,7 @@ def sky_gradient(world: bytes, directory: SEC.Directory) -> list[tuple[int, int,
 
 
 def light_schedule(exe: bytes) -> dict:
-    """The shade offsets: the fixed set, the clock's records, and the rungs."""
+    """The shade offsets: the fixed set, the clock's records, and the lights."""
     def words(off, n):
         return [struct.unpack_from("<h", exe, tiles.HEADER + tiles.DGROUP + off + i * 2)[0]
                 for i in range(n)]
@@ -343,9 +344,9 @@ def light_schedule(exe: bytes) -> dict:
         records.append({"from": row[0], "to": row[1],
                         "offsets": words(at + LIGHT_OFFSETS, LIGHT_ROWS)})
         at += LIGHT_RECORD
-    rungs = [words(LIGHT_RUNGS_AT + row * 12, LIGHT_RUNGS) for row in range(LIGHT_ROWS)]
+    lights = [words(LIGHT_RUNGS_AT + row * 12, LIGHT_RUNGS) for row in range(LIGHT_ROWS)]
     return {"fixed": words(LIGHT_FIXED, LIGHT_ROWS), "by_clock": records,
-            "rungs": [[r[i] for r in rungs] for i in range(LIGHT_RUNGS)],
+            "brightness": [[r[i] for r in lights] for i in range(LIGHT_RUNGS)],
             "bits": [list(b) for b in LIGHT_BITS]}
 
 

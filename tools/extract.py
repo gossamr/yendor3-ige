@@ -688,12 +688,55 @@ SPELL_SCROLL_MASK = 68
 # spell does".
 SPELL_RESTORE = {"field": 36, "max": 38, "mask": 40}
 
+# What a spell does to the world rather than to a body. Any low bit of word 72
+# blanks the AFFECTS row, and the dispatcher at image 0x1C4E4 branches on each
+# of them. Eleven records carry one: the nine utility spells and two ERROR
+# placeholders. docs/spells.md, "What a spell does to the world".
+WORLD_EFFECTS = {0x01: "magic", 0x02: "haven", 0x04: "jump", 0x08: "dispel",
+                 0x10: "unread", 0x20: "mark", 0x40: "unlock", 0x80: "light"}
+
+# What a light lights, out of the branch at image 0x1C676. Offset 42 is a
+# strength of 1 to 6 and picks that strength's bit, 1 taking the dimmest of the
+# six and 6 the brightest, so counting from 0 at the brightest the strength is
+# `BRIGHTNESSES - 42`. Offset 44 goes on that strength's own timer and is tens
+# of minutes: 15 and 21 against the 2 1/2 and 3 1/2 hours the two descriptions
+# quote, 2 of 2.
+BRIGHTNESSES = 6
+LIGHT_STRENGTH, LIGHT_LASTS, LIGHT_MINUTES = 42, 44, 10
+
+# How far a jump carries and which way, out of the branch at image 0x1C733. It
+# reads five words in turn and takes the first that is not zero, and the way
+# each names is read off the facing it turns into: JUMP OVER carries 2 forward
+# and JUMP THROUGH 2 through what stands between.
+JUMP_WAYS = [(54, "forward"), (56, "back"), (58, "left"), (60, "right"),
+             (62, "through")]
+
+# Where MARK writes the party down, which is an offset into the caster's own
+# 500-byte record: image 0x1CA3F adds it to the record pointer. MARK OR RETURN
+# carries 240, and its description says the mark is one per character.
+MARK_AT = 64
+
 SPELL_UNKNOWN = [c for c in range(22, 80, 2)
                 if c not in (*SPELL_FIELDS.values(), SPELL_AMOUNT,
                              SPELL_ELEMENT, SPELL_FAMILY, SPELL_SCROLL_MASK,
                              SPELL_AFFECTS_WORD, SPELL_BLOW,
                              SPELL_KIND, SPELL_WHEN_WORD,
                              *SPELL_RESTORE.values())]
+
+
+def spell_world(rec: bytes) -> dict:
+    """The world a spell acts on: which effect, and what that effect reads."""
+    affects = u16(rec, SPELL_AFFECTS_WORD)
+    bit = next((b for b in WORLD_EFFECTS if affects & b), 0)
+    effect = WORLD_EFFECTS.get(bit, "")
+    way = next(((w, u16(rec, off)) for off, w in JUMP_WAYS if u16(rec, off)), None)
+    return {
+        "world": effect,
+        "bright": BRIGHTNESSES - u16(rec, LIGHT_STRENGTH) if effect == "light" else -1,
+        "minutes": u16(rec, LIGHT_LASTS) * LIGHT_MINUTES if effect == "light" else 0,
+        "jump": {"way": way[0], "cells": way[1]} if effect == "jump" and way else None,
+        "mark_at": u16(rec, MARK_AT) if effect == "mark" else 0,
+    }
 
 
 def spell_affects(rec: bytes) -> tuple[str | None, str | None, str | None, str]:
@@ -875,6 +918,7 @@ def extract_spells(d: S.Directory) -> list[dict]:
         s["when_word"] = u16(rec, SPELL_WHEN_WORD)
         s["restore"] = {name: u16(rec, off) for name, off in SPELL_RESTORE.items()}
         s["listed"] = i + 1 in book
+        s.update(spell_world(rec))
         s["unknown"] = {f"u{off}": u16(rec, off) for off in SPELL_UNKNOWN}
         out.append(s)
     return out

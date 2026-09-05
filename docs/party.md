@@ -46,7 +46,7 @@ So the sheet says who holds what by drawing those rows in a second color on the 
 
 ## WHO WILL, where nobody holds it
 
-Eight two-line prompts sit together from `DS:0xA75B`: **WHO WILL OPEN**, **SEARCH**, **EVALUATE**, **USE**, **REPAIR**, **BARTER** and **TRANSLATE**, with **WHO WILL LEARN** apart from them at `DS:0xA9FE`. They are put up by `0x058F0`, which takes a prompt number in `ax` and answers with a character handle or zero.
+Eight two-line prompts sit together from `DS:0xE75B`: **WHO WILL OPEN**, **SEARCH**, **EVALUATE**, **USE**, **REPAIR**, **BARTER** and **TRANSLATE**, with **WHO WILL LEARN** apart from them at `DS:0xE9FE`. They are put up by `0x058F0`, which takes a prompt number in `ax` and answers with a character handle or zero.
 
 Every use of a party skill runs the same three steps. Repair, at `0x1C3F3`, is the pattern:
 
@@ -58,4 +58,10 @@ A character who cannot act is dropped from the word and the prompt comes back: `
 
 Bartering takes the same path at `0x06447`, with prompt 10, which is the one place a shop asks the question ([shops.md](shops.md)). What the party's repairer then does to a broken piece is [items.md](items.md)'s.
 
-**What is not established** is which prompt number is which: the eight strings are in the file in that order, and two of the calls pass 9 and 10, but nothing has been read that maps the numbers onto the strings. Nor has the code that raises OPEN, SEARCH, EVALUATE, USE, TRANSLATE or LEARN been found: no word anywhere in the executable holds any of the eight string addresses.
+**The number indexes a table of panels at `DS:0xE265`**, one word each. Image `0x058F0` takes the word at `(n - 1) * 2` past it, which points at an eight-byte head and then a ten-byte line apiece: a line's fourth word is where its text starts and its fifth is how many strings to take from there. Reading the table gives the numbering.
+
+| 1 to 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 to 17 |
+|---|---|---|---|---|---|---|---|---|
+| DO YOU WANT | OPEN | SEARCH | EVALUATE | USE | REPAIR | BARTER | TRANSLATE | PASSWORD |
+
+Repair passing 9 and bartering passing 10 each land on their own string. A container raises 5 or 6 by its kind, a lid to open against a surface to search ([map.md](map.md)). WHO WILL LEARN is in no entry of this table. **What has not been found** is the code that raises EVALUATE, USE or TRANSLATE.

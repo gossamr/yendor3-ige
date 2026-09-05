@@ -111,11 +111,14 @@ The item search at image `0x0B242` walks those six **before** it walks any chara
 | 50–58 | the five seeds the equip dispatch derives the combat words from | code, `0x0649E`, see [combat.md](combat.md) |
 | 60–110 | the live block, 26 words, below | screens: F1, every field |
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
+| 240–252 | the place MARK OR RETURN wrote down: x, y, facing, two words, and the arrival word at `+12` | code, `0x1CA3F` |
 | 280 | weight carried, in tenths: the sum over everything held | shape, below |
 | 282–313 | the eight panel slots, four bytes each | code, `0x0437E`, see [items.md](items.md) |
 | 314, 318, 322, 326, 330, 334 | missile, container, hand, shield, two rings | code, `0x04237`, see [items.md](items.md) |
 | 338–346 | the worn slots, a word each: head, body, nothing, feet, hands | code, `0x0431D`, see [items.md](items.md) |
 | 348 | equipment flags; bit `0x20` is a two-handed weapon in hand | code, `0x06568` and `0x042D6` |
+
+**The mark is the caster's own.** The spell record carries the offset rather than the code, at its word 64, and MARK OR RETURN carries 240 ([spells.md](spells.md)). A character who has never cast it holds zeros there, and the description says one spot per character.
 
 **Word 280 is the sum of the weights of everything the character holds**, worn, wielded and packed alike. Summing the item weights over each shipped character's equipment words and panel slots gives 80, 65, 65 and 75 tenths against the 80, 65, 65 and 75 the records hold, so the identity is exact on all four. The capacity it is measured against is `10 x` strength, at `LIVE+26`. [items.md](items.md) has the item weights.
 

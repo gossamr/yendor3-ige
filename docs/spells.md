@@ -54,7 +54,7 @@ The printer works from a copy of the record in a scratch buffer at `DS:0x5DA6`, 
 | `72 & 0x3000` | in hand to hand |
 | otherwise | anytime |
 
-**AFFECTS** is blank when any of the low eight bits of 72 is set. That covers the nine utility spells, among them MARK OR RETURN and the two MINER'S LIGHT spells. Otherwise the row holds a scope, a noun, and for most spells a reach phrase.
+**AFFECTS** is blank when any of the low eight bits of 72 is set. That covers the nine spells that act on the world, below. Otherwise the row holds a scope, a noun, and for most spells a reach phrase.
 
 Scope reads ALL when `76 & 0x0006` or `72 & 0x5E00`, and ONE otherwise.
 
@@ -194,6 +194,63 @@ The probe exercised bit 6. The mask is zero, so every other bit goes on the same
 **A rest finishes the revival.** `0x0d6a6` passes over a character carrying `0x1c40`, so a corpse gets nothing from resting. Clear the bit and the character rests like any other. One rest took the body from 0 health to full. The dexterity went back to 59 at the same time, which is the revert at `0x0d7a1` writing the base column over the current one ([leveling.md](leveling.md)).
 
 So a level-6 Mage spell costing 19 magic points raises the dead, where the spell written to do it is a level-34 Monk spell costing 400.
+
+## What each reach does
+
+The AFFECTS row above says how far a cast reaches. What the cast then touches is the dispatcher's, at image `0x1C4E4`, which tests the same words in an order of its own. **Evidence is code.**
+
+| Reach | Word 72 | Branch | What it touches |
+|---|---|---|---|
+| in hand to hand | `0x2000` | `0x1CCCD` | one of the three engaged places |
+| in hand to hand | `0x1000` | `0x1CD1F` | all three of them, and nothing else |
+| at a distance | `0x0100` | `0x1CD82` | the first monster along the middle column |
+| in a straight line | `0x0800` | `0x1CD82` | that one, and on through each it kills |
+| in a 3x3 area | `0x0400` | `0x1CD82` | nine cells about where it stopped |
+| none | `0x0200`, or word 76 bits 0 to 2 | `0x1D2E9`, `0x1D4D4`, `0x1D5BE` | every monster the view holds ([combat.md](combat.md)) |
+
+**The two melee bits are two branches**, which the printer does not distinguish: it prints "in hand to hand" for either and reads `0x1000` as part of its ALL mask. So 24 records land on one engaged place and 13 on all three. **The dispatcher's order is not the printer's** either, and where they disagree the dispatcher is what happens: SWORD OF ICE carries `0x2000` and word 76 bit 2 both, so the row prints ALL VISIBLE MONSTERS and the cast lands on one engaged place.
+
+**A cast that reaches out steps along the same six bands a volley's flight does**, `DS:0x53DC` running `0x31, 0x2E, 0x2B, 0x28, 0x24` and `0x19` ([combat.md](combat.md)). The party's own band is drawn and never tested, so the first band that can answer is the one in front. Image `0x02F93` answers each step and the walk stops where it says something is there.
+
+**The two shape bits are read once it has stopped.** Bit `0x800` carries the cast on: image `0x1CF18` tests whether the monster it just struck is still standing, and where it is not the walk resumes at the next band out and strikes again, down to band `0x19`. Bit `0x400` opens it instead: image `0x1CEEE` sends it to `0x1D035`, which names the left cell of three bands and calls `0x1D8F7` on each, and that routine takes three cells from the one it is given. So a 3x3 is nine cells, the band it stopped on and the bands either side, each left, middle and right.
+
+| Stopped at | Bands struck |
+|---|---|
+| `0x24` | `0x18`, `0x23`, `0x27` |
+| `0x28` | `0x23`, `0x27`, `0x2A` |
+| `0x2B` | `0x27`, `0x2A`, `0x2D` |
+| `0x2E` or `0x19` | `0x2A`, `0x2D`, `0x30` |
+
+The table names three bands and answers the other two the same way, so a cast that reaches the farthest band still opens about the nearest one. **Word 76 bit 3** takes the same six bands with another drawing (image `0x1D146`), and the seven records that carry it print no reach at all.
+
+**Nothing tests line of sight.** The lookup at image `0x12F60` reads the monster off the view table entry and tests bit `0x400` alone, so the skip bit that hides the cells a wall stands in front of ([view.md](view.md)) has no say in it. A monster standing on a cell of the frustum is reached whether the frame drew it, drew part of it, or drew none of it.
+
+## What a spell does to the world
+
+Nine spells act on the world rather than on a body, and **evidence is code** throughout: each takes its own branch out of the cast dispatcher at image `0x1C4E4`, which tests the low byte of word 72 one bit at a time.
+
+| Bit | Spell | Branch | What it does |
+|---|---|---|---|
+| `0x01` | UNLOCK MAGIC | `0x1CB6B` | opens a magically locked container or door |
+| `0x02` | SAFE HAVEN | `0x1CB51` | rests eight hours with no monster closing in ([encounters.md](encounters.md)) |
+| `0x04` | JUMP OVER, JUMP THROUGH | `0x1C733` | carries the party whole cells |
+| `0x08` | DISPEL ILLUSION | `0x1CAC2` | clears the lock that is standing in for a wall |
+| `0x10` | — | `0x1C6E8` | one ERROR record carries this bit and no listed spell does |
+| `0x20` | MARK OR RETURN | `0x1CA3F` | writes the party down, or goes back |
+| `0x40` | SAFE UNLOCK | `0x1CC0B` | opens a pickable or trapped container or door |
+| `0x80` | MINER'S LIGHT I and II | `0x1C676` | lights the party for a while |
+
+Each branch reads fields of its own out of the record, and the same offsets mean something else on a spell that lands on a body.
+
+**A light picks one of six strengths and burns for its own time.** Offset 42 is a strength of 1 to 6. The branch turns on that strength's bit in `DS:0xCEF7`, `0x100` for 1 down to `0x8` for 6, which is the dimmest of the six up to the brightest ([view.md](view.md)), and writes offset 44 onto that strength's own timer at `DS:0xCF11 + 2 x (42 - 1)`. The tick at image `0x0EBC0` takes the elapsed minutes off each of the six and clears the bit of any that reaches zero, so two lights burn side by side and the brighter one draws. Offset 44 is tens of minutes: MINER'S LIGHT I carries 15 against the 2 1/2 hours its description quotes and II carries 21 against 3 1/2, 2 of 2.
+
+**A jump reads five words and takes the first that is not zero**: 54 forward, 56 back, 58 left, 60 right, 62 through what stands between. JUMP OVER carries 2 forward and JUMP THROUGH 2 through. The branch turns the way into a step by the party's facing and tests the cell it lands on.
+
+**A mark belongs to the caster.** Image `0x1CA3F` adds offset 64 to the acting character's own record pointer, and MARK OR RETURN carries 240, which is inside a 500-byte roster slot ([saves.md](saves.md)). It writes the party's x, y and facing and the arrival word of the place, or reads them back where that slot holds one. Prompt 34 is what picks between the two, DO YOU WANT TO... MARK or RETURN TO ([party.md](party.md)). The description says the same: "you can only have one spot marked at a time for each character that has the spell".
+
+**The three that open something ask what stands on a cell first.** Image `0x10CD5` takes the party's own cell where something stands on it and the cell in front otherwise, and image `0x10BC8` reads what stands there into eleven states ([map.md](map.md)). Each spell takes the states that are its own: SAFE UNLOCK the pickable and the trapped, UNLOCK MAGIC the magically locked, DISPEL ILLUSION the lock whose armed trap stands in for a wall. All three end at image `0x1CBD0`, which sets the same bank bit an opening sets, so the thing stays dealt with.
+
+[tools/extract.py](../tools/extract.py) reads all of it.
 
 ## The LIFE FORCE line
 

@@ -1575,3 +1575,44 @@ def test_every_capture_sits_on_the_slot_the_registry_names():
         assert title in set(names.values()), title
     slots = [(c["area"], c["level"]) for c in registry.captures(world)]
     assert len(set(slots)) == len(slots)
+
+
+def test_the_nine_utility_spells_name_seven_effects_on_the_world(data):
+    """Any low bit of word 72 blanks the AFFECTS row, and the dispatcher at
+    image 0x1C4E4 branches on each bit to its own effect."""
+    by = {s["name"]: s["world"] for s in data["spells"] if s["world"]}
+    assert by == {
+        "MINER'S LIGHT I": "light", "MINER'S LIGHT II": "light", "ERROR": "unread",
+        "JUMP OVER": "jump", "JUMP THROUGH": "jump", "DISPEL ILLUSION": "dispel",
+        "SAFE UNLOCK": "unlock", "MARK OR RETURN": "mark", "SAFE HAVEN": "haven",
+        "UNLOCK MAGIC": "magic",
+    }
+    # ERROR covers both the placeholder that carries the light bit and the one
+    # that carries the bit no listed spell does.
+    assert len([s for s in data["spells"] if s["world"]]) == 11
+
+
+def test_a_light_carries_a_strength_and_a_duration(data):
+    """Offset 42 picks one of the six light bits, 6 the brightest, and offset
+    44 is tens of minutes: both records agree with their own descriptions."""
+    by = {s["name"]: s for s in data["spells"]}
+    assert (by["MINER'S LIGHT I"]["bright"], by["MINER'S LIGHT I"]["minutes"]) == (2, 150)
+    assert (by["MINER'S LIGHT II"]["bright"], by["MINER'S LIGHT II"]["minutes"]) == (1, 210)
+    assert "2 AND 1/2 HOURS" in by["MINER'S LIGHT I"]["description"]
+    assert "3 AND 1/2 HOURS" in by["MINER'S LIGHT II"]["description"]
+
+
+def test_a_jump_carries_a_way_and_a_distance(data):
+    """Five words, one per way, and the first that is not zero is the jump."""
+    by = {s["name"]: s for s in data["spells"]}
+    assert by["JUMP OVER"]["jump"] == {"way": "forward", "cells": 2}
+    assert by["JUMP THROUGH"]["jump"] == {"way": "through", "cells": 2}
+    assert all(s["jump"] is None for s in data["spells"] if s["world"] != "jump")
+
+
+def test_the_mark_is_kept_in_the_casters_own_record(data):
+    """Image 0x1CA3F adds word 64 to the caster's record pointer, and 240 is
+    inside a 500-byte roster slot."""
+    by = {s["name"]: s for s in data["spells"]}
+    assert by["MARK OR RETURN"]["mark_at"] == 240
+    assert "FOR EACH CHARACTER" in by["MARK OR RETURN"]["description"]
