@@ -259,7 +259,7 @@ The offsets are from the section's own start. It holds 2,597 records in six kind
 | `0x2000` door | 139 | the destination record below, 1-based |
 | `0x1000` person | 139 | the NPC's own index in the table at `DS:0x0EC8`, not 1-based, and records 0 and 140 stand nowhere |
 | `0x0800` monster | 1,862 | a spawn id. Section 30 names the monster, and that id's bit in save section 5 says whether it is still there ([encounters.md](encounters.md)) |
-| `0x0400` script | 6 | a hand-written handler. The argument is the script number. Image `0x0B751` says which object the cell draws, and image `0x0B7A8` runs when the party steps on the cell. Four of the six test a quest flag, and five of the six move the party ([quests.md](quests.md)) |
+| `0x0400` script | 6 | a hand-written handler. The argument is the script number. Image `0x0B751` says which object the cell draws, and image `0x0B7A8` runs when the party uses the cell, which is the space bar's own dispatch at image `0x00425`. Four of the six test a quest flag, and five of the six move the party ([quests.md](quests.md)) |
 
 A `STAT = N` legend square is a person: that NPC's `+0x14` is the stat's offset in the character record's maximum block ([saves.md](saves.md)) and `+0x16` is N.
 

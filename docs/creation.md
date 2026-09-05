@@ -1,6 +1,6 @@
 # Making a character, and making a party
 
-Three screens stand between the game starting and the party walking: character creation, the party assembly, and the disk. This reads all three, in the order a player meets them.
+Three screens stand between the game starting and the party walking: character creation, the party assembly, and the disk. This reads all three, in the order a player meets them, and the introduction the menu's fifth item plays.
 
 Everything here is **code**, read off the disassembly, with two readings **rendered** and one **screens**, each marked where it is made. [README.md](README.md) defines the classifiers. Coordinates are image offsets, which is the file offset minus `0x4000`, and `DS:` offsets are what the code uses directly, DGROUP being at image `0x1ddb0`. The formulas creation runs are [leveling.md](leveling.md)'s, and the record it fills is [saves.md](saves.md)'s.
 
@@ -26,13 +26,49 @@ Everything here is **code**, read off the disassembly, with two readings **rende
 | The eight items on offer | `DS:0x0F18`, and which are taken in `DS:0x536A` |
 | What the screens say | `DS:0x7C94` onward, and `DS:0x8863` onward |
 
-## The words
+## The labels
 
-Every word these screens say is a NUL-terminated string in the data segment, drawn by the text routine as each screen is put up. [tools/labels.py](../tools/labels.py) reads the run at `DS:0x7C94` to `DS:0x7DD7` and the three at `DS:0x8863`, `DS:0x8899` and `DS:0x88A9`:
+Every labels these screens display is a NUL-terminated string in the data segment, drawn by the text routine as each screen is put up. [tools/labels.py](../tools/labels.py) reads the run at `DS:0x7C94` to `DS:0x7DD7` and the three at `DS:0x8863`, `DS:0x8899` and `DS:0x88A9`:
 
 CHARACTER CREATION, PICK A CLASS, `QUIT "CREATE"`, MALE, FEMALE, PICK A PORTRAIT, SELECT AN OPTION, CLASS, PORTRAIT, ROLL ATTRIBUTES, PICK ITEMS, TAKE UP TO FOUR ITEMS, NAME CHARACTER, ENTER THE NAME, KEEP CHARACTER, CHARACTER PREVIEW, DELETE, RETURN, ARE YOU SURE?, YES, DELETE, NO, KEEP.
 
 **Two of the screens say their words in paint.** The first menu is run 0 picture 2, a stone wall under a gold THE TYRANTS OF THAINE with Character Creation, Assemble a Party, Enter the Game, Credits and Introduction under it, and the assembly is run 0 picture 4, nine boxes over ASSIGN UP TO 4 CHARACTERS and DONE. Neither set of words is stored as text anywhere, so they are read off the pictures rather than out of the file, and the picture each is painted in is given beside it wherever they are used.
+
+## The Introduction
+
+**The menu's fifth item is image `0x1BB7C`**, and [tools/intro.py](../tools/intro.py) reads it. The same routine is what the menu falls into on its own after about four seconds of no input, which [patching.md](patching.md)'s `no-attract` takes out and leaves the menu item alone.
+
+Five scenes, each a routine of its own, with an Escape poll between them and after every frame inside them. Image `0x1BBD3` is the teardown: it fades out, redraws the menu and puts song 1 back.
+
+| Scene | Image | Draws | Says |
+|---|---|---|---|
+| 1 | `0x1BC75` | run 0 picture 8, faded in | nothing; holds 35 ticks |
+| 2 | `0x1BCD1` | run 0 picture 9, wiped on | sounds 51 to 53, a 3-tick pause, then 54 to 58 |
+| 3 | `0x1BD4A` | run 0 picture 10, wiped on | sounds 59 to 66 |
+| 4 | `0x1BDB0` | run 0 picture 11, then picture 12 scaled onto it over 25 frames | song 10, sound 83, and COPYRIGHT 1997 SW GAMES |
+| 5 | `0x1BF44` | run 3 pictures at (70, 40) | song 11, sound 71, and the three talking heads |
+
+**Scene 4's zoom is a rectangle walked frame by frame.** Each of the 25 frames redraws picture 11 whole and blits picture 12 through the scaling blitter at image `0x19DC9`, mode 20, into a box that starts at (6, 4) to (157, 98) and steps by (12, 8) and (-6, -4) a frame. That is the same blitter the viewport places an object face with ([view.md](view.md)).
+
+**Two routines here are the ending's own** ([quests.md](quests.md)). Image `0x1C376` is the scanline wipe, 80 columns of 200 rows a dword at a time with a stride of `0x13C`. Image `0x1C3B4` waits for a sound to finish, or `cx` ticks where sound is switched off, which is what paces a run of spoken lines.
+
+**Image `0x1C11E` cycles pictures.** It draws `DS:0xFC3`, shows it, steps the number and waits two ticks, `cx` times, polling Escape between frames. Scene 5 is nine of those beats in a row.
+
+### The three talking heads
+
+**Image `0x1C13C` plays a 14-byte block** ([audio.md](audio.md) has the layout). The intro holds the only three, at `DS:0x597C`, `DS:0x598A` and `DS:0x5998`, and they are the only path to sounds 67 to 75 except 71.
+
+| Block | Sounds | First picture | Pictures per sound | Quiet ticks |
+|---|---|---|---|---|
+| `0x597C` | 67 to 70 | 40 | 5 | 120 |
+| `0x598A` | 72 | 73 | 7 | 180 |
+| `0x5998` | 73 to 75 | 73 | 7 | 280 |
+
+**The caption is the substitute, not a subtitle.** The routine tests the SOUND FX switch, `DS:0xCF63` bit 3, before anything else. With sound on it plays the block's run of lines, cycling the head's pictures while each one sounds, and prints nothing. With sound off it prints the caption and cycles the head for the block's own tick count instead. So the words reach the screen only where they cannot be heard, which is why these three lines are the only spoken content the game writes down anywhere.
+
+The three read, in order: "ALTHOUGH THE APPEARANCE OF PALTIVAR IS IMMINENT, THERE ARE MORE URGENT MATTERS AT HAND IN THAINE.", "THEIR SUPPLY OF MAGIC ORE HAS RUN OUT, AND THE KINGDOMS HAVE BECOME MORE AGGRESSIVE IN THEIR ATTACKS AGAINST EACH OTHER.", and "IF THE KINGDOMS IN THAINE ARE NOT AT PEACE, YENDOR WILL SURELY BECOME THEIR NEXT VICTIM. WE MUST ACT QUICKLY. GO NOW TO THE ATHANEUM AND SPEAK WITH FLAGELL. HE WILL TELL YOU WHAT IS TO BE DONE."
+
+Scene 5 opens with a panel of its own above them, two lines at `DS:0x9325`: YOU SPEAK WITH ZAMORA AT HIS HOME NEAR THE ATHANEUM...
 
 ## The roster is ten slots, and nine of them are characters
 

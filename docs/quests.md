@@ -4,6 +4,8 @@ The game's progress is 224 bits in the roster. Six mechanisms write those bits a
 
 **Evidence is code** throughout, at the image addresses given. **Shape** stands behind the counts. Every flag number in every table falls in 1 to 224. The kill table's records tile to a zero key, and the gate table's records tile to a word of `0xFFFF`. [README.md](README.md) defines the classifiers.
 
+[tools/quests.py](../tools/quests.py) reads all of it: the gate table, the kill table, the six world scripts and the three item handlers. It assembles the table below from those and from the conversation tables in [npcs.py](../tools/npcs.py), rather than by hand. The scripts and the item handlers are immediates rather than a table, so `check_scripts` and `check_uses` hold every constant to the bytes at the image address it was read from. [tests/test_quests.py](../tests/test_quests.py) holds the counts this document states.
+
 ## The array
 
 The flags are fourteen words at `DS:0xCFAF` to `DS:0xCFC9`, 224 bits in all. They sit at roster header offsets 210 to 236 ([saves.md](saves.md)), so a save carries them and a load restores them. The `WORLD.DAT` template holds zero in all fourteen. That is what starts a new game with nothing done.
@@ -118,9 +120,11 @@ Two of the 23 rewrite a whole region's conversation. Killing King Bariag withdra
 
 ## The world scripts
 
-The `0x0400` cell event kind has six records, and each one has a hand-written handler ([map.md](map.md)). The event's argument is the script number, which both dispatches read from `[si+4]`. Image `0x0B751` says which object the cell draws. Image `0x0B7A8` runs when the party steps on the cell.
+The `0x0400` cell event kind has six records, and each one has a hand-written handler ([map.md](map.md)). The event's argument is the script number, which both dispatches read from `[si+4]`. Image `0x0B751` says which object the cell draws. Image `0x0B7A8` runs when the party uses the cell.
 
-| Script | Cell | Object | What stepping on it does |
+**Using the cell is the space bar, not the step.** Image `0x0040A` picks the cell the party stands on or the one in front of it through image `0x10CD5`, then tests the event's kind: `0x8000` opens a container, `0x2000` takes a door, `0x1000` starts a conversation, and `0x0400` reaches image `0x0B7A8` at image `0x00425`. That is the only call to it anywhere in the load image. Three of the six cells carry an object the walk rule refuses anyway, so a step could never reach them.
+
+| Script | Cell | Object | What using it does |
 |---|---|---|---|
 | 1 | Yendor (40, 62) | 210 while flag 5 is clear | sets flag 5 and lands the party on Thaine Map 10 at (397, 94) facing west |
 | 2 | Yendor (69, 50) | 223 while flag 27 is set | refuses while flag 27 is clear, otherwise lands the party in the Keep at (540, 121) facing south |
@@ -131,9 +135,13 @@ The `0x0400` cell event kind has six records, and each one has a hand-written ha
 
 Script 1 is Saxon's ship. Image `0x0B7D7` writes the landing coordinates as immediates, and they match the pair `WALKED_LINKS` in [tools/pack_maps.py](../tools/pack_maps.py) recorded from a walk.
 
+**A handler lands the party by hand.** A door assigns `DS:0xCEF9` whole out of its destination record ([map.md](map.md)). Each of these writes the party's three words itself and then ORs into and ANDs out of that one word: scripts 2, 3 and 4 set the indoor bit, script 2 clears the cold bit with it, and scripts 5 and 6 set and clear bit `0x4000`. Each writes the area word at `DS:0xCF33` as well, which picks the ambient list ([audio.md](audio.md)): 2, 4, 5, 5, 8 and 2 in script order. Script 5 is the only writer of area 8 anywhere in the game.
+
 **The view draws the first two of those cells a second way.** Image `0x0B704` runs inside the view and tests the coordinates of the cell it is about to draw. Cell (40, 62) takes object 210 while flag 5 is clear, and cell (69, 50) takes object 223 once flag 27 is set. Script 1 and script 2 stand on those two cells, so each gets its object from two routines rather than one.
 
 **An item the party uses is the last writer.** Image `0x0B490` dispatches USE on whichever item the search found, and three items have a handler there: the JEWELED PORTAL KEY, the ENHANCED LENS and the ORB OF ZAMORA. The ENHANCED LENS is item 382, and it reaches image `0x0B4DB`. That routine sets flag 145 only where the party stands at (352, 67) on Thaine Map 5 facing south. The cell it faces holds script 5, so the lens is what opens the Plane of Souls.
+
+**A swap is one routine.** Image `0x0161C` takes an item to find at `DS:0x53EE` and an item to write over it at `DS:0x53F0`, walks the party's own six inventory places at `DS:0xCFF7` and then the characters, and answers with what it found at `DS:0x5426`. Script 4 calls it with 198 and 205 and goes round again while it keeps answering, which is what drains every ring the party holds. Image `0x0B1FC` is the same search without the write, and it is what every other handler here looks for an item with.
 
 ## The other flags the code reads
 
@@ -167,7 +175,23 @@ The last chain reads straight out of the tables.
 
 Flag 224 therefore does two jobs. The same bit marks the king's gift as spent and marks the last monster as dead. Clearing it on TELEPORT is what keeps the two apart.
 
-## The census
+## The ending sequence
+
+**Image `0x05290` is what flag 224 sends the main loop to**, and nothing else calls it. Three routines in order.
+
+| Image | Does |
+|---|---|
+| `0x05472` | stops the music and clears a 320 x 200 buffer |
+| `0x0531F` | plays song 24, draws the first page, wipes it on, speaks over it |
+| `0x053C0` | draws the second page, wipes it on, speaks over it |
+
+**The two pages are run 0 pictures 13 and 14**, the same run the menu and the assembly are painted into. The epilogue is paint rather than text, so there is no string to read: the picture is the words. Image `0x054C3` is the wipe, 80 columns of 200 scanlines copied a dword at a time with a stride of `0x13C`.
+
+**The speech is the last twelve sounds of the bank**, 130 to 135 over the first page and 136 to 141 over the second, 37 seconds between them ([audio.md](audio.md)). Image `0x05501` is what paces them: image `0x184B4` spins on `DS:0xF2E` while a sound is playing and answers ZF set, which skips the wait beside it, so a line's own length is the pacing. The 13 ticks in `cx` are what stands in for that length where sound is switched off. The pauses of 7 and 4 ticks between some of the lines run either way.
+
+The screen then holds for 30 ticks and 20 more each time round while a sound is still playing, and image `0x052B6` frees the buffer and exits to DOS.
+
+## Every flag, its writers and its readers
 
 **223 of the 224 bits are used.** No table and no instruction names flag 58. Two more are written and never read. Killing the WASP QUEEN sets flag 6, and NPC 133's TOUCH CROWN sets flag 212. Every other flag has both a writer and a reader.
 
@@ -407,4 +431,4 @@ The whole array follows. A topic is written `NPC n KEYWORD`. **Offers** counts t
 - **Flag 58.** No table and no instruction names it. Flags 57 and 59 are both in use, so 58 is a gap inside a run rather than the end of one.
 - **Flag 6 and flag 212.** Both are written and never read. Killing the WASP QUEEN sets flag 6, and that monster stands on Thaine Map 10 beside the CENTIPEDE whose death sets flag 1. NPC 133's TOUCH CROWN sets flag 212, and that NPC's own REPAY sets flag 213 one topic later.
 - **The kill table's second flag number**, at `+0x04` of each record. The lookup copies it into the monster's slot at `+0x16`, and the death routine writes it the same way as the first. It is zero on all 23 records, so nothing in the game has ever exercised it.
-- **No decoder reads any of this.** [tools/npcs.py](../tools/npcs.py) reads a topic's flag slots, and `--flags` prints them. Nothing reads the kill table, the gate table's flag pointers, or the five writers in the code. The census above was assembled by hand.
+- **How the ending gets its speech across with sound off.** Image `0x05501` waits 13 ticks per line there, which is 0.7 seconds against the 1.8 to 3.8 the lines actually run. Nothing puts the caption of an ending line on screen the way the intro's talking-head blocks do, so a player with no sound card gets the pages and not the words.
