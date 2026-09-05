@@ -274,3 +274,7 @@ A door records no source, and its destination is a pair of world coordinates rat
 [tools/links.py](../tools/links.py) reads the door destinations at `DS:0xBA95`. Nothing reads the pad table at `DS:0xB71F`.
 
 **`DS:0xB71F`** is a second, smaller table, nineteen 20-byte records keyed by a cell's *tile* rather than its position: matched on the terrain id when `+2` bit 15 is set and on the object id otherwise (image `0x0AE45`). A record with `+2` bit 14 teleports, taking x, y and facing from `+4`, `+6` and `+8`. These are the pads inside Acoknight's Cave, the Way of the Order and Vishan's Stronghold.
+
+The six records without bit 14 teleport nobody, and they are not dead entries: the rest routine calls the same matcher without the teleport test, so **standing on any of the nineteen refuses a rest** ([encounters.md](encounters.md)).
+
+**A destination says what the place it lands on is like.** The word at `+0x10` of a door's 18-byte destination record, and at `+0x0A` of a pad's, is written whole into `DS:0xCEF9` by image `0x05555` and image `0x0AC45`. Nothing else moves it, so it stands until the next door or pad. Two of its bits are read. Bit 0 refuses a rest ([encounters.md](encounters.md)) and bit 13 is the indoor flag the view shades by ([view.md](view.md)). Across the 139 destinations the word takes eight values, 63 of them zero. Six carry bit 0, all in the Dwarven Homeland or the Cave of Ice, and 29 carry bit 13.

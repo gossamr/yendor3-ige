@@ -112,6 +112,18 @@ The remaining bits are flags for the panel and the flow rather than services. `0
 
 **`0x0200` raises a named attribute.** `0x08d3e` reads the NPC's `+0x14`, subtracts `0x3c`, halves it and multiplies by 13 to index a table at `DS:0x80f4` holding **STRENGTH, DEXTERITY, STAMINA, INTELLIGENCE, WISDOM, CHARISMA**. So `+0x14` is the attribute's offset in the character record and the NPC names it on screen.
 
+## Repairing, as a shop does it
+
+A REPAIR topic opens the item panel in repair mode, `[0x536c]` bit 2, at `0x0631e`. The screen admits one kind of item: the filter at `0x06396` answers only for the broken form of a weapon or a shield ([items.md](items.md) has the bit and what a repair does to the piece).
+
+**The price is the whole form's own value, times the NPC's factor.** `0x0a763` loads the record the picked place's second word names, takes its packed BCD value out of the record at `+4` and `+6` into `[0x538a]`, and multiplies it by `[0x0ec8+0x18]` through the BCD multiply at `0x0aa1d`. So mending a COPPER SHIELD +4 is priced on the +4's own worth rather than the base's, and a factor of 3 charges three times that.
+
+**Paying is three steps, in this order** (`0x046a1`): the picked item is tested, and a whole one answers with a message; the party's gold at `DS:0xcf91` is compared against the price, and a short purse answers with another; and then the price is subtracted and the piece is put right, which is the swap [items.md](items.md) sets out.
+
+**A shop always succeeds.** No skill is read on this path and no roll is made. What the party's own repairer does instead, and how badly it can go, is [items.md](items.md)'s.
+
+**The one skill a shop reads is bartering**, which is what haggling a price asks for. Who does the haggling is the party's own choice ([party.md](party.md)).
+
 ## What an NPC will enhance
 
 The screen behind ENHANCE gates on `0x062d1`, which admits an item when three conditions hold:
@@ -132,4 +144,6 @@ The level is the properties word at `+8` for a weapon and `+6` for armor, and it
 
 ## Choosing who trades
 
-`0x06447` picks the party member. It rejects a character whose condition word at `+0x1c` has any of `0x1c40` set, meaning dead, stoned, frozen or paralyzed, and it stores the choice in `[0x5442]`.
+`0x06447` picks the party member, and the choice is the party's own barterer at `DS:0xCF81` ([party.md](party.md)). Where that word is zero the routine puts up WHO WILL BARTER, prompt 10, and stores the answer back into it through `0x16D2E`. It rejects a character whose condition word at `+0x1c` has any of `0x1c40` set, meaning dead, stoned, frozen or paralyzed, and the working copy goes in `[0x5442]`.
+
+Bartering is the only party skill a shop asks for. Everything else a WHO WILL prompt names is the party acting on its own.

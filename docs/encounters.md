@@ -16,11 +16,27 @@ The section 28 cell-event table ([map.md](map.md)) has six kinds. The `0x0800` k
     0x12602  read section 30 record `id`  -> the enemy record's number
     0x1261D  read section 29 record that  -> the monster itself
 
+**Section 30 is the spawn table.** One `uint16` per spawn id, holding the number of the enemy record that id stands for. Its loader stub is image `0x1807E`, which sets a record length of 2 and takes the record number from `bx`, the id the cell carried. The section is 10,000 bytes and the table is only the head of it. Ids run 1 to 1,862, and what follows the last one is other data, a run of section sizes among it.
+
+A spawn id is therefore a monster's identity for the whole game. It names the enemy record through section 30, it carries the monster's own bit in the save, and image `0x126EE` matches a live slot on it.
+
+**Three counts agree.** That is what fixes the reading.
+
+- The 1,862 `0x0800` events carry the arguments 1 to 1,862 with no gap and no repeat.
+- Every one of those resolves through section 30 to an enemy record between 1 and 72, never to record 0 (the sentinel) and never to record 62 (`NOT USED`).
+- Every one of the 71 monsters the clue book lists is placed somewhere.
+
+[tools/spawns.py](../tools/spawns.py) decodes it and prints the census; [tests/test_spawns.py](../tests/test_spawns.py) asserts all three.
+
 ## Resting
 
-`R` reaches image `0x0d358` through the key table at `0x632` ([combat.md](combat.md)). The routine refuses, rests, or is interrupted. The three outcomes have their own messages in the executable: `YOU CAN NOT / REST HERE.` at `0x29e00` and `YOUR REST IS / INTERRUPTED.` beside it.
+`R` reaches image `0x0d358` through the key table at `0x632` ([combat.md](combat.md)). The routine refuses, rests, or is interrupted, and each outcome has its own two lines in the data segment: `YOU CAN NOT / REST HERE` at `DS:0x80d2`, `TOO COLD TO / REST HERE` at `DS:0x954c`, and `X HOURS PASS / X FOOD EATEN` at `DS:0x806b` with `YOUR REST IS / INTERRUPTED` right after them.
 
-**Two things refuse the rest before it starts.** `[0x43ec]` non-zero returns immediately with no message at all. Otherwise image `0x0d7f2` writes a reason into `[0x53e0]`: 2 when `[0xcef9]` bit 0 is set, and 4 when the party is standing somewhere the rest is not allowed. The second reads a table at `0xb71f` through image `0x0ae45`, walking 20-byte entries until one holds `-1`. Bit 15 of an entry's word at `+2` picks which coordinate it is about. The routine compares the entry's own word at `+0` against the party's y when the bit is clear, against its x when it is set. A non-zero reason prints and returns.
+**Two things refuse the rest before it starts.** `[0x43ec]` non-zero returns immediately with no message at all. Otherwise image `0x0d7f2` writes a reason into `[0x53e0]`: 2 when `[0xcef9]` bit 0 is set, which answers `TOO COLD TO / REST HERE` at `0x954c`, and 4 when the party is standing on a cell that refuses one, which answers `YOU CAN NOT / REST HERE`.
+
+**The cell test is the teleport pad table read without the teleport bit.** Image `0x0d809` points `si` at `[0x537a]`, the party's own cell, and calls image `0x0ae45`. That walks the 20-byte records at `DS:0xb71f` until one holds `-1`. It matches the record's own id at `+0` against the cell's terrain word where the record carries `+2` bit 15, and against its object word where it does not. That is the reading [map.md](map.md) gives the pads, through the same routine, so **every one of the nineteen records refuses a rest**: the six that teleport nobody as much as the thirteen that do. Together they cover **403 cells over thirteen maps**. Six of the nineteen only refuse. Terrain 332 and 333 are on Thaine map 1 and Dwarven Homeland maps 3 and 4, terrain 336 and 337 in the Cave of Fire, the Quartz Chamber and the Way of the Order, and objects 144 and 157 on eight maps between them, 62 cells in all.
+
+**`[0xcef9]` is the map's own environment word,** written whole by whichever door or pad the party arrived through. Image `0x05555` takes it from the destination record's `+0x10` and image `0x0ac45` from the pad's `+0x0a`. Bit 0 is the cold that refuses a rest, and bit 13 is the indoor flag the view shades by ([view.md](view.md)). Six of the 139 destinations carry bit 0, and all six are in the Dwarven Homeland or the Cave of Ice.
 
 **A rest is eight hours, taken one at a time.** With `[0x53e0]` at zero the routine loops `cx = 8` from image `0xd45e`. Each pass calls image `0x128c2`, adds `0x3c` to the clock at `[0xcf7f]` and counts the hour into `[0x53f0]`. It then tests `[0x5370]` bit 12 and leaves the loop when the bit is set. `[0x53f0]` is therefore the hours the party actually had. An early exit leaves fewer than eight.
 
@@ -42,17 +58,22 @@ The chain to it is short. A cast reaches the effect dispatcher at image `0x1c4e4
 
 **One spell in the game sets that bit.** Across all 107 records, record 72 bit 1 is SAFE HAVEN's alone. Its word is `0x0002` and nothing else. That is also why its AFFECTS row is blank: any low bit of 72 blanks the row. So 35 magic and 22 nuore buys a full eight hours wherever the party stands, on any monster's row, with nothing in the way. The executable's `FOR UNDISTURBED REST.` at `0x2a084` sits with the service prompts and is a second way to the same state.
 
-**Section 30 is the spawn table.** One `uint16` per spawn id, holding the number of the enemy record that id stands for. Its loader stub is image `0x1807E`, which sets a record length of 2 and takes the record number from `bx`, the id the cell carried. The section is 10,000 bytes and the table is only the head of it. Ids run 1 to 1,862, and what follows the last one is other data, a run of section sizes among it.
+## What a rest gives back
 
-A spawn id is therefore a monster's identity for the whole game. It names the enemy record through section 30, it carries the monster's own bit in the save, and image `0x126EE` matches a live slot on it.
+**Only a rest that ran its eight hours pays.** The interrupted branch at image `0x0d4e6` prints `X HOURS PASS` with `[0x53f0]`'s own digit over the X, then `YOUR REST IS / INTERRUPTED`, and returns. Nothing is eaten and no pool moves. The counter opens at 1 and counts up inside the loop, and the loop's last pass is taken off again at `0x0d48c`. So a rest that runs through reads 8, and one broken into reads the hour it broke in, which is one more than the hours the clock was given.
 
-**Three counts agree.** That is what fixes the reading.
+**A rest eats one unit of food per able character.** Image `0x0d581` counts the characters not carrying `0x1c40` into `[0x441a]`. Image `0x0d5b6` compares the party's food at `DS:0xcf95` against that count. With enough, the count is subtracted and `[0xfd7]` holds it. With less, the food goes to zero and `[0xfd7]` holds what there was. The message is `X FOOD EATEN` with that digit.
 
-- The 1,862 `0x0800` events carry the arguments 1 to 1,862 with no gap and no repeat.
-- Every one of those resolves through section 30 to an enemy record between 1 and 72, never to record 0 (the sentinel) and never to record 62 (`NOT USED`).
-- Every one of the 71 monsters the clue book lists is placed somewhere.
+**What the food buys is a percentage of both pools**, `[0x5368] = (100 / able) x fed` at image `0x0d5e4`. Both operations are integer and the divide comes first, so a party of four that eats four gets 100 and one of three that eats three gets 99. Half the food is half the pools.
 
-[tools/spawns.py](../tools/spawns.py) decodes it and prints the census; [tests/test_spawns.py](../tests/test_spawns.py) asserts all three.
+Image `0x0d6a6` then walks the four handles:
+
+1. A character carrying any of `0x1c40` is passed over, so a corpse gets nothing from resting ([spells.md](spells.md) has the revival that turns on this).
+2. The equipment comes off, the base column is written over the live one at image `0x0d7a1`, and the equipment goes back on. That is how a drained attribute recovers, and why the live column can be treated as disposable ([leveling.md](leveling.md)).
+3. **Any of the six drain conditions costs the whole restoration.** The mask at image `0x0d6c1` is `0xe380`: sick, poison, disease, jinxing, hexing and cursing. Sick and jinxing are cleared on the way past. Disease then takes 36 health and sets the dead bit if that reaches zero. Failing that, cursing takes 48 magic. Poison and hexing are neither cured nor charged, and still cost the character the pools that rest.
+4. Otherwise health rises by `pct(base health, share)` and magic by `pct(base magic, share)`, each clamped at what the level-up built.
+
+So a party resting under a poison it cannot cure heals nothing at all, however much food it carries.
 
 ## A monster is killed once
 

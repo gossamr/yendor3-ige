@@ -75,6 +75,13 @@ DESTINATION_RECORD = 18
 DESTINATION_COUNT = 139
 GATE_TABLE = 0xC45B         # where the destination table ends
 GATED = 0xC000              # +0x0E: the door is gated on a flag
+# +0x10 is the arrival's environment word. Image 0x05555 writes it straight
+# into DS:0xCEF9, which is the word the view's indoor shading and the rest
+# refusal read. A teleport pad carries the same word at its own +0x0A (image
+# 0x0AC45). docs/map.md, "What a destination says about where it lands".
+ENVIRONMENT = 0x10
+ENV_COLD = 0x0001           # a rest here answers TOO COLD TO REST HERE
+ENV_INDOOR = 0x2000         # the fixed shade set, rather than the clock's
 
 CELLS, BANDS = 40, 24
 FACING = {0x8000: "north", 0x4000: "south", 0x2000: "west", 0x1000: "east"}
@@ -110,7 +117,8 @@ def destinations(exe: bytes) -> list[dict]:
     for n in range(DESTINATION_COUNT):
         r = struct.unpack_from("<9H", exe, at + n * DESTINATION_RECORD)
         out.append({"x": r[0], "y": r[1], "facing": FACING.get(r[2]),
-                    "sound": r[3] or None, "gated": bool(r[7] & GATED)})
+                    "sound": r[3] or None, "gated": bool(r[7] & GATED),
+                    "environment": r[8]})
     return out
 
 
@@ -129,7 +137,8 @@ def doors(d: S.Directory) -> list[dict]:
         to = table[e["arg"] - 1]
         out.append({"x": e["x"], "y": e["y"],
                     "to_x": to["x"], "to_y": to["y"],
-                    "facing": to["facing"], "gated": to["gated"]})
+                    "facing": to["facing"], "gated": to["gated"],
+                    "environment": to["environment"]})
     return out
 
 

@@ -300,6 +300,14 @@ def bcd(blob: bytes, at: int, length: int = BCD_BYTES) -> int:
     return out
 
 
+# The nine protection words sit at +0x20 in offset order, which is the order
+# the F5 PROTECTIONS page prints them and the order the condition bits are
+# listed in (docs/combat.md, "Conditions").
+RESISTANCE_AT = 32
+RESISTANCE = ("disease", "poison", "sick", "stoning", "frozen", "paralyze",
+              "cursing", "hexing", "jinxing")
+
+
 def character(roster: bytes, slot: int) -> dict | None:
     """One 500-byte roster slot, in the terms the F1 sheet prints.
 
@@ -335,6 +343,7 @@ def character(roster: bytes, slot: int) -> dict | None:
         "class": w(14), "sex": w(16), "portrait": w(PORTRAIT_AT), "level": w(22),
         "experience": bcd(rec, EXPERIENCE_AT),
         "conditions": w(28),
+        "resistance": {n: w(RESISTANCE_AT + 2 * i) for i, n in enumerate(RESISTANCE)},
         "seeds": [w(SEEDS_AT + 2 * i) for i in range(len(SEEDS))],
         "carried": w(CARRIED_AT) / 10,
         "now": block(LIVE), "most": block(MAXIMUM),

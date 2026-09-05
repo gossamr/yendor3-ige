@@ -69,7 +69,57 @@ The Evidence column uses the classifiers [README.md](README.md) defines. Three o
 
 **Enchanted variants** are separate records, as CLOTHES, CLOTHES +1 and CLOTHES +2 each are. The clue book puts them behind a selector on the base item's page, and `extract` folds them the same way. **327 of the 631 records are +N forms**, which leaves 304 items.
 
-Enhancement runs to **+10**, and nine items reach it, among them CROSSBOW, GOLD SHIELD, 2-HANDED SWORD, WAR HAMMER, HALBERD and ROYAL PLATE ARMOR. Each +N step adds N to the **first byte of the properties block**, and byte 6 of that block counts N itself. ROYAL PLATE ARMOR runs 22, 23, 24, 25 with byte 6 at 0, 1, 2, 3.
+Enhancement runs to **+10**, and nine items reach it, among them CROSSBOW, GOLD SHIELD, 2-HANDED SWORD, WAR HAMMER, HALBERD and ROYAL PLATE ARMOR. Each +N step adds N to the **first byte of the properties block**, and the block counts N itself in a word of its own: the armor entry's `+6`, where ROYAL PLATE ARMOR runs 22, 23, 24, 25 against 0, 1, 2, 3, and the weapon entry's `+8`, where LONG BOW runs 7 to 15 against 0 to 8.
+
+**The rest of both entries is what the item breaks into.** Image `0x05e61` counts a use of the missile weapon, the hand weapon or the shield and rolls `rand(1000)` once the count is past the slot's threshold; [combat.md](combat.md) has the counters and the three call sites. What it rolls against, and what it puts in the slot, is here:
+
+| Entry | Broken form | Chance in 1,000 |
+|---|---|---|
+| weapon, 12 B | `+4` | `+6` |
+| armor, 12 B | `+8` | `+0xa` |
+
+## What a repair does
+
+A repair puts a broken piece back to exactly the item it was. Two things start one, a shop's own screen ([shops.md](shops.md)) and the party's repairer, and the swap below is what both come down to.
+
+**The place is what remembers.** Breaking writes the whole form's id into the place's own second word and the broken form into its item word, in that order, at image `0x036AB`:
+
+    036ab  mov ax, [si+0x10]     ; the item as it was
+    036ae  mov [bx+2], ax        ; -> the place's second word
+    036b1  mov ax, [si+0x12]     ; the broken form
+    036b4  mov [bx], ax          ; -> the place's item word
+
+`bx` is the character record plus the slot's own offset, so the pair travels with the place and a `+4` survives being broken. A repair is that pair read backwards: image `0x0470E` sets the item word to what the second word says and clears the second word. Nothing looks the whole form up, which it could not do anyway, since every step of a series shares one broken record.
+
+**A party's own repairer rolls for it**, at image `0x1C440`. Two things pick the odds: the repairer's repair skill, which falls in one of five bands, and the piece's own enchantment, which is the row. The pair of words found there is read against a `rand(100)`:
+
+    1c487  cmp ax, [si]          ; under the first  -> the piece is destroyed
+    1c48b  cmp ax, [si+2]        ; at or under the second -> repaired
+    1c490  ...                   ; over it -> the attempt fails, the piece survives
+
+The table is 11 rows of five pairs at `DS:0x6EAC`, one row per enchantment level from +0 to +10, and the bands cut at 50, 65, 80 and 95. The first pair of each row, which is a repairer under 50:
+
+| Piece | destroyed under | repaired at or under |
+|---|---|---|
+| +0 | 20 | 50 |
+| +1 | 60 | 40 |
+| +2 | 80 | 10 |
+| +3 | 90 | 10 |
+| +4 and up | 100 | 0 |
+
+So an unskilled repairer mends a plain piece about a third of the time and ruins it a fifth, and past +3 ruins it on every roll but the one draw of exactly 100 that `rand(100)` allows ([combat.md](combat.md) has the fold). At 95 or better nothing is ever destroyed, and everything under +9 is always mended. The enchantment is read out of the properties entry the whole form carries, `+8` on a weapon and `+6` on armor.
+
+**The broken form says so in its own entry.** Image `0x06027` tests the weapon entry's `+2` bit `0x100` and the armor entry's bit `0x40`, and answers 2 where either is set. The bit marks exactly the 26 weapons and 5 shields whose name begins BROKEN, with nothing left over either way. [combat.md](combat.md) has what the two attacks do with that answer: a broken bow does not fire, and a broken hand weapon still swings.
+
+**176 weapon records and 40 armor records name a broken form**, and each names a real item: SLING breaks into BROKEN SLING at 50 in 1,000, LONG BOW into BROKEN LONG BOW at 70, CROSSBOW into BROKEN CROSSBOW at 60. That is what the broken forms in the item table are for, and it is why they are among the 134 items the clue book does not index.
+
+**An enchanted piece breaks like any other, and the enchantment is not in the broken form.** Every step of a series names the same one: COPPER SHIELD and its six `+N` forms all break into BROKEN COPPER SHIELD, and 29 of the 30 series that break do the same. MACE is the exception, and it is a mistake in the data: id 161 names *itself* as its broken form, so breaking a plain MACE leaves a MACE, while MACE +1 to +4 name BROKEN MACE properly.
+
+**What is broken is worth the broken record and nothing more**, so a COPPER SHIELD +4 absorbing 17 becomes a BROKEN COPPER SHIELD absorbing 4 while it stays that way. **The enchantment comes back with the repair**, since the place remembers the exact id, `+N` and all, in the second word above. What breaking costs is the use of the piece and whatever mending it takes.
+
+**186 whole weapon and armor records cannot break at all.** Body armor, helmets, gloves, boots and rings name no broken form, which follows from there being three counters and no more: the missile weapon, the hand weapon and the shield. Four more carry a broken form and a chance of zero, which are the `+10` forms of CROSSBOW, 2-HANDED SWORD, WAR HAMMER and HALBERD.
+
+**Enchantment buys durability as well as damage.** The chance falls 10 per step on WOODEN SHIELD, from 50 at +0 to 10 at +4, and 5 per step on LONG BOW, from 70 to 35 at +7. Five records reach zero that way: WOODEN SHIELD +5 and the +10 forms of CROSSBOW, 2-HANDED SWORD, WAR HAMMER and HALBERD. Zero is not quite never, since the comparison keeps a roll at or under the chance and `rand(1000)` draws a zero once in 1,024 ([combat.md](combat.md) has the fold).
 
 **The rule is the same for both kinds of item. +N adds N to the item's primary combat number**, which is absorption for a piece of armor and damage for a weapon. That one is **measured**: it was read off the game in play rather than out of the code.
 

@@ -472,6 +472,22 @@ COMBAT_FIELDS = ("health", "accuracy", "dexterity", "absorption", "damage",
 # use cap a group at one, two or three (image 0x12B9C).
 ENEMY_GROUP_SHIFT = 13
 
+# Word 98's bits 9 to 12, read as five tiers at image 0x129F8. The word does
+# two jobs at that one reading: it is how often a monster at range shoots
+# (0x1230A) and how often one that has closed the whole distance takes the
+# party into hand to hand (0x129ED). Every monster is asked, and the twelve
+# without a bit answer 5.
+ENEMY_FREQUENCY = ((0x1000, 90), (0x0800, 75), (0x0400, 50), (0x0200, 25))
+ENEMY_FREQUENCY_NONE = 5
+
+
+def frequency(w98: int) -> int:
+    """The nominal percent word 98 quotes, out of the five tiers."""
+    for bit, percent in ENEMY_FREQUENCY:
+        if w98 & bit:
+            return percent
+    return ENEMY_FREQUENCY_NONE
+
 
 def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
     """Every monster's ten pictures, and the record fields that draw them.
@@ -512,6 +528,9 @@ def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
             "sprite": e["sprite"], "walk": e["walk"],
             "recolor": [[s["from"], s["to"]] for s in e["recolor"]],
             "blend": bool(w98 >> P.GRAY_BIT[1] & 1),
+            # How often the monster shoots at range, and how often it engages
+            # the party once it has closed: one word, one reading, two uses.
+            "frequency": frequency(w98),
             # What a caller resolving a blow needs, in one place beside the
             # drawing. The four rewards are the whole battle's accumulators
             # (docs/combat.md), and `group` is word 96's top three bits, which

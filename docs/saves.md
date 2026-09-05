@@ -97,6 +97,7 @@ A step costs the clock 2 or 3 minutes and a rest about 483. The clock wraps at 1
 | 22 | level | screens: F1 |
 | 24 | experience, packed BCD, four bytes | screens: F1 |
 | 28 | conditions, the word the cure prices are read from | code, `0x092B1`; screens: F1 |
+| 32–48 | the nine protection words, in the order the condition bits are listed | code, `0x03875`, see [combat.md](combat.md); screens: F5 |
 | 50–58 | the five seeds the equip dispatch derives the combat words from | code, `0x0649E`, see [combat.md](combat.md) |
 | 60–110 | the live block, 26 words, below | screens: F1, every field |
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |

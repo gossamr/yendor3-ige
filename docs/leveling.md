@@ -122,7 +122,7 @@ So **spending bonus points on charisma buys you nothing at the next training.** 
 The click handler at `0x04a34` maps screen rows to fields with no class test anywhere:
 
 - rows 4 to 9 are the six **attributes**: strength, dexterity, stamina, intelligence, wisdom and charisma,
-- rows 10–21 → all twelve **skills**: survival, projectile, slashing, bashing, polearm, casting, mapping, navigation, bartering, repair, thievery, linguistics.
+- rows 10–21 → all twelve **skills**: survival, projectile, slashing, bashing, polearm, casting, mapping, navigation, bartering, repair, thievery, linguistics. Four of those are the party's rather than the character's, and one character is named for each ([party.md](party.md)).
 
 There are 18 targets. A left click adds a point and a right click takes one back. Health and magic points are not spendable targets, because they come from the formulas only.
 

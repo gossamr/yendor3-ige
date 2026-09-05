@@ -210,7 +210,7 @@ One mechanism lights everything the view draws. It is a shade offset per row, ap
 
 The seven offsets, one per row, are assembled at image `0x178B0` in two steps.
 
-**The distance fog comes first.** Where `DS:0xCEF9` bit `0x2000` is set the seven words are a fixed `-7, -6, -5, -4, -3, -2, -1`, from `DS:0x7A68`. Otherwise they come from the time of day: 37 records of 32 bytes at `DS:0x7556`, each a range of the clock at `DS:0xCF7F`, and the seven words at the matching record's `+0x12`. Those are zero from 08:02 to 18:21 and fall to `-10, -9, -8, -7, -6, -5, -4` at night.
+**The distance fog comes first.** Where `DS:0xCEF9` bit `0x2000` is set the seven words are a fixed `-7, -6, -5, -4, -3, -2, -1`, from `DS:0x7A68`. That word is the environment of the place the party arrived in, carried on the door destination record and on the teleport pad ([map.md](map.md)), so it is the map that decides whether the view shades by the clock, and 29 of the 139 destinations set the bit. Otherwise they come from the time of day: 37 records of 32 bytes at `DS:0x7556`, each a range of the clock at `DS:0xCF7F`, and the seven words at the matching record's `+0x12`. Those are zero from 08:02 to 18:21 and fall to `-10, -9, -8, -7, -6, -5, -4` at night.
 
 That table is **measured**. Poking the clock and redrawing, the floor changes where the table says it changes: dark at 00:01, 05:00, 06:01 and 07:00, flat from 08:00 to 18:00, dark again at 20:00 and 21:01. 19:01 stays flat because that record's offsets are zero for the near rows, which are the rows those pixels belong to.
 

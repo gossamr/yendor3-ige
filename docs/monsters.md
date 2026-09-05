@@ -169,8 +169,10 @@ The map places one monster to a cell rather than drawing a group from an encount
 |---|---|---|---|
 | 1, 2, 3 | 3, 12, 6 | **undecoded**, see below | |
 | 5 | 1 | MIMIC. The monster never sets its own active flag | code, `0x12F94` |
-| 9, 10, 11, 12 | 10, 0, 0, 3 | how often it shoots: 25, 50, 75, 90 | code, `0x129F8` |
+| 9, 10, 11, 12 | 10, 0, 0, 3 | how often it acts: 25, 50, 75, 90 | code, `0x129F8` |
 | 15 | 3 | the pixel takes the ground's own color group, see [pictures.md](pictures.md) | code, `0x10378`, `0x1A9C5` |
+
+**One reading, two uses.** Image `0x129F8` is reached from the ranged-attack pass at `0x1230A`, where the percent is how often a monster at range shoots, and from the approach at `0x129ED`, where it is how often a monster that has closed the whole distance takes the party into hand to hand ([encounters.md](encounters.md)). Every monster is asked at the second, so the 58 that carry none of the four bits answer with the fall-through 5.
 
 Exactly the thirteen monsters with a ranged attack carry one of bits 9 to 12, and the three of those that cannot move (FUNGUS and the two dwarf towers) carry the 90. Image `0x12F85` runs when a monster spawns. It uses the distance band the monster appeared at to decide whether to set bit 0 of the monster's state word. Bits 6, 7 and 8 would move that threshold, and no monster carries them.
 

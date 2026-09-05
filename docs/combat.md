@@ -166,8 +166,67 @@ Printable keys are dispatched through a jump table at `0x777`, indexed `(ascii â
 
 `away` is the dispatcher's return to the input loop, so **a command that does not match the state has no effect**. A key that does not match is not a wasted turn, because it is not a turn at all. Two special projectiles carry the same guard in the item damage table (`0x0c8b0`, `0x0c8c6`) and do nothing in hand to hand combat.
 
-- **Volley** (`0x0c186`): walk the four party slots, collect one shot per able character that has a projectile, count them in `[0xfd7]`, store the four results at `0x5380` and draw them at the four panel positions. The flight then steps out through six distance bands (`[0x53dc]` = `0x31, 0x2e, 0x2b, 0x28, 0x24, 0x19`), resolving each shooter in turn.
+- **Volley** (`0x0c186`): walk the four party slots, collect one shot per able character that has a projectile, count them in `[0xfd7]`, store the four missile weapon ids at `0x5380` and draw the shot once per slot. What makes a slot a shooter is `0x05e61` answering 1 in `[0x53e0]`, which is the same routine the wear counter lives in and which answers 4 for an empty slot, 2 for a broken weapon and 0 where the weapon broke on this very use, so none of those three shoots. The flight then steps out through six distance bands, `[0x53dc]` running `0x31, 0x2e, 0x2b, 0x28, 0x24, 0x19`, which are the middle cells of the party's own row and the five rows ahead of it ([view.md](view.md)). It stops at the first band that holds a monster, and each shooter is resolved against that monster in turn. With `[0xfd7]` at zero the routine returns before it has spent anything, so pressing `S` with no bow in the party is not a turn.
 - **Hand-to-hand** (`0x0c593`): one attack, at band `0x31`, against `[0x54b6]`. No loop over the party and no reference to the `0x5380` table.
+
+### What a volley is drawn as
+
+**The missile weapon's own item id picks the picture**, at image `0x1b547`, out of five in run 1 of `PICTURES.VGA`:
+
+| Item | Picture |
+|---|---|
+| FIRE BOW, id 484 | 102 |
+| ICE BOW, id 269 | 103 |
+| CROSSBOW to CROSSBOW +10, ids 525 to 535 | 155 |
+| SLING to SLING +2, ids 8 to 10 | 9 |
+| every other missile weapon, the broken forms included | 10 |
+
+The two bounds of the sling range are `DS:0x53da` and `DS:0x53d8`, written as 8 and 10 at image `0x0f142`; the other three ids are immediates in the routine.
+
+**A picture is the whole volley, and a place draws one quarter of one.** Each of the five holds four shots side by side, converging on the middle of the view, one per place in the party. Image `0x0c21b` calls the draw four times, once per party slot, pairing `DS:0x0e24` of 0, `0x36`, `0x69` and `0x9d` with that slot's own missile weapon at `DS:0x5380` upward. `0x1b547` writes that x into the destination at `DS:0x0e24` **and** the source at `DS:0x5432`, sets the width at `DS:0x5434` to 53 and the height at `DS:0x543a` to the picture's own 105, and the blitter's rectangle copy at image `0x19bfd` reads exactly those four. So a place copies the columns of the picture that stand where the place stands.
+
+Two things follow. **Nothing is compacted.** A slot with no bow draws nothing at all, since `0x1b547` returns at once on a zero id, so places 1 and 3 shooting leaves the second and fourth quarters empty rather than the two shots closing toward the middle. And **the picture is the slot's own weapon's**, chosen inside that same call, so a party carrying a crossbow and a fire bow fires a bolt from one place and fire from another. Image `0x0c909` clears a slot's quarter as its shot resolves.
+
+The flight itself is blitter mode 5, which image `0x19dc9` turns into mode 7 reading a scratch buffer, so it is placed and scaled by the same table an object face of run 1 takes.
+
+### A weapon wears out
+
+**A broken weapon says so in its own properties entry**, and image `0x06027` is what reads it: `+2` bit `0x100` on the weapon table and bit `0x40` on the armor table, which between them mark exactly the 26 weapons and 5 shields whose name begins BROKEN. It answers 2 for those, 3 for an item that is neither a weapon nor a shield, 4 for an empty slot, and 0 for one that is about to have its use counted.
+
+**The two attacks read that answer differently.** The volley at `0x0c1a9` takes a slot only on a 1, so a broken bow does not fire at all. The melee swing at `0x00e5b` refuses only on a 0, so a broken sword still swings for whatever damage its own entry carries, and an empty hand swings for the seed alone. The 0 is the case both refuse, and it means the weapon broke on this use.
+
+**A skipped swing still spends the turn.** The swing falls through to `0x00f0b` whether it landed, missed or was never rolled, and that jumps to `0x00bc8`, which is the end of a character's turn: it clears `[0x536e]` bit `0x20`, zeroes `[0x53d4]` and returns to the round driver.
+
+**A broken shield still absorbs.** The accumulator at `0x06591` walks the worn words, and for each non-zero one adds byte 0 of that item's own properties entry to `[si+0x50]` and `[si+0x90]`. It reads no flag and applies no fraction. Breaking is a change of item rather than a state on one, so what a broken shield is worth is simply its own record's number: 1 against the WOODEN SHIELD's 3, 4 against the COPPER's 9, 5 against the STEEL's 10, 7 against the SILVER's 14 and 10 against the GOLD's 20.
+
+### What a character's turn takes
+
+`0x00b71` is the input loop, and `0x00bde` dispatches what it read:
+
+| Key | What | Turn |
+|---|---|---|
+| `A` | swing at `[0x54b6]` | spent, landed or not |
+| `C` | cast | spent only if the cast goes through; a refusal returns to the loop |
+| `P` | the panels, which is where equipment is swapped | not spent |
+| `D` | the disk | not spent |
+| `1` to `4` | move the panel to another character | not spent |
+| Tab | pass, behind `[0x536a]` bit `0x8000` | spent |
+
+So **equipment can be swapped in the middle of a fight, on a character's own turn, without spending it.** `P` reaches `0x00f54`, which draws the panel screen and ends `jmp 0xb3b`, back into the same turn's loop. The five combat words are rebuilt by the equip dispatch as the piece moves, so the swing that follows uses the new weapon.
+
+**Every use of the missile weapon, the hand weapon or the shield goes through image `0x05e61`,** which counts the use and may break the item. There are three call sites, one per slot: the volley at `0x0c1a4` reads `0x13a`, the melee swing at `0x00e56` reads `0x142`, and a monster's blow against a character at `0x01080` reads `0x146`. A shield is therefore worn down by being hit rather than by being swung.
+
+Each slot has a counter of its own in the character record, and a threshold:
+
+| Slot | Counter | Uses before it can break |
+|---|---|---|
+| `0x13a` missile weapon | `+0xbe` | 120 |
+| `0x142` hand weapon | `+0xc0` | 80 |
+| `0x146` shield | `+0xc2` | 20 |
+
+Under the threshold the item is handed back and nothing happens. Over it, images `0x05f42` and `0x05f5e` roll `rand(1000)` against a chance the item's own properties entry carries, and a roll at or under it breaks the item: image `0x05fd6` writes the replacement into the slot through the effect applier, and `0x05f94` puts the counter back to zero. The two entries hold the pair at different offsets ([items.md](items.md)): a weapon's replacement at `+4` and its chance at `+6`, an armor entry's at `+8` and `+0xa`.
+
+The guard in front of the roll reads the wrong pointer. Image `0x05f58` tests `[bx+6]` and `0x05f3c` tests `[bx+0xa]` with `bx` still on the 58-byte item record, where those words are the middle of the packed BCD value and the weight. The roll two instructions later reloads `bx` from `DS:0x0fe3`, the properties entry. Both record words are non-zero on all but a handful of items, so the guard passes and the roll decides.
 
 A small number of items resolve out of a fixed damage table at `0x0c809` rather than through the resolver. A matching item id deals a set amount and may inflict a condition of set strength and duration, which `rand(100)` then keeps 77% of the time.
 
