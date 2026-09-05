@@ -129,7 +129,7 @@ The read goes through the same request block as everything else, with the record
 
 ## Extracting the audio
 
-Every offset below comes out of the two files, and nothing here needs the game run. `master` is the 36-dword directory at `exe[0x2CF37]` that [world-dat.md](world-dat.md) describes.
+Every offset below comes out of the two files, and nothing here needs the game run. `master` is the 36-dword directory at `exe[0x2CF37]` that [world-dat.md](world-dat.md) describes. [tools/audio.py](../tools/audio.py) reads all of it, and `python tools/audio.py --dump DIR` writes the 24 `.CMF`, the 141 `.VOC` and the driver out as files.
 
     exe   = REGISTER.EXE
     world = WORLD.DAT
@@ -328,6 +328,8 @@ Arriving anywhere restarts the list. Image `0x00999` is the same routine with th
 
 Ten record fields hold a sound index, the ambient table above holds 160 slots, and every other call names an index as a literal. The addresses below are the instruction that loads the field, not the call that follows it.
 
+[tools/sound_sites.py](../tools/sound_sites.py) reads the call sites out of the executable rather than off this page: 172 far calls reach the six audio entries, of which 119 play a sound, 101 of those hand it a literal over 42 distinct sounds, and the other 18 take a value the routine worked out, which is one of the fields below.
+
 | Field | Where | Played by |
 |---|---|---|
 | enemy record 42 | section 29 | `0x01053`, `0x01105`, `0x080C7` on the clue book's own page |
@@ -337,11 +339,67 @@ Ten record fields hold a sound index, the ambient table above holds 160 slots, a
 | door destination `+0x06` | `DS:0xBA95`, 18 bytes per record | `0x0553B` |
 | teleport pad `+0x0E` | `DS:0xB71F`, 20 bytes per record | `0x0AC0D`, `0x0AC25` |
 | spell record 34 | section 31 | `0x1CCF5`, `0x1CD5E`, `0x1CF2B`, `0x1D3E0`, `0x1D80B` through `0x1D91F`, and `0x1D2AD` direct |
-| spell record 32 | section 31 | `0x1CD8C`, `0x1D146`, `0x1D2E9`, `0x1D36E`, `0x1D4E0`, `0x1D5C6`, all through `0x1D91F` |
+| spell record 32 | section 31 | `0x1CD8C`, `0x1D146`, `0x1D2E9`, `0x1D36E`, `0x1D4E0`, `0x1D5C6`, all through `0x1D91F`. Every family reaches one of the six, the restoratives at `0x1D146` |
 | spell record 40 | section 31 | `0x1D0DE` through `0x1D91F` |
 | weapon properties entry `+0xA` | section 9, 12 bytes per entry ([items.md](items.md)) | `0x00EB5`, when a melee blow lands |
 
-The three spell fields split by family. On the 19 records whose word 72 carries bit 15 or bit 14, the restoratives, 32 is 18 on every one and 34 is an amount of 0 to 9,999 ([spells.md](spells.md)). On the other 88, every value of 32 and of 34 falls inside 1 to 141, and so does every value of 40 but 208, 219 and 225.
+### What a cast plays, which is the dispatcher's rather than the record's
+
+A spell's sound is not a field of its record. The dispatcher at image `0x1C4E4` branches on record offset 72 and then on four bits of record 76, and the branch decides. The record being cast sits in a buffer at `DS:0x5DA6`, which is what makes the dispatcher readable: `DS:0x5DEE` is its offset 72, `DS:0x5DF2` its 76, `DS:0x5DC6` its 32 and `DS:0x5DC8` its 34. Eighteen branches cover all 107 records with none left over, and [tools/spell_sounds.py](../tools/spell_sounds.py) walks them.
+
+| Record and bit | Spells | Plays |
+|---|---|---|
+| 72 `0x8000`, `0x4000` | 19 | the attack table entry offset 32 names |
+| 72 `0x2000`, `0x1000` | 39 | record offset 34 |
+| 72 `0x0100`, 76 `0x0008`/`0x0002`/`0x0004`/`0x0001` | 38 | record offset 32 |
+| 72 `0x0080`, `0x0008` | 4 | 44 |
+| 72 `0x0001`, `0x0040` | 2 | 11 |
+| 72 `0x0010`, `0x0004` | 2 | 51, 79 |
+| 72 `0x0020`, `0x0002` | 2 | nothing |
+
+**A restorative sounds through the attack table.** Its branch plays nothing itself. Image `0x1C5E1` hands offset 32 to the lookup at image `0x0357E`, which answers a far pointer to an attack table entry, and stores that pointer on the character's own animation slot at `DS:0x0F4A`, twenty bytes each and four of them. What is heard is the entry's own `+0`, beside the animation its `+2` draws over the healed character's portrait. All 19 restoratives name entry 18, whose sound is 12 and whose animation is 2. The same lookup read the same way is image `0x0AEB9` on the monster's side.
+
+**Offset 32 is two things.** On that branch it is an entry number, and all 19 restoratives hold 18, inside the 49 the table has. On every other branch it is a sound index, and across the other 88 records it reaches 126, which no 49-entry table could hold. The overloading is settled from both sides.
+
+**A cast that does nothing is silent.** Image `0x1CCE7` tests the damage the applier at image `0x1D93D` wrote into `DS:0x0F34` and `DS:0x0F36` and leaves without a sound where it is zero, so immunity and a failed roll both come out quiet. There is no miss sound.
+
+### The literals, read off the branch that plays them
+
+Most of the 101 literal sites say only that a sound is played there. These say which sound covers which branch, because the instruction that picks between them is in the same window.
+
+| Sound | Raised by | Read at |
+|---|---|---|
+| 1 | a screen going up, before the panel routine draws it | `0x0CBB6` and six more |
+| 2 | one of the four portraits taken, beside a write of `DS:0x53D4` | `0x04B32`, `0x04C66` |
+| 5 | the party stepping, either arm of the move routine | `0x03451`, `0x034A9` |
+| 7 | a monster's slot freed as it dies | `0x12CEF` |
+| 8 / 7 | a repair destroying the piece / mending it | `0x1C48B`'s three-way |
+| 9 | a service paid for | `0x16863` and four more |
+| 10 | a party volley, one per band | `0x0C4BB`, `0x0C4F7` |
+| 13 | a step a wall or a blocking object refused | `0x032D5` |
+| 14 | a container with a lid | `0x0294D`, `0x02986` |
+| 15 | the item panel a shop service opens | `0x03A98` and five more |
+| 35 | a blow in hand to hand that missed | `0x00E89` |
+| 40 | a cast light or a torch running out | `0x1A4D0`, raised at `0x0EBB9` |
+| 43, 33, 84, 44 | the lens, and the world scripts by their own area | `0x0B6AC` to `0x0BB3D` |
+
+**Sound 5 is the step because `DS:0x0E9A` is the key.** It is written with 72, 75, 77 and 80, which are the four arrow scan codes, and image `0x03447` compares it against `0x48` to tell a forward step from the rest. Each arm sounds before adding its own delta to `DS:0xCF75` and `DS:0xCF77`.
+
+**Sound 13 is the refusal because it stands in front of the step.** Image `0x032D5` is twenty bytes before the step at image `0x032E9`. The two classifiers write into `DS:0x53E0` and the step runs only on a pair of zeros; 2 is a terrain of 0 or 1, the edge of the map, and goes quiet, and everything else sounds ([map.md](map.md)).
+
+**Only one effect sounds at a time.** CT-VOICE plays out of a single buffer, so a second sound cannot overlap the first: image `0x186D8` cuts the current one short at five sites and image `0x184B4` waits it out at twenty-one.
+
+**A bow names no sound.** Unlike a melee weapon, whose properties entry `+0xA` a landed blow reads, the entry is 0 on all 35 missile weapons, and the four missile item ids the picture picker at image `0x1B562` compares against appear exactly once each in the image, so there is no second picker. The party's volley plays the literal 10 at each band. What varies is a **monster's** shot: image `0x12579` copies enemy record 48 into the projectile record's `+0x14`, one of four at `DS:0xA5A6`, and image `0x123AA` walks the four and plays the first that is not zero.
+
+**Sound 35 is a miss in hand to hand, and it pairs with the weapon's own sound.** Image `0x00E73` calls the resolver at `0x1586F` and image `0x00E78` tests the damage it wrote into `DS:0x0F36`. Zero takes the branch that plays 35 at image `0x00E89`. Anything else takes the branch that reads the acting character's hand weapon out of record offset `0x142`, resolves its properties entry through image `0x0F44C`, and plays that entry's own `+0xA` at image `0x00EBC`, skipping where the entry holds 0. So a character's blow is the same pair a monster's is, records 42 and 44 against a weapon field and one literal.
+
+**Sound 14 is a container with a lid.** Images `0x0294D` and `0x02986` both load 14, and both stand behind a test of `DS:0x5890` bit 1, which is the kind bit image `0x027AD` reads to raise WHO WILL OPEN against WHO WILL SEARCH ([map.md](map.md)). Kind 1 is the barrel, the chest and the dresser; the other eleven drawings open in silence.
+
+**Sound 10 is a shot in flight.** Image `0x0C4B3` cuts whatever is playing short through image `0x186D8` and image `0x0C4BB` plays 10, at the head of the loop that steps a party volley out through its six bands, so the whistle repeats a band rather than overlapping itself. Images `0x0C4F7` and `0x0C5BF` play it from the same routine.
+
+**Offset 32 is a sound on all 107 records, the restoratives included.** The spell being cast sits in a buffer at `DS:0x5DA6`, so `DS:0x5DC6` is its offset 32 and `DS:0x5DC8` its 34, and neither word is ever written: they are read straight out of the record. Image `0x1D146` reads `DS:0x5DC6` and hands it to the wrapper at image `0x1D91F`, and the same branch goes on to read `DS:0x5DCC`, which is offset 38, the restorative's own maximum ([spells.md](spells.md)). So a heal, a cure, a resurrection and a restoration each play offset 32 as much as a damaging spell does, and all 19 hold **18** there, which makes 18 the one sound every restorative shares. The other 88 hold 30 distinct values between them, all in range.
+
+Offsets 34 and 40 split by family, and only there. On the 19 restoratives 34 is an amount of health, 10 for HEAL and 9,999 for PERFECT HEALTH, and 40 is a mask that runs past the 141 the bank holds, so neither is a sound on those records. On the other 88 both are, every non-zero value of 34 falling inside 1 to 141 and every non-zero value of 40 but 208, 219 and 225. Which branch raises either is unread.
 
 The door's sound plays on arrival and 65 of the 139 destinations are silent. The pad's is 43 on all 13 pads that teleport and 0 on the six that only refuse a rest.
 

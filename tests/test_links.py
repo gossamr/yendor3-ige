@@ -34,10 +34,10 @@ def test_every_cell_event_is_one_of_six_kinds(directory):
     for e in events:
         counts[e["kind"]] = counts.get(e["kind"], 0) + 1
     assert counts == {"monster": 1862, "treasure": 380, "person": 139,
-                      "door": 139, "container": 71, "script": 6}
+                      "crossing": 139, "container": 71, "script": 6}
     # The arguments of each kind are a dense 1-based run, which is what says
     # the kind bit has been read right: a mis-split would leave gaps.
-    for kind in ("door", "person", "monster"):
+    for kind in ("crossing", "person", "monster"):
         args = sorted(e["arg"] for e in events if e["kind"] == kind)
         assert args == list(range(1, len(args) + 1)), kind
 
@@ -45,13 +45,13 @@ def test_every_cell_event_is_one_of_six_kinds(directory):
 def test_every_door_uses_its_own_destination_record(directory):
     """139 doors and 139 records, one each, so nothing in the table is
     spare and no door shares a destination with another."""
-    doors = [e for e in K.events(directory) if e["kind"] == "door"]
+    doors = [e for e in K.events(directory) if e["kind"] == "crossing"]
     assert sorted(e["arg"] for e in doors) == list(range(1, 140))
 
 
 def test_every_door_lands_on_a_map(directory):
     registry = R.map_registry(directory.world)
-    for door in K.doors(directory):
+    for door in K.crossings(directory):
         assert registry.get(K.page_of(door["to_x"], door["to_y"])), door
         assert door["facing"], door
 
@@ -97,7 +97,7 @@ def test_a_door_lands_on_a_cell_the_party_may_stand_on(directory):
     import pack_maps
 
     blocked = []
-    for door in K.doors(directory):
+    for door in K.crossings(directory):
         area, level = K.page_of(door["to_x"], door["to_y"])
         if not pack_maps.walkable(directory.world, area, level,
                                   door["to_y"] % K.BANDS, door["to_x"] % K.CELLS):

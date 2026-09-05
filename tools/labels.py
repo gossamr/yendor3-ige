@@ -157,19 +157,36 @@ CREATION_LABELS = {
     "portrait": 0x8863,
     "roll_attributes": 0x8899,
     "pick_items": 0x88A9,
-    # The disk panel's own, which is where a party is written down and read
-    # back: the game reaches it from inside the world rather than from the
-    # menu, but the words are the same ones.
+}
+
+# The disk panel's own button labels: the game reaches the panel from inside
+# the world rather than from the menu. SAVE, LOAD and DOS sit together in the
+# data segment with the two switches image 0x0E6A8 and image 0x0E6F0 draw ON
+# or OFF against (docs/audio.md); NEW GAME is elsewhere, since the game's own
+# panel says DOS where this one starts another party.
+DISK_LABELS = {
     "save": 0x7C20,
     "load": 0x7C25,
     "new_game": 0x8712,
+    "return": 0x7DB6,
+    "music": 0x7C2E,
+    "sound_fx": 0x7C34,
 }
 
 
-def creation_labels(exe: bytes) -> dict[str, str]:
-    """The creation screens' own words, by the name this module gives each."""
+def _labels(exe: bytes, where: dict[str, int]) -> dict[str, str]:
     return {name: text(exe[DGROUP + at:DGROUP + at + 32])
-            for name, at in CREATION_LABELS.items()}
+            for name, at in where.items()}
+
+
+def creation_labels(exe: bytes) -> dict[str, str]:
+    """The creation screens' own button labels, by the name this module gives each."""
+    return _labels(exe, CREATION_LABELS)
+
+
+def disk_labels(exe: bytes) -> dict[str, str]:
+    """The disk panel's own button labels, and its two sound switches."""
+    return _labels(exe, DISK_LABELS)
 
 
 # Every string above must actually be present in the EXE; verify() proves it.

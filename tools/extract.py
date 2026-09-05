@@ -589,6 +589,14 @@ def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
             # How often the monster shoots at range, and how often it engages
             # the party once it has closed: one word, one reading, two uses.
             "frequency": frequency(w98),
+            # What the resolver plays: 42 where the blow lands and 44 where it
+            # misses, which the attack animation raises again at step 0x4A
+            # (docs/audio.md). 0 is the silence it is everywhere.
+            "sounds": {"hit": e["sound_hit"], "miss": e["sound_miss"],
+                       # Record 48, which image 0x12579 copies into the
+                       # projectile record's +0x14 and image 0x123AA reads back
+                       # as the shot flies, so every monster's shot is its own.
+                       "shot": (e["ranged"] or {}).get("sound", 0)},
             # What a caller resolving a blow needs, in one place beside the
             # drawing. The four rewards are the whole battle's accumulators
             # (docs/combat.md), and `group` is word 96's top three bits, which
