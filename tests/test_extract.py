@@ -12,6 +12,7 @@ import pytest
 
 import extract
 import labels
+import saves
 import sections as S
 import tiles
 
@@ -771,6 +772,32 @@ def test_every_item_that_is_equipped_names_its_slot(data):
         assert by[name]["slot"] == slot, name
     armor = [i for i in data["items"] if i["category"] == "ARMOR / RINGS"]
     assert all(i["slot"] for i in armor)
+
+
+def test_every_item_names_an_icon_in_run_8(data):
+    """Record word 8 is a picture number in run 8, the 340 sixteen-by-sixteen
+    icons. Every value lands inside that run, and the picture a record names is
+    the item it is."""
+    arts = [i["art"] for i in data["items"]]
+    assert min(arts) >= 0 and max(arts) < 340
+    by = {i["name"]: i["art"] for i in data["items"]}
+    assert [by["GOLD COINS"], by["MAGIC GRAPES"], by["SLING"], by["WOODEN SHIELD"]] \
+        == [66, 94, 142, 163]
+
+
+def test_an_equipped_item_names_the_character_record_word_it_goes_in(data):
+    """`slot_word` is the same partition as `slot`, against the words
+    tools/saves.py names. The two rings share a category and take two words, so
+    a ring names the first."""
+    by = {i["name"]: i for i in data["items"]}
+    for name, word in [("ROYAL PLATE ARMOR", "body"), ("ROYAL PLATE HELMET", "head"),
+                       ("ROYAL PLATE BOOTS", "feet"), ("ROYAL PLATE GLOVES", "hands"),
+                       ("GOLD SHIELD", "shield"), ("RING OF INVISIBILITY", "ring"),
+                       ("2-HANDED SWORD", "hand"), ("SLING", "missile"),
+                       ("BAG", "container"), ("TORCH", None)]:
+        assert by[name]["slot_word"] == word, name
+    words = {i["slot_word"] for i in data["items"] if i["slot_word"]}
+    assert words <= set(saves.EQUIPMENT)
 
 
 def test_a_magic_scroll_names_the_spell_it_teaches(data):

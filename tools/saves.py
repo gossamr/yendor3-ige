@@ -98,11 +98,32 @@ OFF_ATTRIBUTES, OFF_COMBAT, OFF_SKILLS = 0, 12, 28
 OFF_HEALTH, OFF_MAGIC, OFF_CAPACITY = 22, 24, 26
 CARRIED_AT = 280            # tenths of a unit, as is the capacity at LIVE+26
 
+
+def column_fields() -> dict[int, str]:
+    """Offset within a 64-byte stat column -> the name of the word there.
+
+    The label run at REGISTER.EXE:0x29EA4 names them in this order, and a
+    field of a character record, as a spell's restorative offsets give one, is
+    this offset plus LIVE or MAXIMUM.
+    """
+    out = {OFF_HEALTH: "health", OFF_MAGIC: "magic", OFF_CAPACITY: "capacity"}
+    for group, base in ((ATTRIBUTES, OFF_ATTRIBUTES), (COMBAT, OFF_COMBAT),
+                        (SKILLS, OFF_SKILLS)):
+        for i, name in enumerate(group):
+            out[base + 2 * i] = name
+    return out
+
 # The eight panel slots, then the equipment, each an item id and a second word
 # that is the item's own state, and for a container its record in section 2.
 PANEL_AT, PANEL_SLOTS = 282, 8
+# The eleven equipment words, in the order the dispatch at image 0x04237 and
+# its worn sub-dispatch at 0x0431D write them. 342 is the fifth worn word,
+# which no item's bit reaches and which the absorption sum at 0x06591 adds
+# anyway. docs/items.md, "Equip slots".
 EQUIPMENT = {"missile": 314, "container": 318, "hand": 322, "shield": 326,
-             "ring": 330, "ring 2": 334, "worn": 338}
+             "ring": 330, "ring 2": 334,
+             "head": 338, "body": 340, "unfillable": 342, "feet": 344,
+             "hands": 346}
 # The playing party, as roster slot numbers, in the last four words of the
 # header slot.
 PARTY_AT, PARTY_MAX = 492, 4
@@ -319,13 +340,21 @@ def character(roster: bytes, slot: int) -> dict | None:
         "now": block(LIVE), "most": block(MAXIMUM),
         "panel": [p for p in panel if p[0]],
         "equipment": {k: w(at) for k, at in EQUIPMENT.items() if w(at)},
+        # Every slot's second word, which is the item's own state: a section 2
+        # record for a container, what is left to burn for a light, and zero
+        # for everything else. docs/items.md.
+        "states": {k: w(at + 2) for k, at in EQUIPMENT.items() if w(at)},
     }
+
+
+def shipped_roster_bytes(blob: bytes) -> bytes:
+    """WORLD.DAT section 32 out of bytes already in hand."""
+    return blob[ROSTER_TEMPLATE:ROSTER_TEMPLATE + ROSTER_SLOT * ROSTER_SLOTS]
 
 
 def shipped_roster(world: str | Path = "game/WORLD.DAT") -> bytes:
     """WORLD.DAT section 32: the same ten slots a save's section 0 holds."""
-    blob = Path(world).read_bytes()
-    return blob[ROSTER_TEMPLATE:ROSTER_TEMPLATE + ROSTER_SLOT * ROSTER_SLOTS]
+    return shipped_roster_bytes(Path(world).read_bytes())
 
 
 def shipped_party(world: str | Path = "game/WORLD.DAT") -> list[dict]:

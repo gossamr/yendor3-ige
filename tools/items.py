@@ -45,6 +45,7 @@ NAME_FIELDS = 3
 PROPS_PTR = 0     # uint16, byte offset into this item's properties table
 EFFECT_PTR = 2    # uint16, byte offset into the effects table
 VALUE = 5         # packed BCD, three bytes
+ART = 8           # uint16, the item's own picture in run 8 of PICTURES.VGA
 WEIGHT = 10       # uint16, tenths
 CATEGORY = 12     # uint16, the properties-table selector and the equip slot
 CONTAINERS = 14   # uint16, where the item fits
@@ -59,6 +60,10 @@ IS_CONTAINER = 0x2000  # the backpack, box and bag themselves
 # none of them is set the item is either a container's own contents or a thing
 # that can only be handed between characters.
 CONTAINER_BITS = ((0x8000, "BACKPACK"), (0x4000, "BOX"), (0x2000, "BAG"))
+# The same three read the other way: which bit of a contents word a given
+# container answers to. The three container records are BAG, BOX and BACKPACK
+# and nothing else carries IS_CONTAINER, so the kind is the name.
+CONTAINER_BIT = {name: bit for bit, name in CONTAINER_BITS}
 CHARACTER_PANEL = "CHARACTER PANEL"
 ANY_PANEL = "ANY PANEL"
 
@@ -306,6 +311,29 @@ class Items:
             return None
         return L.text(records[spell - 1][:SPELL_NAME_LEN]).strip()
 
+    def is_container(self, rec: bytes) -> bool:
+        """Whether the item is a bag, a box or a backpack, which are the three
+        that carry contents of their own. docs/saves.md, section 2."""
+        return bool(_u16(rec, CATEGORY) & IS_CONTAINER)
+
+    def holds(self, rec: bytes) -> int:
+        """The FITS IN word: which containers will take this item."""
+        return _u16(rec, CONTAINERS)
+
+    def art(self, rec: bytes) -> int:
+        """The item's own 16 x 16 icon, a picture number in run 8."""
+        return _u16(rec, ART)
+
+    def slot_word(self, rec: bytes) -> str | None:
+        """The character record's slot word the dispatch writes this item to.
+
+        `equip_slot` names the category the F5 page belongs to; this names the
+        word at image 0x04237, as tools/saves.py's EQUIPMENT keys it. The two
+        rings share one category and take two words, so a ring names the first
+        and the dispatch takes the second where the first is full.
+        """
+        return SLOT_WORD.get(self.equip_slot(rec))
+
     def equip_slot(self, rec: bytes) -> str | None:
         """Which slot the item is worn or wielded in, or None if it is carried.
 
@@ -495,6 +523,12 @@ SLOT_BITS = ((0x8000, "MISSILE WEAPON"), (0x4000, "HAND WEAPON"),
 WORN = 0x0200
 WORN_BITS = ((0x8000, "HEAD"), (0x4000, "BODY"),
              (0x1000, "FEET"), (0x0800, "HANDS"))
+# The same eight slots against the character record's own words, which
+# tools/saves.py names. RING answers to two of them; `slot_word` names the
+# first, and the dispatch takes the second where the first is full.
+SLOT_WORD = {"MISSILE WEAPON": "missile", "AMMUNITION": "container",
+             "HAND WEAPON": "hand", "SHIELD": "shield", "RING": "ring",
+             "HEAD": "head", "BODY": "body", "FEET": "feet", "HANDS": "hands"}
 
 
 def skill_of(flags: int) -> str | None:

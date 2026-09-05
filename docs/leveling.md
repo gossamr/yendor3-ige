@@ -11,6 +11,7 @@ The startup stub at image `0x00012` does `mov ax, 0x1ddb / mov ds, ax`, so DGROU
 | What | Where | Notes |
 |---|---|---|
 | Level-up routine | image `0x09a50` | reached only after the gold is paid |
+| Class titles | `DS:0x7cb4`, `DS:0x875b`, `DS:0x87be` | three tiers, 9 names of 11 bytes each |
 | Trainer quote / refusal | image `0x09d75` | "TO TRAIN TO LEVEL n" |
 | Bonus-point screen | image `0x0492a` | click handler at `0x049ee`/`0x04a1a` |
 | "Ready for level" test | image `0x065ba` | rewrites the field every shop visit |
@@ -73,8 +74,8 @@ So a point of stamina or intelligence affects only the additions made at *subseq
 
 The two models can be told apart in play. A level 40 character who rolled 52 stamina reads about **1,066** maximum health. Recomputing from the current stamina would give 1,521, and recomputing from the original roll would give 608. The cap for health and magic is 9,999, and everything else caps at 999.
 3. **Bonus points** `= min(15, round(base charisma × 13%))`, stashed in `DS:0x0e2a`.
-4. **Magic points**, which depend on the class, as the table below sets out. Fighter, merchant and rogue gain nothing.
-5. **`base += 2` on each of the six attributes**, and **`base += 2` on each of the twelve skills**.
+4. **Magic points**, which depend on the class, as the table below sets out. Fighter, merchant and rogue gain nothing. Then `current magic := base magic`, at image `0x09B47`, which is the same pair of instructions the health gain ends on. A level-up refills the magic pool as well as the health one.
+5. **`base += 2` on each of the six attributes**, and **`base += 2` on each of the twelve skills**. The second loop is `mov bx, 0x98 / mov cx, 0xd` at image `0x09B5D`, thirteen words from the skills' start, so it also reaches the unnamed word that follows the twelve.
 6. Spells, on even levels only, and promotion, at levels 10 and 30.
 7. The message "YOU ARE NOW LEVEL n" with the health points and magic points, then the bonus point screen.
 
@@ -187,7 +188,7 @@ Other services quote through the same routine. Replenishing health has a base of
 
 The class code then gains 10 at **level 10** and again at **level 30** (`add word [si+0xe], 0xa` at image `0x09ce1` and `0x09ced`, against the constants written at image `0x0f0e2`), which is what turns MONK into CLERIC into PRIEST.
 
-**The title is the whole of the promotion.** Every read of the class field on a character record strips the tier first, with `cmp ax,9 / sub ax,0xa` applied twice. It then dispatches on 1-9 exactly as it did before the promotion. That happens at the magic gain at `0x09a9a`, at the spell grant at `0x09c73` (which folds 4-9, 14-19 and 24-29 onto the same six rows), at the magic-class bitmask at `0x1dce7`, and at the magic regeneration at `0x1ae1a`. Every one of the 88 `cmp [si+0xe], n` sites in the image compares against 0-9, and not one of them tests a promoted value. The single place the tier survives is `0x04cc3`, which uses it to choose between three name tables and return. The tables are the base names, then nine at `DS:0x875b` (WARRIOR, TINKERER, THIEF, CLERIC, TRANSMUTER, CAVALIER, WIZARD, ENCHANTER, RANGER) and nine at `DS:0x87be` (CHAMPION, BLACKSMITH, ASSASSIN, PRIEST, HEALER, HERO, SORCERER, SAGE, KNIGHT), 11 bytes each. All nine classes are promoted, not only the six that cast.
+**The title is the whole of the promotion.** Every read of the class field on a character record strips the tier first, with `cmp ax,9 / sub ax,0xa` applied twice. It then dispatches on 1-9 exactly as it did before the promotion. That happens at the magic gain at `0x09a9a`, at the spell grant at `0x09c73` (which folds 4-9, 14-19 and 24-29 onto the same six rows), at the magic-class bitmask at `0x1dce7`, and at the magic regeneration at `0x1ae1a`. Every one of the 88 `cmp [si+0xe], n` sites in the image compares against 0-9, and not one of them tests a promoted value. The single place the tier survives is `0x04cc3`, which uses it to choose between three name tables and return. The three sit end to end at `DS:0x7cb4` (FIGHTER, MERCHANT, ROGUE, MONK, ALCHEMIST, PALADIN, MAGE, DRUID, MARKSMAN), `DS:0x875b` (WARRIOR, TINKERER, THIEF, CLERIC, TRANSMUTER, CAVALIER, WIZARD, ENCHANTER, RANGER) and `DS:0x87be` (CHAMPION, BLACKSMITH, ASSASSIN, PRIEST, HEALER, HERO, SORCERER, SAGE, KNIGHT), 11 bytes each. All nine classes are promoted, not only the six that cast.
 
 ## What corroborates this
 

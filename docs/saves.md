@@ -100,11 +100,13 @@ A step costs the clock 2 or 3 minutes and a rest about 483. The clock wraps at 1
 | 50–58 | the five seeds the equip dispatch derives the combat words from | code, `0x0649E`, see [combat.md](combat.md) |
 | 60–110 | the live block, 26 words, below | screens: F1, every field |
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
-| 280 | weight carried, in tenths | code, `0x05C44`; shape: `10 x` strength |
+| 280 | weight carried, in tenths: the sum over everything held | shape, below |
 | 282–313 | the eight panel slots, four bytes each | code, `0x0437E`, see [items.md](items.md) |
 | 314, 318, 322, 326, 330, 334 | missile, container, hand, shield, two rings | code, `0x04237`, see [items.md](items.md) |
 | 338–346 | the worn slots, a word each: head, body, nothing, feet, hands | code, `0x0431D`, see [items.md](items.md) |
 | 348 | equipment flags; bit `0x20` is a two-handed weapon in hand | code, `0x06568` and `0x042D6` |
+
+**Word 280 is the sum of the weights of everything the character holds**, worn, wielded and packed alike. Summing the item weights over each shipped character's equipment words and panel slots gives 80, 65, 65 and 75 tenths against the 80, 65, 65 and 75 the records hold, so the identity is exact on all four. The capacity it is measured against is `10 x` strength, at `LIVE+26`. [items.md](items.md) has the item weights.
 
 The live block, in the order the F1 sheet prints it:
 

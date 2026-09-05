@@ -460,6 +460,10 @@ MONSTER_BLOCK_FRAMES = 10
 
 # What the resolver takes, beside what the block draws. Every one of these is
 # already read by extract_enemies; naming them here keeps the two in step.
+# The three enemy words a spell is resolved against, as opposed to the five a
+# swing reads. docs/combat.md, "Spells".
+SPELL_FACING_FIELDS = ("family", "immunity", "resistance")
+
 COMBAT_FIELDS = ("health", "accuracy", "dexterity", "absorption", "damage",
                  "level", "experience", "gold", "nuore", "food",
                  "ordinary_attack_id")
@@ -514,6 +518,10 @@ def monster_frames(d: S.Directory, pics: bytes, enemies: list[dict]) -> dict:
             # decide how many of the monster can engage at once.
             "combat": {k: e[k] for k in COMBAT_FIELDS},
             "group": w96 >> ENEMY_GROUP_SHIFT & 7,
+            # What a cast reads and a swing does not: the family a
+            # family-restricted spell singles out, and the two words a spell's
+            # element and damage type are matched against (docs/combat.md).
+            **{k: e[k] for k in SPELL_FACING_FIELDS},
         })
     return {"blocks": blocks, "monsters": listed}
 
@@ -654,11 +662,19 @@ SPELL_OUT_OF_MELEE = 0x0400     # 70: WHEN says out of hand to hand
 # Who may learn a spell from a scroll: a six-bit mask, read in spell_classes.
 SPELL_SCROLL_MASK = 68
 
+# Where a restorative puts its amount, at image 0x037D9: 36 names a word of the
+# live stat column, 38 the matching word of the base column and 0 for no
+# ceiling, and 40 is the mask ANDed into the condition word. All three carry a
+# meaning on the 19 restoratives alone. docs/spells.md, "What a restorative
+# spell does".
+SPELL_RESTORE = {"field": 36, "max": 38, "mask": 40}
+
 SPELL_UNKNOWN = [c for c in range(22, 80, 2)
                 if c not in (*SPELL_FIELDS.values(), SPELL_AMOUNT,
                              SPELL_ELEMENT, SPELL_FAMILY, SPELL_SCROLL_MASK,
                              SPELL_AFFECTS_WORD, SPELL_BLOW,
-                             SPELL_KIND, SPELL_WHEN_WORD)]
+                             SPELL_KIND, SPELL_WHEN_WORD,
+                             *SPELL_RESTORE.values())]
 
 
 def spell_affects(rec: bytes) -> tuple[str | None, str | None, str | None, str]:
@@ -830,6 +846,15 @@ def extract_spells(d: S.Directory) -> list[dict]:
         # The blow word, which says both what a resistant monster halves and
         # what the AFFECTS row reaches.
         s["blow"] = u16(rec, SPELL_BLOW)
+        # The three words the cast dispatcher at image 0x1C4E4 routes on, beside
+        # the rows the F3 printer builds from them. 72 says what the spell acts
+        # on and how far it reaches, 30 tells insect from undead, and 70 bit 10
+        # is the out-of-melee restriction. A caller placing a cast reads the
+        # words; a caller printing a page reads the rows.
+        s["affects"] = u16(rec, SPELL_AFFECTS_WORD)
+        s["kind"] = u16(rec, SPELL_KIND)
+        s["when_word"] = u16(rec, SPELL_WHEN_WORD)
+        s["restore"] = {name: u16(rec, off) for name, off in SPELL_RESTORE.items()}
         s["listed"] = i + 1 in book
         s["unknown"] = {f"u{off}": u16(rec, off) for off in SPELL_UNKNOWN}
         out.append(s)
@@ -958,6 +983,10 @@ def extract_items(d: S.Directory) -> list[dict]:
             "spell": items.scroll_spell(rec),
             # Which slot it occupies; the F5 page has no such row either.
             "slot": items.equip_slot(rec),
+            # The same slot as the character record's own word, and the item's
+            # own 16 x 16 icon, a picture in run 8. Neither is on the page.
+            "slot_word": items.slot_word(rec),
+            "art": items.art(rec),
             "category": category_of.get(item_id),
             "listed": item_id in category_of,
             # Value, weight and absorption are their own keys on the item, so

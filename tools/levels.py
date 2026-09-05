@@ -40,6 +40,12 @@ DS_XP_TABLE_END = 0xC8C3  # the code's own bound: `cmp di, 0xc8c3 / jae`
 DS_SPELLS_BY_LEVEL = 0xB8B5  # 6 magic classes x 40 words
 DS_PROMOTE_2 = 0x5448  # set to 10 by the init block at image 0x0f0e2
 DS_PROMOTE_3 = 0x544A  # set to 30 there too
+# The three class-title tables, end to end: the base tier, then the one each
+# promotion reads instead. Image 0x04cc3 is the only place a promoted class
+# code survives, and it picks between these three on the tier it strips.
+DS_CLASS_TITLES = (0x7CB4, 0x875B, 0x87BE)
+TITLE_STRIDE = 11
+TITLE_COUNT = 9
 
 LEVEL_CAP = 0x5A  # `cmp [si+0x16], 0x5a` clamps level at 90
 BONUS_CAP = 0x0F  # `cmp ax, 0xf` clamps bonus points at 15
@@ -456,6 +462,17 @@ def spells_by_level(exe: bytes) -> dict[str, dict[int, list[int]]]:
     return out
 
 
+def class_titles(exe: bytes) -> list[list[str]]:
+    """The nine class names at each of the three tiers, base tier first."""
+    out = []
+    for base in DS_CLASS_TITLES:
+        at = ds(base)
+        out.append([exe[at + i * TITLE_STRIDE:at + (i + 1) * TITLE_STRIDE]
+                    .split(b"\0")[0].decode("latin1").strip()
+                    for i in range(TITLE_COUNT)])
+    return out
+
+
 def promotion_levels(exe: bytes) -> tuple[int, int]:
     """The two levels at which the class code gains 10 and takes a new title.
 
@@ -478,6 +495,7 @@ class Report:
     level_clamp: int = LEVEL_CAP
     promote: tuple[int, int] = (0, 0)
     spells: dict[str, dict[int, list[int]]] = field(default_factory=dict)
+    titles: list[list[str]] = field(default_factory=list)
 
 
 def build(exe: bytes) -> Report:
@@ -487,6 +505,7 @@ def build(exe: bytes) -> Report:
         reachable=reachable_levels(table),
         promote=promotion_levels(exe),
         spells=spells_by_level(exe),
+        titles=class_titles(exe),
     )
 
 

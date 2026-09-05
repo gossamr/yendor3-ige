@@ -225,9 +225,11 @@ def test_the_live_block_is_twenty_six_words_with_nothing_overlapping():
 def test_the_equipment_offsets_are_the_slot_words_the_item_dispatch_writes():
     # docs/items.md, "Equip slots": 0x13a missile, 0x13e ammunition (which is
     # where the container sits), 0x142 hand, 0x146 shield, 0x14a and 0x14e
-    # rings, 0x152 worn.
+    # rings, then the five worn words from 0x152. The third of those five is
+    # the one no item's bit reaches.
     assert list(S.EQUIPMENT.values()) == [0x13A, 0x13E, 0x142, 0x146,
-                                          0x14A, 0x14E, 0x152]
+                                          0x14A, 0x14E,
+                                          0x152, 0x154, 0x156, 0x158, 0x15A]
     assert S.PANEL_AT + 4 * S.PANEL_SLOTS == S.EQUIPMENT["missile"]
 
 

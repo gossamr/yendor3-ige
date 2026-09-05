@@ -35,13 +35,15 @@ A name is a stored string, so it uses the game's character set. The game has no 
 | 0 | uint16, byte offset into this item's properties table | code, `0x0F44C`; screens, below |
 | 2 | uint16, a byte offset into the effects table, and 0 for no effects | code, `0x0F44C`; screens, below |
 | 5 | BASE VALUE, packed BCD, three bytes | screens: F5, 148/148 |
-| 8 | uint16, the item's artwork | code, `0x0F44C` |
+| 8 | uint16, the item's artwork: a picture in run 8 | code, `0x0F44C`; shape, below |
 | 10 | WEIGHT, uint16, tenths | screens: F5, 169/169 |
 | 12 | category: the properties-table selector and the equip slot | code, `0x04237` and `0x0F4CC`; shape |
 | 14 | FITS IN, a container mask | screens: F5, 170/170 |
 | 16 | a group, **undecoded**, see below | |
 
 Bytes 4 and 18 are zero on all 631. Byte 9 is the high byte of the artwork word at 8, and 234 records carry artwork above 255, so it is not spare.
+
+**The artwork word is a picture number in run 8**, the 340 sixteen-by-sixteen icons ([pictures.md](pictures.md) has the run table). All 631 values fall inside that run, between 16 and 330 over 263 distinct pictures. Drawing the picture each record names gives the item the record is: GOLD COINS draws coins at 66, MAGIC GRAPES a bunch of grapes at 94, SLING a sling at 142 and WOODEN SHIELD a round shield at 163. `Items.art` reads it, and [tests/test_extract.py](../tests/test_extract.py) holds the range.
 
 The Evidence column uses the classifiers [README.md](README.md) defines. Three of the fields were read off the game's own F5 pages, on every figure they print:
 
