@@ -59,8 +59,19 @@ Ten 500-byte slots. Slot 0 is a header, slots 1–5 are the created characters a
 
 The first bytes ship holding `PRE-CREATED PARTY`, and the name typed at a save slot is written over them.
 
+The slot is the party's own state as the running game holds it, so an offset is a `DS:` address less `0xCEDD`, and every word another document names by its address is one of these: the light at `DS:0xCEF7` ([view.md](view.md)), the environment at `DS:0xCEF9` ([encounters.md](encounters.md)), the area at `DS:0xCF33` ([audio.md](audio.md)), the four skill handles at `DS:0xCF81` ([party.md](party.md)).
+
 | Offset | Field | Evidence |
 |---|---|---|
+| 26 | light flags, a pair of bits per strength: cast sets the low one, carried the high | code, `0x17971`, see [view.md](view.md) |
+| 28 | environment, `DS:0xCEF9`: bit 13 indoor, bit 0 cold | code, `0x05555` and `0x0AC45`, see [encounters.md](encounters.md) |
+| 32 | mapping rungs, a bit per rung the party's average passes | code, `0x05CB0`, see [party.md](party.md) |
+| 38, 42, 44 | how many lights of strength 5, 3 and 2 the party carries | code, `0x0FE29`, `0x0FE35`, `0x0FE41` |
+| 52–62 | six cast-light timers, tens of minutes, strength 1 first | code, `0x1C676` and `0x0EBC0`, see [spells.md](spells.md) |
+| 70, 72, 74 | party average mapping, navigation and survival | code, `0x05CB0`, see [party.md](party.md) |
+| 86 | which of the eight ambient lists the place runs | code, `0x009C8`, see [audio.md](audio.md) |
+| 110 | roster slot of whoever cast last, written as the cast takes their magic | code, `0x0D337` |
+| 134 | whether music and sound play: bit 1 gates music, bit 3 sound | code, `0x18631`, see [audio.md](audio.md) |
 | 150 | facing: `0x8000` north, `0x4000` south, `0x2000` west, `0x1000` east | code, `0x112D6`; measured, one turn a step |
 | 152 | the party's x, in cells across the whole world grid | measured; the trainer writes it and the party arrives there |
 | 154 | the party's y | measured, the same way |
@@ -69,14 +80,18 @@ The first bytes ship holding `PRE-CREATED PARTY`, and the name typed at a save s
 | 180 | gold, packed BCD, four bytes | screens: the F5 purse |
 | 184 | food, the same | screens: the F5 purse |
 | 188 | nuore, the same | screens: the F5 purse |
+| 164, 166, 168, 170 | who holds bartering, repair, thievery and linguistics, 0 for nobody | code, `0x04DD1` and `0x16D2E`, see [party.md](party.md) |
 | 210–236 | fourteen quest flag words, 224 bits, below | code, `0x17AFE` and `0x1DB19`; measured, across a played save |
 | 282–305 | the party's own six inventory slots, four bytes each, below | code, `0x0B242`; measured, against a played save |
+| 306, 308 | where the sky's window sits on its gradient, and the step it moves by | code, `0x0EDD1` |
 | 310 | the sky ramp: 32 colors of three six-bit components | measured; shape: 96 bytes, every component 63 or below |
 | 430 | the next container record to hand out | code, `0x16044`; measured, 3 in every save |
 | 432 | the head of the free list of container records, 0 for none | code, `0x1600F` and `0x051E1`; measured, 0 in every save |
 | 492 | the roster slots that are playing, four words, 0 for an empty place | measured, against the party assembled |
 
 The facing values are the ones the look-ahead dispatch at image `0x112D6` tests, where `0x8000` steps `y` back and `0x4000` steps it on, `0x1000` steps `x` on and anything else steps it back.
+
+**The sky ramp is a window rather than a reading.** Image `0x0EDD1` writes 333 into the offset at 306 and -3 into the step at 308, and `0x0EDE0` copies 96 bytes from `DS:0x4D62` plus that offset into the ramp and adds the step to it. So the ramp, its window and the mapping rungs and party averages above are all rebuilt from what they are derived from rather than read back.
 
 The world is one grid, seven areas of 24 bands down by twenty levels of 40 cells across, so `x = level * 40 + cell` and `y = area * 24 + band`, and a map is one `(area, level)` block of that grid. The cabinet's trainer writes those two words to put a party on a named map. It takes the cell from `arrive` in `data/map_pages.json`, which is the drawn cell nearest the middle of that map, because a cell whose bit at `0x3C4F02` is clear is not part of the map at all.
 
@@ -107,14 +122,17 @@ The item search at image `0x0B242` walks those six **before** it walks any chara
 | 22 | level | screens: F1 |
 | 24 | experience, packed BCD, four bytes | screens: F1 |
 | 28 | conditions, the word the cure prices are read from | code, `0x092B1`; screens: F1 |
+| 20 | gallery cell the portrait was picked from, picture less run 7's own first | code, `0x14716` |
 | 30 | how many levels are owed, rewritten on every shop visit | code, `0x065BA`, see [leveling.md](leveling.md) |
 | 32–48 | the nine protection words, in the order the condition bits are listed | code, `0x03875`, see [combat.md](combat.md); screens: F5 |
 | 50–58 | the five seeds the equip dispatch derives the combat words from | code, `0x0649E`, see [combat.md](combat.md) |
 | 60–110 | the live block, 26 words, below | screens: F1, every field |
 | 124–174 | the same 26 words again, holding the maximum | screens: F1, and the pair below |
 | 180 | which flights this character owns, one bit each | code, `0x09E6E`, see [shops.md](shops.md) |
+| 190, 192, 194 | uses of missile weapon, hand weapon, shield, counted toward a break | code, `0x05E61`, see [combat.md](combat.md) |
+| 200 | spell the cast menu was left on, so it opens where this character left it | code, `0x0CC61` and `0x0CF8A` |
 | 202–214 | which spells this character knows, one bit per spell number | code, `0x0CF28`, `0x09CAF`, `0x1DC3E` and `0x14FD9` |
-| 240–252 | the place MARK OR RETURN wrote down: x, y, facing, two words, and the arrival word at `+12` | code, `0x1CA3F` |
+| 240–252 | where MARK OR RETURN wrote the party down, six words, below | code, `0x1CA3F` |
 | 268 | one bit per once-per-character service taken | code, `0x17ABC` and `0x08FB2` |
 | 280 | weight carried, in tenths: the sum over everything held | shape, below |
 | 282–313 | the eight panel slots, four bytes each | code, `0x0437E`, see [items.md](items.md) |
@@ -135,6 +153,19 @@ Image `0x0CF28` builds the cast menu. It walks the spell numbers and lists the o
 **Three resolvers reach three bit arrays, and their nine wrappers are consecutive in the image.** Image `0x17AFE` takes no base and reaches the party's quest flags at `DS:0xCFAF` ([quests.md](quests.md)). Image `0x17B27` adds `0xCA` to a base in `si` and reaches the spell book. Image `0x17AD4` adds `0x10C` and reaches the word at 268. Each resolver has a clear, a set and a test wrapper, at `0x17A90`/`0x17AAC`/`0x17AC4`, `0x17A9A`/`0x17AB4`/`0x17ACC` and `0x17A86`/`0x17AA4`/`0x17ABC`. Picking the wrong wrapper out of the run puts a field in the wrong record.
 
 **The mark is the caster's own.** The spell record carries the offset rather than the code, at its word 64, and MARK OR RETURN carries 240 ([spells.md](spells.md)). A character who has never cast it holds zeros there, and the description says one spot per character.
+
+**It writes six words and reads the same six back.** Image `0x1CA3F` branches on `DS:0x536A` bit 7, which prompt 34 sets for MARK and clears for RETURN, and either copies the six out of the party's own globals or puts them back:
+
+| Offset | Global | What |
+|---|---|---|
+| `+0` | `DS:0xCF75` | x |
+| `+2` | `DS:0xCF77` | y |
+| `+4` | `DS:0xCF73` | facing |
+| `+6` | `DS:0xCF2D` | a word nothing else in the image reads or writes |
+| `+8` | `DS:0xCF33` | the area the ambient list is picked by ([audio.md](audio.md)) |
+| `+12` | `DS:0xCEF9` | the environment word, whose bit 0 is cold and bit 13 indoor ([encounters.md](encounters.md)) |
+
+So the return puts the party back on the cell it marked, in the place that cell was in: the same map's ambient area and the same environment, rather than whatever the party walked into since. `DS:0xCF2D` sits one word under the arrival pair at `DS:0xCF2F` and `DS:0xCF31`, which is dead in the shipped data ([audio.md](audio.md)); the mark carries it and nothing fills it.
 
 **Word 280 is the sum of the weights of everything the character holds**, worn, wielded and packed alike. Summing the item weights over each shipped character's equipment words and panel slots gives 80, 65, 65 and 75 tenths against the 80, 65, 65 and 75 the records hold, so the identity is exact on all four. The capacity it is measured against is `10 x` strength, at `LIVE+26`. [items.md](items.md) has the item weights.
 

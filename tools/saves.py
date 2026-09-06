@@ -57,9 +57,17 @@ H_FILE, H_BUF_SEG, H_BUF_OFF, H_LEN, H_RECORD, H_BASE = 0, 2, 4, 6, 8, 10
 
 ROSTER_SLOT = 500
 ROSTER_SLOTS = 10
+# Where the roster sits in the running game, which is what turns an address the
+# code carries into an offset in the header slot: DS:0xCFAF, the quest flag
+# array tools/quests.py reads, is this plus 210.
+ROSTER_AT = 0xCEDD
 # WORLD.DAT section 32 holds the same ten slots as a template, and its last
 # four are the party the game ships.
 ROSTER_TEMPLATE = 0x41D72F
+# Where the template's own four stand. Slot 0 is the header and the other nine
+# are character slots, any of which a created character can be kept in, these
+# four included: which of the nine are playing is the header's own four words at
+# PARTY_AT rather than anything about a slot.
 SHIPPED_SLOTS = (6, 7, 8, 9)
 
 # Gold, food and nuore, and a character's experience, are packed BCD: two
@@ -116,6 +124,74 @@ def column_fields() -> dict[int, str]:
 # The eight panel slots, then the equipment, each an item id and a second word
 # that is the item's own state, and for a container its record in section 2.
 PANEL_AT, PANEL_SLOTS = 282, 8
+# The party's own item slots, the same four-byte pairs at the same displacement
+# of the header slot, which is what that slot's 500 bytes leave sitting there.
+# The item search at image 0x0B242 walks these six before any character's pack.
+PARTY_STORE_AT, PARTY_STORE_SLOTS = PANEL_AT, 6
+# The character's own bit arrays. The spell book is seven words at 202, one bit
+# per 1-based spell number, spell 1 in the high bit of the first (image 0x17B27
+# adds 0xCA to the record). The word at 268 spends one bit per once-per-character
+# service, of the fourteen NPCs raise (image 0x17ABC adds 0x10C). Word 180
+# carries the four transport bits a stable's topic names (image 0x09E6E).
+SPELL_BOOK_AT, SPELL_BOOK_WORDS = 202, 7
+# The gallery cell the portrait was picked from, written beside the picture at
+# image 0x14716: the picture is that cell plus run 7's own first, so the two
+# words differ by a constant on every character the game ships or makes.
+GALLERY_AT = 20
+# What the cast menu was left on for this character, so it opens there again:
+# image 0x0CC61 writes the spell number and 0x0CF8A looks it up to place the
+# cursor (docs/saves.md).
+CAST_AT = 200
+# Uses of the missile weapon, the hand weapon and the shield, each counted
+# toward the roll that breaks it (docs/combat.md, "A weapon wears out").
+WEAR = {"missile": 190, "hand": 192, "shield": 194}
+# Where MARK OR RETURN writes the party down, six words from 240: x, y, facing,
+# DS:0xCF2D, the ambient area and, at +12, the environment word. The spell
+# record carries the offset rather than the code (docs/spells.md).
+MARK_AT = 240
+MARK = {"x": 0, "y": 2, "facing": 4, "spare": 6, "area": 8, "environment": 12}
+
+# The party's own state, which is the DS block the header slot is a copy of: the
+# roster sits at ROSTER_AT, so an address the code uses is that plus an offset
+# into the slot. Named here because each is read somewhere else in the docs.
+ENVIRONMENT_AT = 0xCEF9 - ROSTER_AT     # bit 13 indoor, bit 0 cold
+AREA_AT = 0xCF33 - ROSTER_AT            # which ambient list the place runs
+# The light: a word of flags, and a timer per strength. A cast light sets the
+# low bit of its strength's pair and writes its own timer; a carried one sets the
+# high bit and steps one of three counters (docs/view.md, docs/spells.md).
+LIGHT_AT = 0xCEF7 - ROSTER_AT
+LIGHT_TIMERS_AT = 0xCF11 - ROSTER_AT
+LIGHT_STRENGTHS = 6
+LIGHT_CAST_BIT = 0x8000                 # any cast light burning
+LIGHT_FIRST_BIT = 0x100                 # strength 1's own low bit, halved per strength
+LIGHT_TENS = 10                         # a timer counts tens of minutes
+# A light carried rather than cast sets the high bit of its strength's pair and
+# steps a count of how many of that strength are being carried. Only three of the
+# six have one, and a torch is the middle: image 0x0FE29, 0x0FE35 and 0x0FE41.
+CARRIED_LIGHTS = ((0x2000, 0xCF03 - ROSTER_AT), (0x800, 0xCF07 - ROSTER_AT),
+                  (0x400, 0xCF09 - ROSTER_AT))
+LIGHT_HIGH_FIRST = 0x200                # the brightest strength's own high bit
+# Who the party sends for each of the four skills it acts with, as character
+# handles, zero for nobody (docs/party.md).
+# Whether music and sound are on, which the two toggles and the driver share:
+# bit 1 gates every music entry and bit 3 every sound entry (docs/audio.md).
+AUDIO_AT = 0xCF63 - ROSTER_AT
+AUDIO_MUSIC_BIT, AUDIO_SOUND_BIT = 0x2, 0x8
+# The roster slot of whoever cast last, which the cast path writes as it takes
+# the magic off them (image 0x0D337). DS:0x537E is the acting character's slot,
+# the companion of the record pointer at DS:0x537C.
+CAST_BY_AT = 0xCF4B - ROSTER_AT
+PARTY_SKILLS_AT = 0xCF81 - ROSTER_AT
+PARTY_SKILLS = ("bartering", "repair", "thievery", "linguistic")
+# Party membership is bit 0x800 of the record's word 0x15C: the assembly sets it
+# at image 0x1B974 and clears it at 0x1B922, beside writing the slot's own number
+# into the four handles at PARTY_AT. The same word carries the two-handed flag at
+# bit 0x20. A slot holding no character is one whose level is zero, which is the
+# test the assembly makes at image 0x1B911, `cmp word ptr [si+0x16], 0`.
+MEMBER_AT, MEMBER_BIT = 0x15C, 0x800
+LEVEL_AT = 22
+CHALLENGES_AT, CHALLENGES = 268, 14
+FLIGHTS_AT = 180
 # The eleven equipment words, in the order the dispatch at image 0x04237 and
 # its worn sub-dispatch at 0x0431D write them. 342 is the fifth worn word,
 # which no item's bit reaches and which the absorption sum at 0x06591 adds
@@ -124,6 +200,12 @@ EQUIPMENT = {"missile": 314, "container": 318, "hand": 322, "shield": 326,
              "ring": 330, "ring 2": 334,
              "head": 338, "body": 340, "unfillable": 342, "feet": 344,
              "hands": 346}
+# Which of them carry the item's own state in a second word, four bytes to a
+# slot. The five worn words at 0x152 to 0x15A are a word each -- the equip
+# table's `0x0200` row is "5 words, 4 fillable" (docs/items.md) -- and 0x15C
+# after them is the equipment flags, so a state written past 0x15A lands on
+# another slot's item or on that word.
+PAIRED_SLOTS = ("missile", "container", "hand", "shield", "ring", "ring 2")
 # The playing party, as roster slot numbers, in the last four words of the
 # header slot.
 PARTY_AT, PARTY_MAX = 492, 4
@@ -134,8 +216,13 @@ PARTY_AT, PARTY_MAX = 492, 4
 AREAS, BANDS, LEVELS, CELLS = 7, 24, 20, 40
 BAND_BYTES = LEVELS * CELLS // 8          # 100
 
-# The monster structs the map keeps: eighty of them, at DS:0x122C.
+# The monster structs the map keeps: eighty of them, at DS:0x122C. A claimed
+# slot carries the spawn id it was claimed for at +0, where the party met it at
+# +2 and +4, the picture at +8, the condition word at +0xC and what is left of
+# its health at +0x10, with the enemy record copied in from +50 (docs/monsters.md).
 SPAWN_SLOTS, MONSTER = 80, 156
+SPAWN_ID_AT, SPAWN_X_AT, SPAWN_Y_AT = 0, 2, 4
+SPAWN_HEALTH_AT, SPAWN_STATE_AT = 0x10, 0x0C
 
 # Facings, as the look-ahead dispatch at image 0x112D6 tests them.
 FACING = {0x8000: "north", 0x4000: "south", 0x2000: "west", 0x1000: "east"}
