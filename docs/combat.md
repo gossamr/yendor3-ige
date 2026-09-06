@@ -143,7 +143,7 @@ All four call the same resolver, and differ only in which fields they hand it.
 
 Casting is a weapon skill: a damage spell rolls to hit against the monster's absorption and has its damage scaled by the same margin.
 
-### Shoot and attack are one routine and two modes
+### Shoot and throw share an entry, not a resolver
 
 Printable keys are dispatched through a jump table at `0x777`, indexed `(ascii âˆ’ 0x20) Ã— 2`:
 
@@ -155,7 +155,7 @@ Printable keys are dispatched through a jump table at `0x777`, indexed `(ascii â
 | `D` disk | `0x566` | | `K` keyring | `0x644` |
 | `M` map | `0x5d2` | | `V` version | `0x769` |
 
-`A` and `S` enter the same routine at `0x0c13e` under opposite guards:
+`A` and `S` both call `0x0c13e`, under opposite guards on `[0x5370]` bit `0x1000`, and `S` raises `[0x536e]` bit `0x100` in front of its call:
 
     0671  test [0x5370], 0x1000 / jne  away   ; S: only out of hand-to-hand
           or   [0x536e], 0x100                ;    mark it a party volley
@@ -164,10 +164,15 @@ Printable keys are dispatched through a jump table at `0x777`, indexed `(ascii â
     069e  test [0x5370], 0x1000 / je   away   ; A: only in hand-to-hand
           lcall 0x0c13e
 
-`away` is the dispatcher's return to the input loop, so **a command that does not match the state has no effect**. A key that does not match is not a wasted turn, because it is not a turn at all. Two special projectiles carry the same guard in the item damage table (`0x0c8b0`, `0x0c8c6`) and do nothing in hand to hand combat.
+`away` is the dispatcher's return to the input loop, so **a command that does not match the state has no effect**. A key that does not match is not a wasted turn, because it is not a turn at all.
 
-- **Volley** (`0x0c186`): walk the four party slots, collect one shot per able character that has a projectile, count them in `[0xfd7]`, store the four missile weapon ids at `0x5380` and draw the shot once per slot. What makes a slot a shooter is `0x05e61` answering 1 in `[0x53e0]`, which is the same routine the wear counter lives in and which answers 4 for an empty slot, 2 for a broken weapon and 0 where the weapon broke on this very use, so none of those three shoots. The flight then steps out through six distance bands, `[0x53dc]` running `0x31, 0x2e, 0x2b, 0x28, 0x24, 0x19`, which are the middle cells of the party's own row and the five rows ahead of it ([view.md](view.md)). It stops at the first band that holds a monster, and each shooter is resolved against that monster in turn. With `[0xfd7]` at zero the routine returns before it has spent anything, so pressing `S` with no bow in the party is not a turn.
-- **Hand-to-hand** (`0x0c593`): one attack, at band `0x31`, against `[0x54b6]`. No loop over the party and no reference to the `0x5380` table.
+**What the two share is the drawing and the band walk, and nothing that decides a number.** `0x0c6f6` tests `[0x536e]` bit `0x100` and takes one of two resolvers. Set, it walks the four collected bows at `0x5380` and resolves each shooter's own weapon skill (`0x0c718` to `0x0c773`). Clear, it reads the item id in `[0x5426]` and resolves it through the item damage table at `0x0c809` (`0x0c774`), which rolls d100, drops everything over 85, and then takes a constant off a per-id arm: 60 for the GOLD POTION, 35 and a condition for the SILVER, 85 for the BLUE against a monster whose `+0x4e` is 13, and 40 for the FLAMING OIL FLASK, whose id `0x0f130` writes into `[0x5464]`. No weapon is read and no skill is rolled on that side. Two arms compare against `[0x544c]` and `[0x544e]`, both of which `0x0f0f4` and `0x0f0fa` write as `0xffff`, so neither can match an item id; each also carries the hand-to-hand guard (`0x0c8b0`, `0x0c8c6`) and would do nothing there.
+
+- **Volley** (`0x0c186`): walk the four party slots, collect one shot per able character that has a projectile, count them in `[0xfd7]`, store the four missile weapon ids at `0x5380` and draw the shot once per slot. What makes a slot a shooter is `0x05e61` answering 1 in `[0x53e0]`, which is the same routine the wear counter lives in and which answers 4 for an empty slot, 2 for a broken weapon and 0 where the weapon broke on this very use, so none of those three shoots. The shot then steps out through six distance bands, `[0x53dc]` running `0x31, 0x2e, 0x2b, 0x28, 0x24, 0x19`, which are the middle cells of the party's own row and the five rows ahead of it ([view.md](view.md)). The party's own band is drawn and never probed, and each band further out is handed to `0x02f93`, which answers 4 for a monster, 1 for a terrain of 2 to 99 or 200 to 299, 2 for any object and 0 for a cell the shot passes through. It stops on the first answer that is not 0, and on a 4 each shooter is resolved against that monster in turn. With `[0xfd7]` at zero the routine returns before it has spent anything, so pressing `S` with no bow in the party is not a turn. [audio.md](audio.md) has the four sounds it plays.
+- **Item at range** (`0x0c405`): the same band walk with one projectile rather than four. `0x0c5c8` draws it, picking its quarter of the throw picture by the id in `[0x5426]` against 63, 61 and the 60 in `[0x5464]`, which are the BLUE POTION, the GOLD POTION and the FLAMING OIL FLASK.
+- **Item in hand to hand** (`0x0c593`): one blow, at band `0x31`, against `[0x54b6]`. No loop over the party and no reference to the `0x5380` table. It resolves through the same item damage table the band walk does.
+
+**The melee swing is not in this routine.** It is `0x00e25`, inside the round driver, which reads the acting character's hand weapon out of record offset `0x142` and resolves `+0x4c` and `+0x4e` against the monster's `+0x58` at `0x00e73`. The driver has a key chain of its own at `0x00bde`, where `A` is compared as `0x41` and jumps there, and the menu it puts up at `0x00d60` reaches the same address from option 1. So `A` is two handlers. Inside a turn it swings a weapon. Outside one the table at `0x777` takes it into `0x0c13e`, which resolves an item id and never looks at a weapon. **What leaves an id in `[0x5426]` before that second handler runs has not been read**, and `0x0c809` takes no damage off a monster where the id matches none of its arms.
 
 ### What a volley is drawn as
 
@@ -187,7 +192,7 @@ The two bounds of the sling range are `DS:0x53da` and `DS:0x53d8`, written as 8 
 
 Two things follow. **Nothing is compacted.** A slot with no bow draws nothing at all, since `0x1b547` returns at once on a zero id, so places 1 and 3 shooting leaves the second and fourth quarters empty rather than the two shots closing toward the middle. And **the picture is the slot's own weapon's**, chosen inside that same call, so a party carrying a crossbow and a fire bow fires a bolt from one place and fire from another. Image `0x0c909` clears a slot's quarter as its shot resolves.
 
-The flight itself is blitter mode 5, which image `0x19dc9` turns into mode 7 reading a scratch buffer, so it is placed and scaled by the same table an object face of run 1 takes.
+The shot itself is blitter mode 5, which image `0x19dc9` turns into mode 7 reading a scratch buffer, so it is placed and scaled by the same table an object face of run 1 takes.
 
 ### A weapon wears out
 

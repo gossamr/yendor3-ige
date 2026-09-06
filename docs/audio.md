@@ -372,14 +372,16 @@ Most of the 101 literal sites say only that a sound is played there. These say w
 | 1 | a screen going up, before the panel routine draws it | `0x0CBB6` and six more |
 | 2 | one of the four portraits taken, beside a write of `DS:0x53D4` | `0x04B32`, `0x04C66` |
 | 5 | the party stepping, either arm of the move routine | `0x03451`, `0x034A9` |
+| 6 | a party volley leaving, once | `0x0C26C` |
 | 7 | a monster's slot freed as it dies | `0x12CEF` |
 | 8 / 7 | a repair destroying the piece / mending it | `0x1C48B`'s three-way |
 | 9 | a service paid for | `0x16863` and four more |
-| 10 | a party volley, one per band | `0x0C4BB`, `0x0C4F7` |
-| 13 | a step a wall or a blocking object refused | `0x032D5` |
+| 10 / 76 | a thrown item landing, by its own id | `0x0C4A4`, `0x0C4E5` |
+| 13 | a step a wall or a blocking object refused, and a shot one stopped | `0x032D5`, `0x0C310` |
 | 14 | a container with a lid | `0x0294D`, `0x02986` |
 | 15 | the item panel a shop service opens | `0x03A98` and five more |
-| 35 | a blow in hand to hand that missed | `0x00E89` |
+| 34 / 35 | a shot that came off the monster's health / one that did not | `0x0C35F` |
+| 35 | a blow in hand to hand that missed, and a thrown item leaving | `0x00E89`, `0x0C675` |
 | 40 | a cast light or a torch running out | `0x1A4D0`, raised at `0x0EBB9` |
 | 43, 33, 84, 44 | the lens, and the world scripts by their own area | `0x0B6AC` to `0x0BB3D` |
 
@@ -389,13 +391,28 @@ Most of the 101 literal sites say only that a sound is played there. These say w
 
 **Only one effect sounds at a time.** CT-VOICE plays out of a single buffer, so a second sound cannot overlap the first: image `0x186D8` cuts the current one short at five sites and image `0x184B4` waits it out at twenty-one.
 
-**A bow names no sound.** Unlike a melee weapon, whose properties entry `+0xA` a landed blow reads, the entry is 0 on all 35 missile weapons, and the four missile item ids the picture picker at image `0x1B562` compares against appear exactly once each in the image, so there is no second picker. The party's volley plays the literal 10 at each band. What varies is a **monster's** shot: image `0x12579` copies enemy record 48 into the projectile record's `+0x14`, one of four at `DS:0xA5A6`, and image `0x123AA` walks the four and plays the first that is not zero.
+**The projectile picks a picture and not a sound.** A party shot is drawn as one of five pictures, chosen from the missile weapon's own item id, and every one of the five sounds the same. Three readings say so and none of them needs the game run.
+
+- **The picker sets no sound.** Image `0x1B547` writes the picture number into `DS:0x0FC3` and the blitter's rectangle into `DS:0x5438`, `DS:0x5434` and `DS:0x543A`, and returns. Nothing else.
+- **There is no second picker.** The four ids it compares against, 484, 269, 525 and 535, occur as an instruction immediate exactly once each in the whole image, at `0x1B562`, `0x1B56B`, `0x1B574` and `0x1B57A`. Every other byte pair matching one of them decodes as something else.
+- **Every sound in the routine is an immediate.** Reading `0x0C13E` to `0x0C980` end to end, the nine calls that reach a sound entry are handed 6, 13, 34, 35, 10, 76 and the wrapper's own argument, all of them `mov ax, imm16` in the instruction stream. No record, no table and no `DS:0x0FC3`. The routine never touches the projectile record at `DS:0xA5A6` either, which is the record a monster's shot takes its sound out of.
+
+So a SLING, a LONG BOW, a CROSSBOW, a FIRE BOW and an ICE BOW all play 6. What the weapon picks is the picture and the damage. The weapon's own properties entry `+0xA`, which a landed melee blow reads, is 0 on all 35 missile weapons against 174 of the table's 210 entries that name one, so that field is not a second source either.
+
+**A monster's shot is the one that varies.** Image `0x12579` copies enemy record 48 into the projectile record's `+0x14`, one of four at `DS:0xA5A6`, and image `0x123AA` walks the four and plays the first that is not zero. 13 monsters carry one, with 7 distinct sounds between them.
 
 **Sound 35 is a miss in hand to hand, and it pairs with the weapon's own sound.** Image `0x00E73` calls the resolver at `0x1586F` and image `0x00E78` tests the damage it wrote into `DS:0x0F36`. Zero takes the branch that plays 35 at image `0x00E89`. Anything else takes the branch that reads the acting character's hand weapon out of record offset `0x142`, resolves its properties entry through image `0x0F44C`, and plays that entry's own `+0xA` at image `0x00EBC`, skipping where the entry holds 0. So a character's blow is the same pair a monster's is, records 42 and 44 against a weapon field and one literal.
 
 **Sound 14 is a container with a lid.** Images `0x0294D` and `0x02986` both load 14, and both stand behind a test of `DS:0x5890` bit 1, which is the kind bit image `0x027AD` reads to raise WHO WILL OPEN against WHO WILL SEARCH ([map.md](map.md)). Kind 1 is the barrel, the chest and the dresser; the other eleven drawings open in silence.
 
-**Sound 10 is a shot in flight.** Image `0x0C4B3` cuts whatever is playing short through image `0x186D8` and image `0x0C4BB` plays 10, at the head of the loop that steps a party volley out through its six bands, so the whistle repeats a band rather than overlapping itself. Images `0x0C4F7` and `0x0C5BF` play it from the same routine.
+**A volley's sounds are 6, 13, 34 and 35.** Image `0x0C13E` is the whole of it, reached from `S` at image `0x0067F`, which sets `DS:0x536E` bit `0x100` in front of the call and clears it after.
+
+- **6 as it leaves.** Image `0x0C264` cuts whatever is playing short and image `0x0C26C` plays 6, once, after the four shot pictures are drawn at image `0x0C21B` and before the first band.
+- **The bands are silent.** Image `0x0C276` sets the party's own cell without probing it, and every band further out is drawn and then handed to the probe at image `0x02F93`. The probe writes its answer into `DS:0x53E0`.
+- **13 where the shot stopped.** Answer 1, a terrain of 2 to 99 or 200 to 299, and answer 2, any object, both reach image `0x0C310`. Answer 3, which the view entry's own `+6` bit `0x800` raises, and a shot that runs out of bands at image `0x0C2F4`, are silent.
+- **34 or 35 per shooter resolved.** Answer 4 is a monster, and image `0x0C35F` plays 34 where `DS:0x536E` bit `0x200` stands and 35 where it does not. Image `0x0C6BA` raises that bit as the damage comes off the monster's health and image `0x0C6F6` clears it in front of each shot. Every shooter the volley collected is heard: image `0x0C316` opens each pass with a three-tick wait, so four bows are four sounds and not one.
+
+**Sounds 10 and 76 are a thrown item, not a bow.** The same routine takes two other paths, and both carry an item id in `DS:0x5426` rather than a bow: image `0x1AFF9` calls it with neither bit set, and image `0x006A6` calls it with `DS:0x5370` bit `0x1000` set, which is hand to hand. Image `0x0C5C8` draws the item's own quarter of the throw picture, telling the four apart by id against 63 and 61, which are the BLUE and GOLD POTION, and against the 60 image `0x0F130` writes into `DS:0x5464`, which is the FLAMING OIL FLASK. It plays 35 at image `0x0C675` as the item leaves. What it lands with is the same comparison read again at images `0x0C4A4` and `0x0C4E5`: 76 at image `0x0C518` for the flask and for the -1 image `0x0F0FA` writes into `DS:0x544E`, and 10 at images `0x0C4BB`, `0x0C4F7` and `0x0C5BF` for anything else.
 
 **Offset 32 is a sound on all 107 records, the restoratives included.** The spell being cast sits in a buffer at `DS:0x5DA6`, so `DS:0x5DC6` is its offset 32 and `DS:0x5DC8` its 34, and neither word is ever written: they are read straight out of the record. Image `0x1D146` reads `DS:0x5DC6` and hands it to the wrapper at image `0x1D91F`, and the same branch goes on to read `DS:0x5DCC`, which is offset 38, the restorative's own maximum ([spells.md](spells.md)). So a heal, a cure, a resurrection and a restoration each play offset 32 as much as a damaging spell does, and all 19 hold **18** there, which makes 18 the one sound every restorative shares. The other 88 hold 30 distinct values between them, all in range.
 
@@ -443,7 +460,7 @@ Offsets are into `WORLD.DAT`, bytes are the length-table entry, and seconds is t
 | 32 | `0x01376b2` | 33,660 | 12,987 | 2.59 | door |
 | 33 | `0x013fa2e` | 39,697 | 12,987 | 3.05 | door; `0x0b7c7` |
 | 34 | `0x014953f` | 3,670 | 13,157 | 0.28 | attack table; spell 32; spell 34; `0x0c35f` |
-| 35 | `0x014a395` | 2,098 | 13,157 | 0.16 | monster miss; spell 40; weapon; `0x00e89`, `0x0c675` |
+| 35 | `0x014a395` | 2,098 | 13,157 | 0.16 | monster miss; spell 40; weapon; `0x00e89`, `0x0c35f`, `0x0c675` |
 | 36 | `0x014abc7` | 13,076 | 16,129 | 0.81 | monster hit; monster miss |
 | 37 | `0x014dedb` | 3,668 | 12,987 | 0.28 | weapon |
 | 38 | `0x014ed2f` | 5,573 | 11,111 | 0.50 | monster hit; weapon |

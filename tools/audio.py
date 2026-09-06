@@ -155,14 +155,30 @@ DAWN_INDOORS = 0xE000
 #               Zero plays 35; anything else reads the hand weapon's own +0xA.
 #   container   images 0x0294D and 0x02986, both behind the kind bit image
 #               0x027AD reads, so only the barrel, chest and dresser are heard.
-#   shot        images 0x0C4BB and 0x0C4F7, one per band a party volley steps
-#               through, each cutting the last short. A bow names no sound of
-#               its own and there is no second picker: the four missile item
-#               ids the picture picker at image 0x1B562 compares against appear
-#               exactly once each in the image, the weapon properties entry's
-#               +0xA is 0 on all 35 missile weapons, and the volley never
-#               touches the projectile record. A monster's shot is the one that
-#               varies, off enemy record 48.
+#   volley_fires  image 0x0C26C, once, after the four shot pictures are drawn
+#               and before the shot steps its first band, with image 0x0C264
+#               cutting whatever is playing short in front of it. A bow names
+#               no sound of its own and there is no second picker: the four
+#               missile item ids the picture picker at image 0x1B562 compares
+#               against appear exactly once each in the image, the weapon
+#               properties entry's +0xA is 0 on all 35 missile weapons, and the
+#               volley never touches the projectile record. A monster's shot is
+#               the one that varies, off enemy record 48.
+#   shot_stopped  image 0x0C310, where the probe at image 0x02F93 answered 1 or
+#               2 for the band the shot reached. 1 is a terrain of 2 to 99 or
+#               200 to 299 and 2 is any object; 4 is a monster and goes to the
+#               shots instead. Answer 3, which the view entry's own +6 bit
+#               0x800 raises, and a shot that runs out of bands at image
+#               0x0C2F4 are both silent.
+#   shot_lands / shot_misses  image 0x0C35F, once per shooter resolved: 34
+#               where DS:0x536E bit 0x200 stands and 35 where it does not.
+#               Image 0x0C6BA raises that bit as the damage comes off the
+#               monster's health and image 0x0C6F6 clears it before each shot.
+#               The volley's own routine plays 10 and 76 as well, on the two
+#               paths that throw an item rather than shoot: image 0x0C4A4 picks
+#               between them on the item id in DS:0x5426, 76 for the FLAMING
+#               OIL FLASK at DS:0x5464 and for the -1 at DS:0x544E, 10 for the
+#               rest.
 #   monster_dies  image 0x12CEF, inside the routine at image 0x12CA6 that frees
 #               a dead monster's slot.
 #   repair_mends / repair_destroys  the three-way at image 0x1C48B: a roll
@@ -216,7 +232,10 @@ DAWN_INDOORS = 0xE000
 NAMED_SOUNDS = {
     "melee_miss": 35,
     "container": 14,
-    "shot": 10,
+    "volley_fires": 6,
+    "shot_stopped": 13,
+    "shot_lands": 34,
+    "shot_misses": 35,
     "monster_dies": 7,
     "repair_mends": 7,
     "repair_destroys": 8,
