@@ -53,7 +53,11 @@ The Evidence column uses the classifiers [README.md](README.md) defines. Three o
 - **WEIGHT** is a uint16 at offset 10 in tenths. It has to be a word, not a byte: the ANVIL OF LIGHT weighs 50.0 and would overflow. Exact on all 169.
 - **ABSORPTION** is not in the record. Bytes 0 and 1 are a byte offset into a properties table, and the first byte of that table entry is the absorption. It is exact on all 38 armor pieces. The largest pointer plus 12 is 2,652, which is exactly the size of that section.
 
-**FITS IN is the word at 14**, or three bits of it, and `0x071d3` prints them in order: `0x8000` is BACKPACK, `0x4000` is BOX and `0x2000` is BAG. With none of the three set, the line reads CHARACTER PANEL when the record's category word carries `0x2000`, and ANY PANEL otherwise. The reading is exact on all 170 captured pages. Over the 631 records the totals are 221 BACKPACK, 193 BACKPACK BOX, 201 BACKPACK BOX BAG, 15 ANY PANEL and one CHARACTER PANEL. The 15 are the three currencies and twelve items too bulky to stow, among them the weapons of Light and the ANVIL OF LIGHT. The one is the BACKPACK, which is the one thing no container holds. Bit `0x0001` of the same word is set on 46 items, and nothing prints it.
+**FITS IN is the word at 14**, or three bits of it, and `0x071d3` prints them in order: `0x8000` is BACKPACK, `0x4000` is BOX and `0x2000` is BAG. With none of the three set, the line reads CHARACTER PANEL when the record's category word carries `0x2000`, and ANY PANEL otherwise. The reading is exact on all 170 captured pages. Over the 631 records the totals are 221 BACKPACK, 193 BACKPACK BOX, 201 BACKPACK BOX BAG, 15 ANY PANEL and one CHARACTER PANEL. The 15 are the three currencies and twelve items too bulky to stow, among them the weapons of Light and the ANVIL OF LIGHT. The one is the BACKPACK, which is the one thing no container holds. Bit `0x0001` of the same word is set on 46 items and no page prints it. **It marks an item the game will not let you destroy**, and so does bit `0x0001` of the category word, which 22 items carry with 21 of them carrying both.
+
+Image `0x15512` is the test. Given an item it loads the record and answers `0xFFFF` where either bit is set, and its three callers walk everything a character holds: the eight panel slots, the equipment words, and the character's containers through images `0x1552B`, `0x15582`, `0x155DA` and `0x1563A`, which is the same test over each container's own eight places. Image `0x139A7` is the DELETE branch of character creation, whose own screen draws `ARE YOU SURE?`, `YES, DELETE` and `NO, KEEP` from `DS:0x7DAF`; a `0xFFFF` there zeroes the two working words and plays the refusal at `0x056F0` instead of deleting.
+
+The 46 read as what that rule is for: `ATHANEUM KEY`, all fourteen chest and door keys, `KEY RING`, `PARTY MAP`, `ANKH OF PORTALS`, `COPPER BAR`, `MINX THE CAT`, `RING OF INVISIBILITY`, `SCEPTER OF BARIAG` and `DIAMOND WAND` among them. A character carrying any of those cannot be deleted, which is what keeps a quest item from leaving the game with them.
 
 **The word at 16 is the merchant class**, which is what a shop tests before it will take an item off your hands. Image `0x047D3` reads a SELL topic's own word at `+0x12` and tests it against this word, answering "I HAVE NO NEED FOR THAT TYPE OF ITEM" where the two share no bit ([shops.md](shops.md)). The 17 SELL topics in the game name exactly the eight bits the records carry, one bit per topic.
 
@@ -71,7 +75,7 @@ It partitions the records cleanly. `0x8000` is on all 420 armor and weapon recor
 
 **The offset is an index within its own table, so the same offset in two categories names two unrelated entries.** CLOTHES +1 and SLING both carry 24, and 2-HANDED SWORD +1 and ROYAL PLATE ARMOR both carry 2112. Reading a weapon's offset in the armor table gives the 2-HANDED SWORD an absorption of 20 that it does not have, which is ROYAL PLATE ARMOR's number. `extract` gates on whether the book prints an ABSORPTION line, which reaches the same answer from the other direction.
 
-**Enchanted variants** are separate records, as CLOTHES, CLOTHES +1 and CLOTHES +2 each are. The clue book puts them behind a selector on the base item's page, and `extract` folds them the same way. **327 of the 631 records are +N forms**, which leaves 304 items.
+**Enchanted variants** are separate records, as CLOTHES, CLOTHES +1 and CLOTHES +2 each are. The clue book puts them behind a selector on the base item's page, and `extract` folds them the same way. **327 of the 631 records are +N forms**, which leaves 304 items. The folding loses nothing: each variant keeps its own `id` beside its value, weight, absorption and effects, so walking the 304 bases and their variants reaches all 631 record ids with none missing.
 
 Enhancement runs to **+10**, and nine items reach it, among them CROSSBOW, GOLD SHIELD, 2-HANDED SWORD, WAR HAMMER, HALBERD and ROYAL PLATE ARMOR. Each +N step adds N to the **first byte of the properties block**, and the block counts N itself in a word of its own: the armor entry's `+6`, where ROYAL PLATE ARMOR runs 22, 23, 24, 25 against 0, 1, 2, 3, and the weapon entry's `+8`, where LONG BOW runs 7 to 15 against 0 to 8.
 
@@ -161,7 +165,7 @@ The other thirteen are in the party's own language: JASPER'S STORY, PROPAGANDA, 
 
 ## The fourteen keys, and which lock each opens
 
-Items 36 to 42 are the CHEST KEYs and items 43 to 49 the DOOR KEYs, in one order of seven metals: brass, bronze, copper, iron, steel, silver, gold. The key bits on a lock word name the metal and not the item, and which of the two items that metal is follows what the lock stands on: a container takes the chest key and a bare lock takes the door key ([map.md](map.md)). The KEY RING, item 50, is what the keyboard's `K` puts up, and the seven rows it draws are the lines at `DS:0x3FE4`, one per metal with a count beside it.
+Items 36 to 42 are the CHEST KEYs and items 43 to 49 the DOOR KEYs, in one order of seven metals: brass, bronze, copper, iron, steel, silver, gold. The key bits on a lock word name the metal and not the item, and which of the two items that metal is follows what the lock stands on: a container takes the chest key and a bare lock takes the door key ([map.md](map.md)). The KEY RING, item 50, is what the keyboard's `K` puts up. It draws one row per metal from the eight 13-byte lines at `DS:0x7FE4`, `BRASS   (  )` through `GOLD    (  )`, and stamps `C` and `D` inside the brackets for the two keys of that metal the party holds. What it reads is the one word at roster header 34 ([saves.md](saves.md)), and the entry's `+0` word is what sets a bit there: the metal in its high byte, and `0x0090` for a chest key against `0x0050` for a door key in its low.
 
 ## What the item panel tells you, and who reads it
 
@@ -269,6 +273,8 @@ So an unskilled repairer mends a plain piece about a third of the time and ruins
 
 **The rule is the same for both kinds of item. +N adds N to the item's primary combat number**, which is absorption for a piece of armor and damage for a weapon. That one is **measured**: it was read off the game in play rather than out of the code.
 
+**The weapon entry's `+0xA` is the sound a melee blow makes**, which [audio.md](audio.md) reads from the other side: image `0x00EB5` plays it when a blow lands. It is a family's value and not an item's, so all seventeen values are shared: every SHORT SWORD down the series reads 96, every BATTLE-AX 104, every WHIP 113. **35 of the 209 read 0**, and those are the slings and the bows, which are missile weapons and play a volley sound of their own instead ([combat.md](combat.md)). The other 174 fall between 35 and 113, inside the 141 the sound bank holds.
+
 **Weapon damage is byte 0 of the weapon entry**, which is the same position that absorption occupies in the armor entry. It is exact on all 33 weapons whose page prints a DAMAGE line. `0x06558` reads `[bx]` and adds it to the character's two damage fields, which fixes the field from the code as well as from the data.
 
 **The weapon entry's word at `+2`** carries the skill and two flags:
@@ -294,7 +300,7 @@ The `+N` fold has two failure modes, both pinned by [tests/test_extract.py](../t
 | Bit | Slot word(s) in the character record | Count |
 |---|---|---|
 | `0x8000` | `0x13a` missile weapon | 1 |
-| `0x2000` | `0x13e` ammunition | 1 |
+| `0x2000` | `0x13e` container | 1 |
 | `0x4000` | `0x142` hand weapon | 1 |
 | `0x0800` | `0x146` shield | 1 |
 | `0x0400` | `0x14a`, `0x14e` rings | 2 |
@@ -306,7 +312,7 @@ The partition is clean across 249 items. Every bow and sling is `0x8000`, every 
 
 **The second word is the item's own state.** What it holds depends on the item:
 
-- For a **container or ammunition** it is what the container holds. Image `0x44BF` returns at once unless the item's category carries `0x2000`, and image `0x05134` follows it into an eight-entry list when it is set.
+- For a **container** it is what the container holds. Image `0x44BF` returns at once unless the item's category carries `0x2000`, and image `0x05134` follows it into an eight-entry list when it is set.
 - For a **light source it is how much is left to burn.** The tick at image `0x0EB7C` walks the eleven `(id, word)` pairs looking for LIT TORCH, which is id 35. It subtracts from that item's second word, and when the word reaches zero it drops the light counter at `[0xCF07]` and clears bit `0x0800` of `[0xCEF7]`, so the light is extinguished. A torch with a zero there is a torch that has already burned down.
 - For everything else it is zero.
 
@@ -314,11 +320,63 @@ The partition is clean across 249 items. Every bow and sling is `0x8000`, every 
 
 A container's word is allocated rather than carried in the file: image `0x44BF` calls out for one when the word is zero as the item is equipped, so zero is what an unallocated container holds.
 
+**FITS IN orders the three containers, and that is what bounds nesting.** BACKPACK's own word 14 is zero, BOX's carries `0x8000` and BAG's carries `0xC000`, so a BACKPACK goes in nothing, a BOX goes in a BACKPACK, and a BAG goes in either. The longest chain is therefore BACKPACK, BOX, BAG, and the open-container stack the character record keeps is three deep to match ([saves.md](saves.md)). Image `0x16C3B` enforces it as an item is dropped in: it reads the open container's category bit, `0x4`, `0x8` or `0x10`, and answers with the FITS IN bit the item must carry, `0x2000`, `0x4000` or `0x8000`.
+
+**A container carries two icons, and the second is the first plus one.** Image `0x16800` draws a held container on the character screen: it loads the item, takes the record's own artwork word at 8, **adds one**, and draws that. Its only callers are images `0x16145`, `0x16159` and `0x16175`, the three container slots at character offsets 380, 418 and 456 ([saves.md](saves.md)), and image `0x167D5` is the same routine at another position. So BACKPACK at 88 opens as 89, BOX at 90 as 91 and BAG at 92 as 93, and those three are the only numbers between 66 and 330 no item record names ([pictures.md](pictures.md)).
+
 **Two timers are unreachable.** Image `0x0FD9D` counts `[0xCF03]` down and clears bit `0x2000` of `[0xCEF7]`, and `0x0FDC7` does the same for `[0xCF09]` and bit `0x0400`. Nothing jumps to either: the routine they sit in tests one id, `0x23`, and branches only to the torch's.
 
 Of the four shipped characters, DIANA and YENDOR start with MAGIC GRAPES in the first slot and the other two start empty.
 
 **An enchanted item is its own item, and its id is the base's plus the enchantment.** That holds for all 327 of them, so LONG BOW at 307 makes LONG BOW +3 into 310. `data/items.json` carries the id on each variant.
+
+## The paper doll
+
+**The armor entry's `+4` is what the piece looks like on the character.** Image `0x161A8` draws the paper doll on the character screen, one call per worn slot into image `0x1675D`. That routine takes the slot's item id, loads the item, reads its properties entry `+4` as a picture number, and **adds one where character record offset 16 is not 1**, which is the sex, so every piece carries a pair of pictures, male then female.
+
+**Which run it draws from is the slot's, not the item's**, and the caller sets it:
+
+| Slot | Character offset | Run | `+4` over the items that fill it |
+|---|---|---|---|
+| body | 340 | 6, 56 x 136 | 19 values, 25 to 67 |
+| head | 338 | 7, 32 x 32 | 9 values, 98 to 147 |
+| feet | 344 | 7 | 9 values, 90 to 149 |
+| hands | 346 | 7 | 8 values, 94 to 143 |
+
+Every value and every value plus one falls inside its own run, over all four slots, with nothing over ([pictures.md](pictures.md) has the runs). **All 164 items that fill a worn slot carry a picture**, 35 head, 60 body, 35 feet and 34 hands, and over the 164 no male and female pair is byte-identical and no picture is blank. What the four pieces are drawn over is the character's own body, which image `0x1609A` takes from record offset 20 ([saves.md](saves.md)). A two-handed weapon is drawn the same way without an item behind it: image `0x16100` tests word 348 bit `0x20` and draws picture 12, or 13 for a female character.
+
+**The other six slots draw an icon in a box beside the figure.** Image `0x160BD` walks a table at `DS:0x6494`, five words per entry, against the slot words above: the missile weapon alone, then the container, the hand weapon and the shield together, then the two rings. Each entry is left, right, top, bottom and the box's own number, and the six run 10 to 15 in the order the record holds the slots in. The corners are inside the figure's own 56 by 136 frame.
+
+| Slot word | Box | Corner | Size |
+|---|---|---|---|
+| `0x13a` missile weapon | 10 | 0, 64 | 16 x 16 |
+| `0x13e` container | 11 | 40, 64 | 16 x 16 |
+| `0x142` hand weapon | 12 | 0, 103 | 16 x 16 |
+| `0x146` shield | 13 | 40, 103 | 16 x 16 |
+| `0x14a` ring | 14 | 4, 95 | 8 x 8 |
+| `0x14e` ring | 15 | 44, 95 | 8 x 8 |
+
+**What a box holds is the item's own 16 by 16 icon, centered rather than fitted.** The record's `+8` names a picture in run 8 ([pictures.md](pictures.md)) and the box is what that picture is centered on, so the four 16 by 16 boxes take it at their own corner and the two ring boxes take it four pixels up and to the left. Rendered: [tools/doll_probe.js](../tools/doll_probe.js) puts a KEY RING in the missile and shield slots and a COPPER RING OF ARMOR in the second ring, and the three land on 0,64, on 40,103 and on 40,91, every opaque pixel exact against the file's own palette. A RING OF INVISIBILITY in the first ring matches on all but two of its indices, 209 and 210, which are the ramp the game turns on its own timer and were caught mid-rotation.
+
+**Where a two-handed weapon is laid is the shield's box.** Image `0x1611B` reads the same entry's first two words rather than a corner of its own, so the weapon's picture goes at 40, 103. That is **code**: the flag the draw reads is the one image `0x06568` sets as a weapon is equipped, and a weapon poked straight into the slot leaves it clear, so the probe draws the weapon's icon in the hand box rather than its picture on the figure.
+
+**What passes over the container's box is a bit of the character's own, `+0x15C` bit 0x1000, and it is undecoded.** Image `0x160CA` tests it and starts the icon run at the hand weapon where it is set, drawing two boxes instead of three, and draws the word at `+0x1C8` through image `0x167D5` first. The chain at `0x16136` reads `+0x17C`, `+0x1A2` and `+0x1C8` in turn and fills the eight boxes of a second table at `DS:0x643A` from whichever answers, so the three are container slots of some kind.
+
+**The figure stands at 8, 8 on the panel and every piece is drawn verbatim.** [tools/doll_probe.js](../tools/doll_probe.js) puts ROBES and a LEATHER HELMET on the four shipped characters and opens the first one's inventory. Against the body picture with both pieces laid over it, **7,352 of the frame's 7,616 pixels are exact**, and the 264 left fall in three of the six icon boxes, the missile's, the container's and the hand's. So a piece is laid down as it is held, with no blending and no recolor, and a page drawing its own figure needs the pieces and the corners and nothing else.
+
+**The body under the pieces is a whole panel, not a sprite.** The eighteen are the figure standing in the alcove with no transparent pixel in them, so a page drawing its own panel takes the stone off with `without_ground`, which floods the stone's ramp in from the frame's border. **A flood alone is walled out of the pockets the figure encloses**, between a forearm and a hip: 15 of the 7,616 pixels on every male body and 36 on every female one, which show as stone behind an armor that does not fill them though a robe covers them. What tells those apart from a figure wearing the stone's own ramp is the other eight bodies of the same sex: a pixel the flood could not reach that carries the same index in all nine is the stone they all stand on. Body 6's clothing is that ramp, and of its 312 such pixels the nine share fifteen, which go, while the 297 of its clothing stay.
+
+**A head piece and a body piece are both drawn straight onto the plate.** A helmet has to cover the hair the body underneath is drawn with and a hood has to cover the shoulders, so the artist drew each over the figure standing in the alcove, and everything in the picture that is not the piece is that plate showing through. It is exact rather than approximate: of the 447 opaque pixels of LEATHER HELMET's male picture, **363 are the same index as the body's own at the same place**, and those 363 are the whole of what a page drawing its own panel does not want — 341 of the alcove's stone and 22 of the neck and shoulders the figure is outlined with. The boots and the gauntlets were drawn on nothing and carry none, and neither did the four winged helms.
+
+**Which of the nine it was drawn over is not recorded, so the subtraction they agree on is it.** The nine bodies of a sex differ under a helmet, each carrying its own face and hair, and the two sexes stand on different stone. A plate the piece was not drawn over fails both ways: body 2 leaves the hair body 0's plate takes, and body 4, whose hair shares a color with the helmet, eats ten pixels of the helmet itself. Over the leather helmet five of the nine male plates leave the same 84 pixels and the other four leave 74 to 83, and four of the female ones leave the same 99 while the rest leave 70 to 93. Taking each plate in turn and keeping the answer most of them give lands on the piece both times. A per-pixel vote does not: it blends nine plates into one no body ever stood on, and takes 80 and 83.
+
+**A female piece carries stone the plate does not account for.** Two blobs stand where the hair of a wider head would fall, painted in by hand to erase it, and no female body has stone there for the subtraction to match: 27 such pixels on the leather helmet and 51 on the dragon skin one. They go by a flood of the stone's own ramp from outside rather than by the ramp alone, because **a helmet may be drawn in that ramp**: the dragon skin helm's horns are filled with it, and a plain test empties them. The painted blobs stand against the outside and the horn fill is walled in by the helmet's own outline. After both subtractions the eighteen are drawn in ramps 0, 4, 8, 10 and 13, the metals and the sparkle, with no stone left on any. [tools/pictures.py](../tools/pictures.py)'s `without_plate` is the pair.
+
+**A body piece takes the subtraction and no flood.** The plate a hood is cut out of is a block of stone over the shoulders, 176 pixels above the head on ROBES' female picture where the robe itself draws nothing, and the subtraction reaches all of it: 299 of the alcove's ramp and 68 of the outline's black come off that picture and nothing else does. The flood a head piece drives would go further than that, because **a garment may be drawn in the stone's ramp against the outside**: CLOTHES' male tunic is, and flooding empties it, 700 pixels of a 1,127 pixel picture. So `without_plate` takes a ramp for a head piece and none for a body one.
+
+**An enchanted piece sparkles, and the sparkle is the ramp the game turns.** Every `+N` form of a piece shares one picture and the plain form has another: LEATHER HELMET draws 98 and all five of its `+N` forms draw 100, LEATHER ARMOR draws 41 and its five draw 43. What the second picture adds is pixels of group 13, five on the helmet and thirty on the armor, which is the sixteen-entry ramp at index 208 that the game turns four ways on a timer of its own ([pictures.md](pictures.md)). So enchanted gear glitters on the character screen for the same reason a cast's sparkles do.
+
+**The 56 records whose `+4` means nothing are the ones no worn slot takes.** Shields and rings never reach the drawer, so their `+4` runs 0, 76, 190 and 536 without landing in any run. That is the whole of the field: an armor entry's `+4` is a picture where the piece is worn and unread where it is not.
 
 **The worn category has four slots that can be filled, not five.** The sub-dispatch at `0x0431d` tests exactly four bits of the armor entry's word at `+2`. It sends `0x8000` to `0x152`, `0x4000` to `0x154`, `0x1000` to `0x158` and `0x0800` to `0x15a`. An item matching none of the four is placed in the backpack instead. The record does carry five one-word slots, and the absorption accumulator at `0x06591` sums all five at stride 2, but nothing tests `0x2000`. `0x156` can therefore never be filled, and no item in the game carries that bit. The data agrees. 164 worn items partition into 35 head, 60 body, 35 feet and 34 hands, with none left over.
 

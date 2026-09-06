@@ -25,7 +25,7 @@ Image `0x0A1BA` loads one NPC at a time. It frees the last NPC's two buffers, re
 | Offset | Field | Evidence |
 |---|---|---|
 | `+0x00` | portrait, a picture in run `0x70` | code, `0x09153` |
-| `+0x02` | 2 or 4 on 27 records, 0 on the rest, **undecoded** | |
+| `+0x02` | the script this person speaks, 0 where they speak the party's own | code, `0x0A2CD`, see [party.md](party.md) |
 | `+0x04` | how many conversation topics | code, `0x0A23A`; shape: a running total |
 | `+0x06` | how many prose lines | code, `0x0A28A`; shape: a running total |
 | `+0x08` | its first topic, 0-based | code, `0x0A231`; shape: 140 of 140 blocks open on a greeting |

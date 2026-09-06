@@ -48,11 +48,13 @@ Every field is a uint16 unless the size column states otherwise.
 | 98 | flags | below | per bit, below |
 | 100 | immunity mask | below | screens: F2, ten rows, below |
 | 102 | resistance | below | screens: F2, two rows, below; measured |
-| 104 | | **undecoded**; zero in all 73 records | |
+| 104 | | zero in all 73 records, and no instruction names it: the three decodes of `[si+0x9a]` in the image all sit among the character record's own offsets | shape; code, the scan below |
 
 **The F2 readings.** The five combat statistics agree on **355 of 355** readings. A reward row is blank where the reward is zero, so the four rewards print fewer than 71 figures each: experience 71, gold 69, nuore 67 and food 10, and all **217** agree. The two ranged rows are blank on the 58 monsters that do not shoot, and the 13 that do agree on both.
 
 Below the figures the page prints twelve rows, `labels.EFFECTS` in order, each blank or carrying one word. Ten are single bits of the immunity word and two are the resistance word, under the masks *Resistance, offset 102* gives below. All **852** rows agree, 234 of them carrying a word and every row of the twelve carrying one on some monster. [tools/verify_effects.py](../tools/verify_effects.py) measures this, reading a row with [tools/read_stats.py](../tools/read_stats.py). `IMMUNE` and `RESISTANT` sit consecutively in the label run at `0x2AAB0` and are the only two words the column holds, so the width of the green run says which.
+
+**Word 104 is read by nothing the image holds.** The in-memory monster struct puts a record offset 50 bytes on, so word 104 is `[si+0x9a]`, and a superset scan of the whole image finds three decodes of that displacement. All three are a character: each sits beside `[si+0x5a]`, `[si+0x48]` or `[si+0x3c]`, which are that record's own seeds, combat words and live block ([saves.md](saves.md)). A scan finds a literal displacement, so a field reached through a computed index does not appear in it.
 
 ## Rewards are packed BCD
 

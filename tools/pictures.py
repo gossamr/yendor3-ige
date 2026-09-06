@@ -53,6 +53,8 @@ what the clue book's own page shows and what `grayed` reproduces.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import struct
 from dataclasses import dataclass
 
@@ -145,6 +147,158 @@ def grayed(raw: bytes) -> bytes:
     docs/pictures.md, "Recoloring, and the blend", has the general case.
     """
     return recolored(raw, {r: GRAY_RAMP for r in range(RAMP)})
+
+
+# How thick a border to read the ground's own ramp off. Two pixels is enough
+# on every picture this is used for and narrow enough that a figure reaching
+# the frame's edge would still not outvote the ground.
+GROUND_BORDER = 2
+
+
+def ground_ramp(raw: bytes, width: int, border: int = GROUND_BORDER) -> int:
+    """The ramp that fills the frame's own border, which is what is behind."""
+    height = len(raw) // width
+    edge = [raw[y * width + x] >> 4
+            for y in range(height) for x in range(width)
+            if x < border or x >= width - border
+            or y < border or y >= height - border]
+    return max(set(edge), key=edge.count)
+
+
+def without_ground(raw: bytes, width: int, alike: Sequence[bytes] = ()) -> bytes:
+    """The picture with the ground behind it made transparent.
+
+    Some artwork is a whole panel rather than a sprite: the eighteen bodies
+    the paper doll is built on are 56 by 136 with no transparent pixel at all,
+    the figure standing in the stone alcove the game's own character screen
+    shows ([../docs/pictures.md](../docs/pictures.md)). A panel redrawn by
+    something other than the game wants the figure without the alcove.
+
+    **A ramp test alone is not enough.** The ground is one whole ramp per
+    picture, but a figure may wear that ramp too: body 6's clothing is the
+    ground's own ramp and a plain test takes 312 pixels of it away. So the
+    ground is taken as the pixels of that ramp a flood from the frame's border
+    can reach, which leaves a figure whole.
+
+    **The flood alone is not enough either.** It is walled out of the pockets
+    the figure encloses, between a forearm and a hip, and those show as stone
+    behind an armor that does not fill them, though a robe covers them. They
+    are 15 of the 7,616 on every male body and 36 on every female one.
+
+    `alike` closes that: the other pictures drawn over the same ground. A
+    pixel of the ground's ramp that the flood could not reach and that carries
+    the same index in every one of them is the ground, since what the figures
+    have in common behind them is what they stand on. It tells the two cases
+    apart exactly. Of body 6's 312, fifteen are shared by the nine of its sex
+    and go, and the 297 of its clothing stay.
+    """
+    height = len(raw) // width
+    ramp = ground_ramp(raw, width)
+    out = bytearray(raw)
+    seen = bytearray(len(raw))
+    stack: list[int] = []
+
+    def reach(at: int) -> None:
+        if not seen[at] and raw[at] >> 4 == ramp:
+            seen[at] = 1
+            stack.append(at)
+
+    for x in range(width):
+        reach(x)
+        reach((height - 1) * width + x)
+    for y in range(height):
+        reach(y * width)
+        reach(y * width + width - 1)
+    while stack:
+        at = stack.pop()
+        out[at] = TRANSPARENT
+        x, y = at % width, at // width
+        if x:              reach(at - 1)
+        if x < width - 1:  reach(at + 1)
+        if y:              reach(at - width)
+        if y < height - 1: reach(at + width)
+    for at in range(len(out)):
+        if out[at] == TRANSPARENT or out[at] >> 4 != ramp:
+            continue
+        if alike and all(other[at] == out[at] for other in alike):
+            out[at] = TRANSPARENT
+    return bytes(out)
+
+
+def without_plate(raw: bytes, width: int, plates: Sequence[bytes],
+                  ramp: int | None = None) -> bytes:
+    """A sprite with the panel it was drawn over made transparent.
+
+    The paper doll's head pieces are sprites with a hole in them: a helmet has
+    to cover the hair the body underneath is drawn with, so the artist drew it
+    straight onto the plate, and what is not helmet is the plate showing
+    through. That is exact rather than approximate. Of the 447 opaque pixels
+    of LEATHER HELMET's male picture, 363 are the same index as the body's own
+    at the same place, and they are the whole of what should not be drawn: 341
+    of the alcove's stone and 22 of the neck and shoulders the figure is
+    outlined with.
+
+    `plates` is the body's own pixels under the piece, taken at the corner the
+    slot owns, one per body of the piece's own sex. **Which of the nine it was
+    drawn over is not recorded, so the subtraction they agree on is it.** The
+    nine differ under a helmet, each having its own face and hair, and a body
+    whose hair happens to share a color with the helmet takes pixels out of
+    the helmet that the rest keep: over the leather helmet five of the nine
+    male plates leave the same 84 pixels and the other four leave 74 to 83,
+    and four of the female ones leave the same 99 while the rest leave 70 to
+    93. Taking each plate in turn and keeping the answer most of them give
+    lands on the piece both times.
+
+    A per-pixel vote does not: it blends nine plates into one that no body
+    ever stood on, and takes 80 and 83.
+
+    **The plate is not the whole of it on a woman.** A female piece carries
+    stone the plate does not account for, two blobs where the hair of a wider
+    head would fall, which the artist painted in by hand to erase it: 27 such
+    pixels on the leather helmet and 51 on the dragon skin one, and no female
+    body has stone there for the subtraction to match.
+
+    `ramp` is the stone's own, and what is left of it goes by a flood from
+    outside rather than by the ramp alone. **A helmet may be drawn in the
+    stone's ramp**: the dragon skin helm's horns are filled with it, and a
+    plain test empties them. The hand-painted blobs stand against the outside
+    and the horn fill is walled in by the helmet's own outline, so a flood
+    from the transparent pixels takes the one and leaves the other.
+
+    A body piece takes no `ramp`, and the subtraction alone is the whole of
+    it. **A garment may be drawn in the stone's ramp against the outside**:
+    CLOTHES' male tunic is, and the flood empties it, 700 pixels of a 1127
+    pixel picture. What a body piece carries is the plate over the shoulders
+    a hood is cut out of, 371 pixels on ROBES' female picture, and the
+    subtraction reaches all of it.
+    """
+    answers = [_minus_plate(raw, width, plate, ramp) for plate in plates]
+    return max(set(answers), key=answers.count)
+
+
+def _minus_plate(raw: bytes, width: int, plate: bytes, ramp: int | None) -> bytes:
+    out = bytearray(TRANSPARENT if v == plate[at] else v
+                    for at, v in enumerate(raw))
+    if ramp is None:
+        return bytes(out)
+    height = len(out) // width
+    stack = [at for at in range(len(out)) if out[at] == TRANSPARENT]
+    seen = bytearray(len(out))
+    for at in stack:
+        seen[at] = 1
+    while stack:
+        at = stack.pop()
+        x, y = at % width, at // width
+        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if not (0 <= nx < width and 0 <= ny < height):
+                continue
+            to = ny * width + nx
+            if seen[to] or out[to] >> 4 != ramp:
+                continue
+            seen[to] = 1
+            out[to] = TRANSPARENT
+            stack.append(to)
+    return bytes(out)
 
 
 def bounds(raw: bytes, width: int) -> tuple[int, int, int, int]:

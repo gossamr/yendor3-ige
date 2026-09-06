@@ -269,10 +269,18 @@ Twelve bytes per entry at `DS:0x96da`:
 | Offset | Field |
 |---|---|
 | `+0` | sound, 1-based into the 141 of section 15 ([audio.md](audio.md)) |
-| `+2` | animation |
+| `+2` | animation: a picture in run 7, or in run 8 where the flags carry `0x0600` |
 | `+4`, `+6` | minimum and maximum damage |
 | `+8` | effect mask |
 | `+0xa` | flags |
+
+**A swing is the one blow that marks the monster.** Image `0x00E90` hands the damage to the ladder at `0x188EA`, which sets one of three bits at the monster's `+0x0E` and ends `or [di+0xc], 0x0A`, the struck picture and the splat together. Nothing else calls it: a volley's shot ORs bits 0 and 1 at image `0x0C6B6` and a cast ORs bit 1 at `0x0AEE6` and three siblings in the dispatcher, so both show picture 9 and leave no mark ([pictures.md](pictures.md)).
+
+**The animation is drawn where the blow lands.** Image `0x035F5` takes the entry through `[si+0xa]`, plays its `+0` and then branches on `+0xa`: `0x0600` and `0x0180` go to the two handlers below, and everything else falls through to image `0x03643`, which puts `+2` into the picture word and selects run 7. The `0x0600` path draws in run 8 instead, at image `0x0365A`. Across the nineteen entries the field takes eleven distinct values, all inside run 7's first seventeen pictures, which are the sparkles, blobs, rings and the gold `$` that block holds ([pictures.md](pictures.md)).
+
+**Where it lands is the character's own place.** A blow is queued on one of four animation slots at `DS:0x0F4A`, 20 bytes apart, one per party place: `+8` and `+0xA` are a far pointer to the entry, `+0xC` the character, `+0xE` to `+0x12` what the applier is to move, and `+0` and `+2` the corner the picture is drawn at. Image `0x0F424` seeds those four corners from `DS:0x6504`, which is the panel's own place table, stepping `0x50` per place: x of 8, 66, 124 and 182 and y of 148, the four 32 x 32 portraits ([view.md](view.md)). Slot `+4` and `+6` are that corner plus 8 in both, which is where the `0x0600` path draws its 16 x 16 picture of run 8, centered in the same square. Image `0x035AB` walks the four slots after a cast or a monster's turn, draws every one holding an entry, plays the entry's `+0` once for the pass, and waits twelve BIOS ticks at image `0x035D9`.
+
+Rendered: [tools/cast_probe.js](../tools/cast_probe.js) casts HEAL on the first character in the running game and keeps every frame. Entry 18's `+2` is run 7's picture 2, and it lands on the first portrait's own corner, 39 of its 45 opaque pixels exact against the file's palette; the six left are the mouse cursor, which the click that picked the target leaves sitting on that portrait. The other three portraits take nothing. Four of the twenty frames held the picture at all, 60 ms apart: two at the file's own indices and two with indices 208 and up rotated down one inside each four-color block, which is a palette cycle running on that ramp.
 
 The effect mask names what lands. Nine condition bits share their layout with the character's own condition word, so the mask is OR'd straight into it:
 

@@ -82,6 +82,11 @@ PROP_PRIMARY = 0
 PROP_FLAGS = 2
 PROP_KIND = 2     # in a misc entry: what the entry's parameter means
 PROP_PARAM = 4    # in a misc entry: the parameter itself
+PROP_DOLL = 4     # in an armor entry: the paper doll picture, male form
+# Run 6 holds one body per creation-gallery cell and sex, and character record
+# offset 20 indexes them (docs/pictures.md). Each is a whole panel rather than
+# a sprite, so anything drawing its own panel wants `pictures.without_ground`.
+BODY_RUN, BODY_PICTURES = 6, 18
 
 MISC_MAGIC = 0x8000     # +4 is magic points, printed as a percentage
 MISC_SCROLL = 0x2600    # +4 is a 1-based spell id
@@ -583,6 +588,90 @@ class Items:
         return out
 
     # -- the two pages that are not item lists --
+
+    # Where the paper doll draws each worn slot, and out of which run. Image
+    # `0x161A8` makes one call per slot into `0x1675D`, which reads the armor
+    # entry's `+4` and adds one where the character is female (docs/items.md).
+    DOLL = {"HEAD": (7, 12, 49), "BODY": (6, 0, 0),
+            "HANDS": (7, 12, 86), "FEET": (7, 10, 104)}
+    # The two-handed weapon has no item behind it: image `0x16100` draws these
+    # two on word 348 bit 0x20, male then female.
+    DOLL_TWO_HANDED = (7, 12, 13)
+    # The six boxes beside the figure, an icon apiece for the slots that wear
+    # no picture. Image `0x160BD` walks the table at DS:0x6494, five words per
+    # entry, against a run of the character's own slot words: the missile
+    # weapon alone, then the container, the hand weapon and the shield
+    # together, then the two rings. Image `0x16101` draws a two-handed weapon's own picture over
+    # the shield's box, and image `0x160CA` passes over the container's on a
+    # bit of the character's own that is undecoded.
+    DOLL_BOXES = 0x6494, 6, 5
+    BOX_SLOTS = ("missile", "container", "hand", "shield", "ring", "ring 2")
+
+    def doll(self) -> list[dict]:
+        """Every worn item as a paper doll piece, with its two pictures.
+
+        A piece is drawn over the character's own body, which is run 6 picture
+        `record offset 20` and carries the sex already (docs/saves.md).
+        """
+        out = []
+        for index, rec in enumerate(self.records, 1):
+            slot = self.equip_slot(rec)
+            if slot not in self.DOLL:
+                continue
+            props = self.properties(rec)
+            if not props:
+                continue
+            run, x, y = self.DOLL[slot]
+            male = _u16(props, PROP_DOLL)
+            out.append({"item": index, "name": self.names[index - 1],
+                        "slot": slot.lower(), "run": run, "at": [x, y],
+                        "male": male, "female": male + 1})
+        return out
+
+    def doll_index(self) -> dict:
+        """Every piece, beside what the figure under them is drawn from.
+
+        The body is run 6 picture `record offset 20`, the gallery cell the
+        portrait was picked from, which carries the sex already: the cells
+        alternate male and female, so an even cell is a man (docs/saves.md).
+        The two-handed weapon has no item behind it and is drawn on a word of
+        the character's own.
+        """
+        run, male, female = self.DOLL_TWO_HANDED
+        # The weapon is laid at the shield box's own corner, which is what
+        # image `0x1611B` reads out of that entry. The other five boxes are
+        # the game's own panel layout and not part of the figure.
+        return {"pieces": self.doll(),
+                "body": {"run": BODY_RUN, "pictures": BODY_PICTURES},
+                "two_handed": {"run": run, "male": male, "female": female,
+                               "at": self.doll_boxes()["shield"]["at"]}}
+
+    def doll_boxes(self) -> dict[str, dict]:
+        """Slot -> the box its icon is drawn in, beside the figure.
+
+        Each entry is left, right, top, bottom and the box's own number, and
+        the bounds are inclusive, so the corner is the first two and the size
+        is the span. The six run 10 to 15 in the slot order the record holds
+        them in.
+        """
+        at, count, fields = self.DOLL_BOXES
+        out = {}
+        for n, slot in enumerate(self.BOX_SLOTS[:count]):
+            left, right, top, bottom, number = struct.unpack(
+                f"<{fields}H", _ds(self.exe, at + n * fields * 2, fields * 2))
+            out[slot] = {"box": number, "at": [left, top],
+                         "size": [right - left + 1, bottom - top + 1]}
+        return out
+
+    def doll_pictures(self) -> dict[int, set[int]]:
+        """Run -> every picture the paper doll can draw, bodies included."""
+        want: dict[int, set[int]] = {6: set(range(BODY_PICTURES))}
+        run, male, female = self.DOLL_TWO_HANDED
+        want.setdefault(run, set()).update((male, female))
+        for piece in self.doll():
+            want.setdefault(piece["run"], set()).update(
+                (piece["male"], piece["female"]))
+        return want
 
     def enhancers(self) -> list[dict]:
         """The ATTRIBUTE ENHANCERS page: six kinds, an amount, and what it raises.

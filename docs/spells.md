@@ -15,8 +15,14 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 | `24` | magic points | screens: F3, 98/98 |
 | `26` | nuore | screens: F3, 98/98 |
 | `30` | what the spell singles out: 9 insects, 13 undead, read with 76 bit 8 | screens: F3 AFFECTS, 98/98 |
-| `32` | attack table id on the 19 restoratives, a sound index on the other 88 | code, `0x1c5e1` and seven further branches for the id; `0x1D2E9` and five siblings for the sound, below |
+| `32` | attack table id on the 19 restoratives, a sound index on the other 88 | rendered: the entry's own animation, below; code, `0x1c5e1` and seven further branches for the id; `0x1D2E9` and five siblings for the sound |
 | `34` | amount on the 19 restoratives, a sound index on the other 88 | code, `0x1d9f1` on the restorative branch; `0x1CCF5` and five siblings for the sound, below |
+| `36` | on the 88 that act on a body, which of 82 pixel routines the target is painted with; on the 19 restoratives, the live word the amount goes into | code, `0x1CCFB` onto the target's `+0x18`, then `0x19E2F`, below |
+| `38` | on the bolt branch, the projectile's picture in run 1; on the burst branch, the first of three frames in run 3 | code, `0x1CDFF` and `0x1D175`, below |
+| `40` | on the burst branch, a second group of three frames in run 3; on the rain branch, how many steps the cycle runs for | code, `0x1D29F` and `0x1D571`, below |
+| `42`, `44` | on the area branch, the first animation frame in run 3 and how many frames | code, `0x1D102`, below |
+| `48`, `50`, `52` | on the rain branch, a backdrop in run 6, the first cycling picture and how many pictures the cycle wraps after | code, `0x1D509`, `0x1D53F` and `0x1D8A7`, below |
+| `54`–`59` | up to six recolor pairs for the effect's artwork, a source ramp per high nibble and a target per low | code, `0x19CDE`, below |
 | `46` | damage | screens: the prose quotes it on 64 of 65 |
 | `52` | what a condition it leaves takes off a monster a turn | code, `0x12863` |
 | `66` | how many turns that condition stands | code, `0x12863` |
@@ -35,6 +41,80 @@ The Evidence column uses the classifiers [README.md](README.md) defines. All 98 
 **Offset 32** holds 18 for every healing and every cure spell and for nothing that does damage. **Offset 34** is an amount rather than a healing field. For a heal it is the health restored, as HEAL 10 and GREAT HEAL 500. Damage spells carry unrelated values in the same offset. What a restorative spell does with 32, 34 and three more offsets is below. `extract` exposes `amount` and `restorative` raw.
 
 **Offset 22** is the lowest level at which any class can cast the spell, and that holds on 95 of the 98 listed spells. FIREBALL 14 is the Mage level, and ACID RAIN 17 is the Monk level. Offset 22 is also the level printed beside SCROLL for a class that learns the spell that way.
+
+## What a cast draws
+
+A cast's animation is spread over three runs of `PICTURES.VGA` and **which record offset holds it depends on the branch the dispatcher took**, exactly as the sound does. Three of the eighteen branches draw, and **35 of the 107 records carry an effect of their own**; the other 72 sit on branches that draw nothing.
+
+**Rendered.** [tools/cast_probe.js](../tools/cast_probe.js) casts one of these in the running game and keeps a frame every 60 ms, and a renderer driven from the tables below redraws each step and diffs it against that frame. All four kinds match on every pixel they write, and the frames walk the steps in order:
+
+| Kind | Cast | Frames caught | Pixels |
+|---|---|---|---|
+| bolt | SLING SHOT | 4, steps 1 to 4 | 331, 198, 113 and 29, all exact |
+| area | BALL OF FIRE | 8, steps 0 to 9 | 14 to 225, all exact |
+| burst | METEOR | 20, steps 0 to 7 | 6,662 down to 179, all exact |
+| rain | ACID RAIN | 20, the cycle wrapping | 3,532 a frame, all exact |
+
+### The bolt, run 1
+
+Record 72 bit `0x0100`, 23 spells. Image `0x1CDFF` hands offset 38 to image `0x1B547`, the same routine a missile weapon's volley goes through ([combat.md](combat.md)), with `DS:0x536E` bit 3 set at image `0x1CDAF` so the weapon's own sound selection is skipped and the number is used as the picture outright. Image `0x1CDB4` picks the x from which of the four party slots `DS:0x53D4` names, 0, 54, 105 and 157, so the bolt draws in that place's quarter.
+
+All 23 carry one, and the seven values group by element: 9 a sling stone, 10 a poison dart, 99 white, 100 pale, 101 lightning, 102 fire, 103 ice.
+
+### The area animation, run 3
+
+The same branch. Image `0x1D102` takes the first frame from offset 42 and the count from offset 44. Seven of the 23 carry a pair, and the 13 that do not carry an offset 36 instead; no record carries both and the three that carry neither are the unused `ERROR` rows. POISON CLOUD, DISEASE CLOUD, BALL OF FIRE, FROZEN EXPLOSION and BALL OF POWER all run pictures 80 to 89, a fireball opening into a ring; SHRAPNEL runs 200 to 204 and BALL OF ELECTRICITY 211 to 215.
+
+**It plays where the flight stopped**, through drawing mode 10, which is the table a monster drawn wide is placed by ([view.md](view.md)). Image `0x1D0F6` writes the mode and `0x1D0F0` the run, and the loop at `0x1D10C` draws one frame per turn of a wait of one BIOS tick at image `0x1D12E`. So the animation is scaled by the band it landed on, and a cast stopped one cell ahead draws a picture half the size the same cast stopped five cells out would.
+
+### The six-frame burst, run 3
+
+Record 76 bit `0x0008`, 7 spells. Two groups of three: images `0x1D175`, `0x1D18A` and `0x1D1AF` draw offset 38 and the two after it, and image `0x1D29F` draws offset 40 and the two after it with `cx = 3`. HOLY ROLLER, RANGER'S ROCK and METEOR run 205 to 210, a boulder that shatters; SWARM OF INSECTS and SWARM OF KILLER BEES run 216 to 221; TORNADO and FIRE WIND run 222 to 227, a funnel that gains lightning.
+
+**The first group is the flight and the second is the arrival.** Each of the six calls to `0x1D863` sets `DS:0x53DC` to the next band out, `0x31`, `0x2E`, `0x2B`, `0x28`, `0x24` and `0x19`, and `DS:0x53D6` to that row's own shade, and the three pictures cycle over the six: offset 38, `+1`, `+2`, 38, `+1`, `+2`. Image `0x02F93` probes after each, so the group stops where the flight does. The second group then plays its three at the band the first stopped on, from the `DS:0x53DC` and `DS:0x53D6` image `0x1D26C` pushed. Both draw through mode 10, and each frame holds for five BIOS ticks at image `0x1D87F`.
+
+**That is why offset 40's three odd values are not sounds.** [audio.md](audio.md) records that every non-zero 40 falls inside the sound bank's 1 to 141 except 208, 219 and 225. Those three are this branch's second frame group.
+
+### The rain over the whole party, run 6
+
+Record 76 bit `0x0004`, 6 spells. Image `0x1D509` draws offset 48 at x of 8, 64, 120 and 176 and y of 8, which is once over each party place: a run 6 picture is 56 by 136, so the four tile the viewport's own 224 by 136 exactly. ACID RAIN, VOLCANIC ERUPTION, HOLY RAIN and HAIL STORM all carry 47, 48 and 5, so each lays picture 47 down and cycles 48 to 52, which is five frames of falling rain. SWORD OF ICE is on the branch and carries zeros, so it draws nothing.
+
+**The four places run the cycle out of step.** Image `0x1D53F` seeds them from offset 50 with `+0`, `+2`, `+4` and `+1`, left to right, and image `0x1D885` steps each one and wraps it back to offset 50 after offset 52 pictures. The loop at `0x1D575` runs `cx` times, and `cx` is **offset 40**, 35 on all five records that draw: at the two BIOS ticks image `0x1D5B3` waits, a rain falls for about four seconds. Offset 52 is how many pictures the cycle holds, not how long it runs.
+
+### What a restorative draws, run 7
+
+The two branches that act on a character draw nothing of their own. They queue instead: images `0x1C5E1` and `0x1C617` hand offset 32 to image `0x0357E` and write the attack table entry it names onto the target's own animation slot, and image `0x035AB` draws it there. What that entry's `+2` names and where the slot puts it are [combat.md](combat.md)'s.
+
+**All 19 hold 18 at offset 32**, so every heal, cure, thaw, unstoning and resurrection in the game draws one picture: entry 18's `+2`, which is run 7's picture 2, a ring of sparkles over the healed character's portrait. It is also where the one sound they share comes from, since the entry's `+0` is what plays.
+
+**Offset 70 is what decides whether the slot is run at all.** Image `0x1C5F5` tests bit `0x1000` and `0x1C605` bit `0x800`, and a record carrying neither leaves without applying or drawing. All 19 carry `0x1000`, the 16 that act on one character as `0x9000` and the three party ones as `0x1000`.
+
+### The tint a cast paints its target with
+
+**67 spells carry one**, all of them aimed at a monster, and none of the 19 restoratives does: offset 36 is the live column's own word on those. The cast writes the number onto the target's `+0x18` beside the struck bit (image `0x1CCFB`), the target's next draw hands it to the blitter, which turns it into a near pointer through a table at `cs:0x0D6B` of its own segment and calls it once per pixel (image `0x19E2F`), and image `0x103C6` clears it again. So a spell colors what it hit for one frame.
+
+**The table is four shapes**, read by [tools/tints.py](../tools/tints.py) rather than transcribed:
+
+| Tint | What it does to a pixel |
+|---|---|
+| 1 | rolls the generator and drops the pixel where the roll is even, so the target flickers see-through |
+| 2 to 5 | shades it by -8, -4, +4 or +8, clamped inside its own group |
+| 6 to 19 | moves it into one group, 0 to 13, keeping its shade |
+| 20 to 43 | into a group, 0, 1, 5, 7, 10 or 11, and then shaded |
+
+A pixel of group 13 or above is left where it is by every shading shape, which is the ramp the game twinkles on its own timer ([pictures.md](pictures.md)). 44 and up read the same way and no spell names one. Where the blitter runs a tint against the blend and the recolor is **undecoded**.
+
+### The color, which is two mechanisms
+
+**Offsets 54 to 59 recolor the artwork.** Image `0x19CDE` reads them as bytes through the pointer at `DS:0x0F28` and the count at `DS:0x0F2A`, splitting each into a high nibble and a low and writing the pair into the blitter's swap table. That is the form the enemy record uses at 64 to 69, a source ramp moved to a target ramp with the shade kept ([pictures.md](pictures.md)). 18 spells carry one. Most name a single pair out of the gray ramp: SWARM OF INSECTS takes group 0 to 10 and its specks come out green, HAIL STORM to 11 and its rain comes out blue, FIRE WIND and METEOR and VOLCANIC ERUPTION to 7. POISON ARROW is the one with three pairs, 1, 5 and 12 all to 9, which turns a red dart olive.
+
+**Offset 36 tints the target instead of the effect.** Image `0x1CCFB` writes it onto the target's own struct at `+0x18` and sets bit 1 of `+0x0C`, and image `0x10386` hands it to the blitter as `DS:0x5436`. Image `0x19E2F` reads it there, and where it is non-zero it indexes a table of 82 entries at `cs:0x0D6B` of the blitter's own segment. **The entries are code, not colors**: each keeps a pixel's shade and forces its ramp, so entry 9 is `and al, 0x0f` then `or al, 0x30` and entry 10 the same with `0x40`.
+
+**A field of this record is worth reading only against the branch that reads it.** Offset 38 is a run 1 bolt on the first branch and the first of six run 3 frames on the third; read across all 107 records at once it looks like one field and decodes as neither. Offsets 54 to 62 are the same story: a recolor run on the three drawing branches, and five separate counts read into `cx` at images `0x1C745` through `0x1C7E4` on the two-spell branch JUMP OVER and JUMP THROUGH take.
+
+**Offsets 28, 58 and 78 read zero on all 107 records**, and a scan of the image for their buffer addresses finds no instruction naming any of the three. A scan finds a literal, so an offset reached through a computed index would not show up.
+
+[tools/effects.py](../tools/effects.py) reads all of this, and [tests/test_effects.py](../tests/test_effects.py) holds every frame to the run it is drawn from.
 
 ## The description text
 

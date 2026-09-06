@@ -219,6 +219,22 @@ def sound_of(record: bytes, table: list[dict], attacks: list[dict]) -> int:
     return attacks[value]["sound"] if value < len(attacks) else 0
 
 
+def queued_attack(record: bytes, table: list[dict]) -> int:
+    """The attack table entry this cast drops on its target's own place.
+
+    Two of the eighteen branches queue one, and they are the two that act on a
+    character: image `0x1C5E1` for one and `0x1C617` for the whole party. Both
+    hand record offset 32 to image `0x0357E` and write the entry onto the
+    animation slot, and image `0x035AB` then plays its `+0` and draws its `+2`
+    over the slot's own corner. 0 for the branches that queue nothing.
+    """
+    one = spell_branch(record, table)
+    lead = one["lead"] if one else None
+    if not lead or not lead.get("queued") or lead["record"] is None:
+        return 0
+    return _u16(record, lead["record"])
+
+
 def spell_branch(record: bytes, table: list[dict]) -> dict | None:
     """The branch a spell takes, which is the first test its record answers."""
     for one in table:

@@ -228,7 +228,7 @@ That table is **measured**. Poking the clock and redrawing, the floor changes wh
 
 The loop at `0x179FA` adds the row's number to the row's offset and clamps at zero, so a light lifts the dark toward none and never past it. Strength 1 cancels night outright, since its column is the night fog negated. A row whose offset is already zero is skipped, so a light does nothing in daylight.
 
-**Which strength applies** is decided at `0x17971` by `DS:0xCEF7`, a word of light flags. Each strength answers to either of two bits, `0x200` or `0x8` for the first down to `0x4000` or `0x100` for the sixth. Of the eight instructions that change that word, three set the high bit of a pair: `0x2000` at image `0xFE29`, `0x800` at `0xFE35` and `0x400` at `0xFE41`, which are strengths 5, 3 and 2, and each steps a counter at `DS:0xCF03`, `DS:0xCF07` or `DS:0xCF09`, all cleared together at `0xFE0A`. A carried light is therefore a timed effect rather than a state.
+**Which strength applies** is decided at `0x17971` by `DS:0xCEF7`, a word of light flags. Each strength answers to either of two bits, `0x200` or `0x8` for the first down to `0x4000` or `0x100` for the sixth. Of the eight instructions that change that word, three set the high bit of a pair: `0x2000` at image `0xFE29`, `0x800` at `0xFE35` and `0x400` at `0xFE41`, which are strengths 5, 3 and 2, and each steps a counter at `DS:0xCF03`, `DS:0xCF07` or `DS:0xCF09`. Those three are part of an array of six, one per strength, at `DS:0xCF01` to `DS:0xCF0B` in the same order as the six cast-light timers ([saves.md](saves.md)). The clear at `0xFE0A` writes five of the six and skips `DS:0xCF07`, which is one of the three that is stepped. A carried light is therefore a timed effect rather than a state.
 
 **A cast light sets the low bit of the pair**, and keeps its own timer. Image `0x1C676` reads the spell's offset 42 as a strength of 1 to 6, ORs `0x8000` with that strength's low bit, `0x100` for 1 down to `0x8` for 6, and writes offset 44 onto the timer at `DS:0xCF11 + 2 x (42 - 1)`. So the spell's number runs the other way from the column: 1 is the sixth strength and 6 the first. The tick at `0x0EBC0` subtracts the elapsed minutes from each of the six timers, clears the bit of any that reaches zero, and drops `0x8000` when none is left, so two cast lights burn side by side and the brighter one draws. [spells.md](spells.md) has the two records.
 
@@ -267,7 +267,9 @@ Each bar measures a pair of the character record's own fields. Health and magic 
 
 That is **rendered**. `tools/view_check.py --panel` draws the four places from the roster `WORLD.DAT` ships and diffs them against a captured screen. Each of the fourteen frames the object walk took agrees on **6,376 of 6,376 pixels**, which is four portraits and twelve bars. All fourteen hold a party at full health. What they pin is the geometry, the four colors and the empty case. Of the fill rule they reach the two ends and the four burdens, 8.0 of 56.0, 6.5 of 59.0 twice and 7.5 of 56.0, which come out at 5, 4, 4 and 5 pixels.
 
-Six sunken boxes sit between the portrait and the bars, two columns of three. They are empty in every capture there is, and what they hold is **undecoded**.
+**Nine sunken boxes sit between the portrait and the bars**, three columns of three, and they are the party's own panel. Image `0x170D9` draws the frame, run 6 picture 20, and then hands the nine slots at roster header 270 to image `0x17481`, which draws each one's item icon out of run 8. The boxes are 16 by 16 at x of 249, 268 and 287 and y of 10, 28 and 46, listed as ten-byte records at `DS:0x66A4` ending on a `-1`; image `0x17112` hit-tests the same list for a click, and the fifth word of each record is its own 1-based number.
+
+The first three hold the purse drawn as items, gold, food and nuore, and the other six are the party's inventory ([saves.md](saves.md)). They are empty in every capture there is because that party's slots were empty, which is the reading the earlier count of six boxes had wrong.
 
 ## The sky
 
@@ -278,6 +280,45 @@ Each call moves the cursor one color, `[0xD011]` being `+3` or `-3`, and `[0xD07
 **It is driven from the clock, not from the draw.** The two callers are at images `0x0E93B` and `0x0EC5C`, on the path that advances time. Poking `DS:0xCF7F` and redrawing therefore moves the shading, which is read per draw, and leaves the sky alone.
 
 Measured, standing in the Athaneum at nine in the morning: `[0xD00F]` reads `0x14D`, its maximum, so the window rests at the daylight end of the gradient. The 32 entries the game has uploaded, read back from `DS:0x49D0`, equal section 12's stored 224 to 255 shifted down one place, on all 31 that can be compared. **Section 12's stored ramp is the window one step further along than the game ever rests**, which is the whole of the one-step difference every frame in this document shows.
+
+## The dozen services the whole game calls
+
+479 addresses in the code segment are the target of a far call, and the calls are not spread evenly: **twelve routines take 1,147 of the 4,147 sites between them**, and they are the plumbing every screen runs through rather than any rule of the game.
+
+| Routine | Sites | What it does |
+|---|---|---|
+| `0x1A4BF` | 291 | ends a frame: plays the sound queued in `DS:0x5370` bit `0x40` and clears it, clears bit `0x10`, and puts the mouse cursor back through `0x1AAC1` |
+| `0x13700` | 277 | draws a NUL-terminated string a byte at a time through `0x19D5C`, in the ink at `DS:0x53FA` |
+| `0x13469` | 137 | shows the mouse cursor, where `DS:0x4402` bit 0 says there is one and bit 1 says it is not already up |
+| `0x01556` | 84 | maps the sheet window and paints the message area, where `DS:0x536A` bit `0x100` is set |
+| `0x0BC6A` | 63 | hit-tests a point against a list of rectangles, `0xFFFF` terminated, and answers the one it landed in |
+| `0x0B1D8` | 60 | the length of a string, scanning up to `0x400` bytes for the NUL |
+| `0x13410` | 58 | loads one picture of run 8 through the run table at `DS:0x7B5C` |
+| `0x13718` | 40 | the string drawer again, saving `DS:0x5414` across the call as well |
+| `0x15650` | 37 | walks all 256 palette entries, clearing `DS:0x540C` bit `0x1000` first |
+| `0x034CE` | 37 | formats a number into the buffer at `bx` as text, `10,000` down, and writes `   0` for zero |
+| `0x10AF4` | 32 | draws the compass, where `DS:0xCEFD` bit `0x4000` is set, from the party's own position |
+| `0x1544E` | 31 | strips spaces and commas out of a string in place |
+
+**The rest of the tail is thin.** Of the 315 routines no document reaches, 155 have exactly one caller, so most of what is left is a step of one screen rather than a service. Naming the twelve above takes the share of call sites that land somewhere named from 47 percent to 74.
+
+## Where the screens live
+
+**The game draws out of expanded memory, not out of conventional.** EMS 4.0 gives it a 64 KB page frame of four 16 KB physical pages, and the game carves its expanded memory into windows of four logical pages each. A window is a list in the data segment: a count of 4 and then four `(logical, physical)` pairs.
+
+| List | Logical pages | What the window holds |
+|---|---|---|
+| `DS:0x58E8` | 0 to 3 | a `WORLD.DAT` section being read, at image `0x0F258` |
+| `DS:0x58FA` | 4 to 7 | the sheets, mapped from fourteen sites |
+| `DS:0x5920` | 12 to 15 | the held screen the blitter reads in mode 5 |
+| `DS:0x5938` | 17 to 20 | one 320 by 200 screen image |
+| `DS:0x594A` | 21 to 24 | a second one |
+
+**Image `0x11DD3` is the only thing that moves the frame.** Given a list in `bx` it reads the count, points `si` at the pairs and calls `INT 67h AX=5000h`, the map-multiple call. It keeps the last list it mapped in `DS:0x0F9A` and returns at once where the same one is asked for again, so a routine may map defensively without paying for it. A failed map writes 6 into `DS:0x53E0` and gives up, which is the abort table's `An EMM mapping error has occurred` ([world-dat.md](world-dat.md)).
+
+**The two screen windows are how a sheet gives the display back.** Image `0x088B4` maps 17 to 20 and moves 32,000 words to `A000:0000`, and image `0x088DF` maps 21 to 24 and moves the same count to the segment at `DS:0x53CC`. So a full frame is kept off screen, a sheet draws over the visible one, and what it covered comes back from the window rather than from a redraw.
+
+**Each picture run keeps a cache of its own in the same memory**, round robin over six-byte records, which [pictures.md](pictures.md) reads. That is the whole of the drawing model's memory: nothing but the page frame is ever addressed, and every sheet, screen and picture is a window swapped into it.
 
 ## What is not read yet
 
