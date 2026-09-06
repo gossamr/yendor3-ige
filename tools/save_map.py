@@ -32,15 +32,46 @@ ROSTER_BYTES = SLOTS * SLOT
 # record. What each one is, and how it was established, is in docs/saves.md.
 HEADER: list[tuple[int, int, str]] = [
     (0, 20, "the save's name, over the head of PRE-CREATED PARTY"),
+    (S.LIGHT_AT, 2, "light flags"),
+    (32, 2, "the party's own flags, five bits of them the mapping bands"),
+    *((S.PARTY_AVERAGES_AT + 2 * i, 2, f"{skill} party average")
+      for i, skill in enumerate(S.PARTY_AVERAGES)),
+    (S.DAY_SONG_AT, 2, "day song"),
+    (S.NIGHT_SONG_AT, 2, "night song"),
+    (S.ARRIVAL_DRAIN_AT, 2, "step counter cleared on arrival"),
+    (S.SKY_WINDOW_AT, 2, "where the sky window sits on its gradient"),
+    (S.SKY_STEP_AT, 2, "the step the sky window moves by"),
+    (S.NEXT_RECORD_AT, 2, "next container record to hand out"),
+    (S.FREE_HEAD_AT, 2, "container free-list head"),
+    (S.ENVIRONMENT_AT, 2, "environment"),
+    (S.KEY_RING_AT, 2, "key ring"),
+    (S.CARRIED_COUNTS_AT, 12, "carried light counts, 6 strengths"),
+    (S.LIGHT_TIMERS_AT, 2 * S.LIGHT_STRENGTHS, "cast light timers"),
+    (S.AREA_AT, 2, "ambient area"),
+    (S.DAWN_AT, 2, "dawn windows already fired"),
+    (S.DRAIN_AT, 2, "condition drain step count"),
+    (S.COLD_DRAIN_AT, 2, "cold drain step count"),
     (150, 2, "facing"),
     (152, 2, "party x"),
     (154, 2, "party y"),
     (156, 2, "day"),
+    (S.MONTH_AT, 2, "month"),
+    (S.YEAR_AT, 2, "year"),
     (162, 2, "clock"),
     (180, 4, "gold"),
     (184, 4, "food"),
     (188, 4, "nuore"),
+    (S.MARK_SPARE_AT, 2, "carried by MARK, put back by RETURN"),
+    (S.QUEST_FLAGS_AT, 2 * S.QUEST_FLAG_WORDS, "fourteen quest flag words"),
+    (S.MARK_AT, 14, "where MARK OR RETURN wrote the party"),
+    (S.PARTY_PANEL_AT, 4 * S.PARTY_PANEL_SLOTS, "the party's own panel slots"),
     (310, 96, "the sky ramp, 32 colors"),
+    (S.SKY_SLIDE_AT, 2, "sky slide left to run"),
+    (S.CAST_BY_AT, 2, "who cast last"),
+    (S.SETTINGS_AT, 4, "the two words NEW GAME preserves"),
+    (S.AUDIO_AT, 2, "music and sound"),
+    (S.REPAINT_AT, 2, "ticks between view repaints"),
+    (S.PARTY_SKILLS_AT, 2 * len(S.PARTY_SKILLS), "who acts for each party skill"),
     (492, 8, "the roster slots that are playing"),
 ]
 CHARACTER: list[tuple[int, int, str]] = [
@@ -54,6 +85,27 @@ CHARACTER: list[tuple[int, int, str]] = [
     (S.MAXIMUM, 52, "the same block again, the maximum"),
     (S.CARRIED_AT, 2, "weight carried"),
     (S.PANEL_AT, 4 * S.PANEL_SLOTS, "the eight panel slots"),
+    (S.SPELL_BOOK_AT, 2 * S.SPELL_BOOK_WORDS, "spell book, one bit per spell"),
+    (S.PORTRAIT_AT, 2, "portrait"),
+    (30, 2, "levels owed"),
+    (S.PROTECTIONS_AT, 2 * S.PROTECTIONS, "the nine protection words"),
+    *((at, 2, f"protection {i}") for i, at in enumerate(S.PROTECTION_ORDER)),
+    (S.FLIGHT_COUNTS_AT, 2 * S.FLIGHT_COUNTS, "flight use counts"),
+    (S.MARK_AT, 14, "where MARK OR RETURN wrote the party"),
+    *((S.SEEDS_AT + 2 * i, 2, f"{seed} seed") for i, seed in enumerate(S.SEEDS)),
+    *((at + 2, 2, f"{name} state") for name, at in S.EQUIPMENT.items()
+      if name in S.PAIRED_SLOTS),
+    (S.CAST_AT, 2, "where the cast menu was left"),
+    (S.GALLERY_AT, 2, "the gallery cell the portrait came from"),
+    (S.CHALLENGES_AT, 2, "the once-per-character services taken"),
+    (S.FLIGHTS_AT, 2, "transport bits"),
+    (S.CHOOSER_REFUSAL_AT, 2, "bit 0x8000 refuses the open chooser"),
+    (S.MAX_SEEDS_AT, 10, "the maximum column's five seeds"),
+    *((S.OPEN_STACK_AT + i * S.OPEN_STACK_STRIDE, S.OPEN_STACK_STRIDE,
+       f"open container, level {S.OPEN_STACK_DEPTH - i}")
+      for i in range(S.OPEN_STACK_DEPTH)),
+    *((at, 2, f"{name} wear") for name, at in S.WEAR.items()),
+    (S.MEMBER_AT, 2, "open-container depth, store last resolved, membership, two-handed"),
     *((at, 2, name) for name, at in S.EQUIPMENT.items()),
     # The named words inside the two blocks, so a change reports as the field
     # rather than as the block it sits in.
@@ -159,7 +211,17 @@ def main() -> None:
     ap.add_argument("--gap", type=int, default=8,
                     help="join changed ranges closer together than this")
     ap.add_argument("--layout", action="store_true", help="print what is known")
+    ap.add_argument("--diff", nargs=2, metavar=("WAS", "NOW"),
+                    help="two save files, named field by field")
     args = ap.parse_args()
+    if args.diff:
+        was, now = (Path(p).read_bytes() for p in args.diff)
+        for lo, hi in ranges(was, now, args.gap):
+            print(f"  {lo}-{hi - 1}  {where(lo)}"
+                  f"   {was[lo:hi].hex()} -> {now[lo:hi].hex()}")
+        moved = sum(1 for a, b in zip(was, now) if a != b)
+        print(f"{moved} bytes differ")
+        return
     if args.layout or not args.run:
         layout()
         return

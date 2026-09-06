@@ -91,8 +91,16 @@ PORTRAIT_AT = 18
 # combat: a fifth of strength above 72 feeds melee damage, and a fifth of
 # dexterity above 72 feeds absorption. The rest of each combat word is what is
 # worn or held. docs/combat.md, "Where a character's numbers come from".
+# The nine protection words, in the order the condition bits are listed. Image
+# 0x03875 sums the ones a nine-bit mask picks out, high bit first, so the mask's
+# 0x8000 is 36 and its 0x0080 is 44 (docs/combat.md).
+PROTECTIONS_AT, PROTECTIONS = 32, 9
+PROTECTION_ORDER = (36, 34, 32, 42, 40, 38, 48, 46, 44)
 SEEDS_AT = 0x32
 SEEDS = ("shot accuracy", "accuracy", "shot damage", "damage", "absorption")
+# The same five, again, for the sheet's maximum column, which image 0x064A6
+# rebuilds from these exactly as it rebuilds the live column from SEEDS_AT.
+MAX_SEEDS_AT = 114
 
 # The five combat words the equip dispatch derives, which tools/fight_probe.js
 # already writes at 0x48, 0x4A, 0x4C and 0x4E. The sheet's ACC and DAM rows are
@@ -124,6 +132,22 @@ def column_fields() -> dict[int, str]:
 # The eight panel slots, then the equipment, each an item id and a second word
 # that is the item's own state, and for a container its record in section 2.
 PANEL_AT, PANEL_SLOTS = 282, 8
+# The open-container stack, three deep: 38 bytes a level, the usual (item,
+# state) pair, the weight of what it holds in tenths, then the eight four-byte
+# entries of its section 2 record. A character wears one container, at
+# EQUIPMENT's own slot 318; these hold what the panel has opened. Pushing fills
+# 456, then 418, then 380 and refuses a fourth (image 0x16518); popping takes
+# the deepest filled first (image 0x16498). Opening a container inside an open
+# one is what goes a level down, the nesting containers.nested_references walks.
+# Three is the length of the type chain rather than an arbitrary cap: a BACKPACK
+# fits in nothing, a BOX in a BACKPACK, a BAG in either (docs/items.md).
+OPEN_STACK_AT, OPEN_STACK_DEPTH, OPEN_STACK_STRIDE = 380, 3, 38
+CONTAINER_HELD_AT, CONTAINER_HOLDS = 4, 8
+# One bit a level of word 0x15C, and only the first set one is read (0x16C0A).
+OPEN_STACK_BITS = (0x8000, 0x4000, 0x2000)
+# Bit 0x8000 of 350 marks a character the open chooser passes over: image
+# 0x1DCD5 sets it, 0x1DD42 clears it and 0x1DC27 obeys it.
+CHOOSER_REFUSAL_AT, CHOOSER_REFUSAL_BIT = 350, 0x8000
 # The party's own item slots, the same four-byte pairs at the same displacement
 # of the header slot, which is what that slot's 500 bytes leave sitting there.
 # The item search at image 0x0B242 walks these six before any character's pack.
@@ -148,6 +172,11 @@ WEAR = {"missile": 190, "hand": 192, "shield": 194}
 # Where MARK OR RETURN writes the party down, six words from 240: x, y, facing,
 # DS:0xCF2D, the ambient area and, at +12, the environment word. The spell
 # record carries the offset rather than the code (docs/spells.md).
+# Fourteen quest flag words, 224 bits, which the resolver walks and a gate
+# names one of (images 0x17AFE and 0x1DB19, docs/quests.md).
+QUEST_FLAGS_AT, QUEST_FLAG_WORDS = 210, 14
+# The word MARK carries and RETURN puts back, beside the six it writes at 240.
+MARK_SPARE_AT = 80
 MARK_AT = 240
 MARK = {"x": 0, "y": 2, "facing": 4, "spare": 6, "area": 8, "environment": 12}
 
@@ -166,8 +195,12 @@ LIGHT_CAST_BIT = 0x8000                 # any cast light burning
 LIGHT_FIRST_BIT = 0x100                 # strength 1's own low bit, halved per strength
 LIGHT_TENS = 10                         # a timer counts tens of minutes
 # A light carried rather than cast sets the high bit of its strength's pair and
-# steps a count of how many of that strength are being carried. Only three of the
-# six have one, and a torch is the middle: image 0x0FE29, 0x0FE35 and 0x0FE41.
+# steps a count of how many of that strength are being carried. The counters are
+# an array of six, the sixth strength first, running beside the cast timers;
+# only three of the six are ever stepped, at images 0x0FE29, 0x0FE35 and
+# 0x0FE41. Images 0x0FD7D and 0x0FE0A each clear five of the six and skip the
+# strength 3 counter, which is one of the three that is stepped (docs/view.md).
+CARRIED_COUNTS_AT = 0xCF01 - ROSTER_AT
 CARRIED_LIGHTS = ((0x2000, 0xCF03 - ROSTER_AT), (0x800, 0xCF07 - ROSTER_AT),
                   (0x400, 0xCF09 - ROSTER_AT))
 LIGHT_HIGH_FIRST = 0x200                # the brightest strength's own high bit
@@ -177,21 +210,69 @@ LIGHT_HIGH_FIRST = 0x200                # the brightest strength's own high bit
 # bit 1 gates every music entry and bit 3 every sound entry (docs/audio.md).
 AUDIO_AT = 0xCF63 - ROSTER_AT
 AUDIO_MUSIC_BIT, AUDIO_SOUND_BIT = 0x2, 0x8
+# The two words NEW GAME preserves beside the audio pair, pushed at image
+# 0x15128 and popped at 0x15178. What each holds is undecoded.
+SETTINGS_AT = 0xCF5F - ROSTER_AT
+# Ticks between one self-redraw of the view and the next, the reload value of
+# the countdown at DS:0x53FC (images 0x0E913 and 0x0EAE2).
+REPAINT_AT = 0xCF65 - ROSTER_AT
+# One bit per metal for the chest key in the high byte and the door key in the
+# low, brass at the top. Image 0x1B4A8 sets one, 0x111D0 draws the ring
+# (docs/items.md).
+KEY_RING_AT = 0xCEFF - ROSTER_AT
+# The four dawn windows that have already fired today, bits 15 to 12
+# (docs/audio.md), and the two step counters the condition drains run off: one
+# every 40 steps, one every 40 in a cold place (docs/encounters.md).
+DAWN_AT = 0xCF35 - ROSTER_AT
+DRAIN_AT, COLD_DRAIN_AT = 0xCF3B - ROSTER_AT, 0xCF3F - ROSTER_AT
+# How far the sky slide has left to run, counted down from 113 (docs/view.md).
+SKY_SLIDE_AT = 0xD073 - ROSTER_AT
+# The party's own panel is nine slots of four bytes, the purse drawn as items
+# first and then its six inventory places (image 0x1709C, docs/saves.md).
+PARTY_PANEL_AT, PARTY_PANEL_SLOTS, PURSE_SLOTS = 270, 9, 3
 # The roster slot of whoever cast last, which the cast path writes as it takes
 # the magic off them (image 0x0D337). DS:0x537E is the acting character's slot,
 # the companion of the record pointer at DS:0x537C.
 CAST_BY_AT = 0xCF4B - ROSTER_AT
+# The three skills the party is scored on as a body rather than per character.
+# Image 0x05CB0 averages each over the members whose condition word lacks
+# 0x1C40 and bands the mapping one into five bits of word 32 (docs/party.md).
+PARTY_AVERAGES_AT = 0xCF23 - ROSTER_AT
+PARTY_AVERAGES = ("mapping", "navigate", "survival")
+# The place the party is standing in, all written on arrival by image 0x0AC1A:
+# the two songs the area plays, and a step counter cleared beside the cold
+# drain counter at 0x0AC3F. What reads the counter names no displacement.
+DAY_SONG_AT, NIGHT_SONG_AT = 0xCF2F - ROSTER_AT, 0xCF31 - ROSTER_AT
+ARRIVAL_DRAIN_AT = 0xCF3D - ROSTER_AT
+# Where the sky's window sits on its gradient and the step it moves by, 3 or
+# -3 a tick to 333 (images 0x0EA29 and 0x0EDC3). The ramp itself is the 96
+# bytes at 310. Both are rebuilt by whoever reads the roster, here and in the
+# game alike, so a writer can leave the template's own values.
+SKY_WINDOW_AT, SKY_STEP_AT = 0xD00F - ROSTER_AT, 0xD011 - ROSTER_AT
+# The container allocator's two words, which tools/containers.py walks: the
+# next section 2 record to hand out, and the head of the free list chained
+# through record word 0.
+NEXT_RECORD_AT, FREE_HEAD_AT = 430, 432
 PARTY_SKILLS_AT = 0xCF81 - ROSTER_AT
 PARTY_SKILLS = ("bartering", "repair", "thievery", "linguistic")
-# Party membership is bit 0x800 of the record's word 0x15C: the assembly sets it
-# at image 0x1B974 and clears it at 0x1B922, beside writing the slot's own number
-# into the four handles at PARTY_AT. The same word carries the two-handed flag at
-# bit 0x20. A slot holding no character is one whose level is zero, which is the
-# test the assembly makes at image 0x1B911, `cmp word ptr [si+0x16], 0`.
+# Word 0x15C is four fields sharing sixteen bits, and nothing reads it whole
+# (docs/saves.md). Party membership is bit 0x800: the assembly sets it at image
+# 0x1B974 and clears it at 0x1B922, beside writing the slot's own number into
+# the four handles at PARTY_AT. Bit 0x20 is a two-handed weapon in hand, 0xF000
+# is how deep the open-container stack is, and the five at 0x07C0 are one-hot
+# for which store a slot number last resolved into (image 0x16943). A slot
+# holding no character is one whose level is zero, which is the test the
+# assembly makes at image 0x1B911, `cmp word ptr [si+0x16], 0`.
 MEMBER_AT, MEMBER_BIT = 0x15C, 0x800
+TWO_HANDED_BIT, OPEN_STACK_DEPTH_BITS, RESOLVED_STORE_BITS = 0x20, 0xF000, 0x07C0
+# The five, in the order 0x16943 tries them: the innermost open container, the
+# next out, the outermost, the character's eight panel slots, its equipment.
+RESOLVED_STORES = (0x400, 0x200, 0x100, 0x80, 0x40)
 LEVEL_AT = 22
 CHALLENGES_AT, CHALLENGES = 268, 14
 FLIGHTS_AT = 180
+# One use count per flight, zeroed as that flight is bought (image 0x09EFA).
+FLIGHT_COUNTS_AT, FLIGHT_COUNTS = 182, 4
 # The eleven equipment words, in the order the dispatch at image 0x04237 and
 # its worn sub-dispatch at 0x0431D write them. 342 is the fifth worn word,
 # which no item's bit reaches and which the absorption sum at 0x06591 adds
@@ -227,8 +308,12 @@ SPAWN_HEALTH_AT, SPAWN_STATE_AT = 0x10, 0x0C
 # Facings, as the look-ahead dispatch at image 0x112D6 tests them.
 FACING = {0x8000: "north", 0x4000: "south", 0x2000: "west", 0x1000: "east"}
 
-# The clock counts minutes and wraps at 1,440, advancing the day beside it.
+# The clock counts minutes and wraps at 1,440, advancing the date beside it: the
+# day rolls to 1 on 31 and steps the month, which rolls to 1 on 13 and steps the
+# year (image 0x0EC34). A new game starts at 09:00 on 03/20/547.
 DAY_AT, CLOCK_AT, MINUTES_PER_DAY = 156, 162, 1440
+MONTH_AT, YEAR_AT = 158, 160
+DAYS_PER_MONTH, MONTHS_PER_YEAR = 30, 12
 
 
 @dataclass(frozen=True)
