@@ -174,7 +174,7 @@ The low byte indexes the name table. The suffix qualifies the name:
 
 Ten Thaine maps, spread across three areas at levels 6 to 9, are the reason the overworld looked like one page in a list of 37.
 
-A second per-slot table is located immediately after the name tables, at `0x83dd0`: 280 bytes, **two per slot**, nonzero on exactly the 54 slots the registry names. What its value means is not settled.
+A second per-slot table sits immediately after the name tables, at `0x83dd0`: 280 bytes, **two per slot**, nonzero on exactly the 54 slots the registry names. It is the song each slot plays, and image `0x1534A` reads it ([audio.md](audio.md)).
 
 ## The legend markers, and which gold square belongs to which line
 

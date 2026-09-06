@@ -29,6 +29,7 @@ The hosted deployment is the exception. It ships no game and no JSON, so when a 
                      address rather than from it
     mz.py            the MZ header and the relocation table, without capstone
     xref.py          every instruction that reads a given struct offset
+    save_coverage.py which offsets of a saved game the code names, all at once
     patch.py         the three byte patches, applied to a copy
     combat_model.py  the damage, resistance and reward rules, as a model
     ocr.py           reads the game's own font off a captured frame
