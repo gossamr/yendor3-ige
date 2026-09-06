@@ -44,9 +44,6 @@ PROSE, PROSE_RECORD, PROSE_COUNT = 24, 34, 4090
 KEYWORD = 13
 PROSE_COLS = 33
 
-# A prose line writes `%` where the game draws a quotation mark.
-QUOTE = "%"
-
 # The NPC record. Every field is a word.
 #
 # `+0x0C` and `+0x0E` pick which topic a conversation opens on: image 0x0A31A
@@ -337,17 +334,11 @@ class People:
 
         The game draws each 33-character line on its own row and ends every row
         at a word boundary, so reflowing into a paragraph puts a space between
-        rows. `%` becomes a quotation mark, opening and closing in turn.
+        rows. `%` becomes a quotation mark, opening and closing in turn
+        (tools/labels.py).
         """
         joined = " ".join(self.response_lines(topic))
-        out, open_quote = [], True
-        for ch in joined:
-            if ch == QUOTE:
-                out.append('"')
-                open_quote = not open_quote
-            else:
-                out.append(ch)
-        return " ".join("".join(out).split())
+        return " ".join(LB.quoted(joined).split())
 
     def flags_tested(self, topic: int) -> list[int]:
         """The signed flag numbers a topic is conditional on.

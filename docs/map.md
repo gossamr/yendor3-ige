@@ -361,13 +361,15 @@ The seven key bits are `0x8000` down to `0x0200`, high bit first: brass, bronze,
 
 SAFE UNLOCK takes 8, 9 and 10, UNLOCK MAGIC takes 2 and 3, and DISPEL ILLUSION takes 6 and 7. So the 25 locks whose only bit is the trap are the walls that are illusions, and nothing else opens them.
 
-**What a character can tell about a lock follows their thievery**, at character record offset 108 ([saves.md](saves.md)). Under 55 the panel says only whether it is locked. At 55 NOT LOCKED BUT TRAPPED appears, at 65 LOCKED AND TRAPPED appears, and at 80 the key is named.
+**What a character can tell about a lock follows their thievery**, at character record offset 108 ([saves.md](saves.md)). Under 55 the panel says only whether it is locked. At 55 NOT LOCKED BUT TRAPPED appears, at 65 LOCKED AND TRAPPED appears, and at 80 the key is named. Image `0x02692` runs the ladder twice, once per branch of its test of `DS:0x5890`, and both branches climb the same three ([party.md](party.md)).
 
 **Word 1 carries two numbers in one.** Image `0x025BB` divides it by 100: the quotient is a difficulty, 0 to 67, and the remainder is the trap. A trap of zero is no trap. A trap at or over 50 hits the whole party and the table is indexed by what is left after subtracting 50, so the numbers run 1 to 13 either way (image `0x018EA3`).
 
 **The difficulty serves the lock and the trap both.** A `0x41` record is picked against it, and every record with a trap is rolled against it whether it is locked or not: 71 of the 296 open records carry a trap, 65 of them with a difficulty beside it. A `0x09` record is a trap at difficulty 0.
 
 **A trap springs once.** Image `0x027FF` tests the bank bit first and sends a thing that already carries it straight to the hand-over at `0x02870`, past the roll at `0x02846`, so the roll belongs to the one pass that sets the bit.
+
+**Only the LOCKPICK reaches the roll.** Image `0x027FF`, the OPEN and SEARCH route, tests bit `0x80` for whether the thing is already open, and sends a shut one to `0x02654` to say so. It never calls the roll. Using item 11, the LOCKPICK, is what does. Image `0x1987D` sends that use to `0x1ABC8`, which raises prompt 8 for a thief where `DS:0xCF85` is empty and stores the answer, and then puts up a cursor at `0x196C8`. The cursor is shape `0xf`, Escape gives it up, and a click is hit-tested against the region table at `DS:0x5E0C`, so the player says what to pick. `0x10CD5` turns the answer into a cell, the cell event's `+2` picks the container at `0x0252E` or the passage at `0x025CB`, and `0x1AC8B` tests bit `0x40`, the pickable state, before rolling. A success spends the pick at `0x174F4`.
 
 **Both the pick and the trap are one roll**, at image `0x17882`:
 

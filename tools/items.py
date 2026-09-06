@@ -94,6 +94,37 @@ MISC_DURATION = 0x1000  # the category word's bit, not the entry's
 PROP_USE = 0            # in a misc entry: what using the item does
 MISC_TRAVEL = 0x0004
 
+# Reading a thing is the other family word 2 picks: image 0x19989 sends the use
+# to the reader at 0x1B066 where any of bits 0x7800 is set. That reader takes
+# three more bits of the same word as the script the thing is written in, and
+# the party's linguist is read against a ladder of that script's own
+# (../docs/party.md). With none of the three the thing is in the party's own
+# letters and no linguist is asked for.
+MISC_READABLE = 0x7800
+SCRIPTS = {0x08: 2, 0x04: 6, 0x02: 4}
+
+# What is written on a readable, one table per type. The dispatch tests
+# the four bits in this order and takes the first that holds, so a record
+# carrying two reads as the kind listed first. Each pair is a table of 32-bit
+# WORLD.DAT positions and a table of byte lengths, both indexed by the misc
+# entry's `+4` less one, and the text is fixed-width lines of `width` with no
+# terminator: the loaders at image 0x17BAB, 0x17DDC, 0x17D85 and 0x17E11
+# divide the length by exactly that to count the lines.
+#
+# The spell-scroll and potion families are tested before any of these, at
+# image 0x1997C, so an item carrying `MISC_TAUGHT` never reaches the reader
+# however its other bits read.
+MISC_TAUGHT = 0x0600
+READABLE = {
+    0x4000: ("book", 0xB5F5, 0xB615, 16),
+    0x2000: ("scroll", 0xB659, 0xB6C1, 22),
+    0x1000: ("parchment", 0xB625, 0xB649, 23),
+    0x0800: ("plaque", 0xB6F5, 0xB6F9, 23),
+}
+# How many lines of it a page shows before it waits for a key: image 0x1B1AB
+# for a book and 0x1B284, 0x1B2F5 and 0x1B366 for the rest.
+READABLE_PAGE = {"book": 26, "scroll": 11, "parchment": 16, "plaque": 16}
+
 # The lit form of a torch, whose page prints no duration because a burning one
 # carries what is left of it in its place instead, and the unlit form it takes
 # its fresh figure from.
@@ -339,6 +370,65 @@ class Items:
             return self.charge(UNLIT_TORCH)
         return minutes
 
+    def script(self, rec: bytes) -> int | None:
+        """The script this item is written in, or None for the party's own.
+
+        Image `0x1B3F2` tests the three bits hardest-last and keeps the first
+        that holds, so a record carrying more than one would read as the
+        easiest. None does: the nine that carry a script carry exactly one.
+        """
+        props = self.properties(rec)
+        if props is None or self.table_of(rec) != "misc":
+            return None
+        flags = _u16(props, PROP_FLAGS)
+        if not flags & MISC_READABLE:
+            return None
+        for bit, script in SCRIPTS.items():
+            if flags & bit:
+                return script
+        return None
+
+    def reading(self, rec: bytes) -> dict | None:
+        """What is written on this, or None for anything with nothing on it.
+
+        Image 0x1B066 is the reader. It takes the misc entry's `+4` as a
+        1-based id into whichever of the four tables its family bit names, and
+        draws the fixed-width lines that id points at in WORLD.DAT. Where the
+        thing is written in a script the party's linguist is read against that
+        script's ladder first (../docs/party.md).
+
+        22 items reach it, and between them they use every entry of all three
+        tables that carry text. The fourth table holds one entry of zero
+        length and no item names it.
+        """
+        props = self.properties(rec)
+        if props is None or self.table_of(rec) != "misc":
+            return None
+        flags = _u16(props, PROP_FLAGS)
+        if flags & MISC_TAUGHT:
+            return None
+        for bit, (kind, heads, sizes, width) in READABLE.items():
+            if not flags & bit:
+                continue
+            which = _u16(props, PROP_PARAM)
+            if not which:
+                return None
+            size = _u16(_ds(self.exe, sizes + 2 * (which - 1), 2), 0)
+            if not size:
+                return None
+            at = int.from_bytes(_ds(self.exe, heads + 4 * (which - 1), 4), "little")
+            raw = self.world[at:at + size]
+            # The lines are laid out rather than reflowed, so the leading
+            # spaces that center a line are kept and only the padding after it
+            # goes. The game's own marks are put back over the whole text,
+            # since a `%` pairs with the one before it (tools/labels.py).
+            page = L.quoted(raw.decode("latin-1").translate(L.CHARSET))
+            return {"kind": kind, "textId": which,
+                    "linesPerPage": READABLE_PAGE[kind],
+                    "lines": [page[n * width:(n + 1) * width].rstrip("\x00 ")
+                              for n in range(size // width)]}
+        return None
+
     def travels_to(self, rec: bytes) -> int | None:
         """The door destination using this item walks the party through.
 
@@ -360,21 +450,27 @@ class Items:
             return None
         return _u16(props, PROP_PARAM) or None
 
-    def scroll_spell(self, rec: bytes) -> str | None:
-        """The spell a magic scroll teaches, by name.
+    def scroll_spell_id(self, rec: bytes) -> int | None:
+        """The 1-based spell a magic scroll casts or teaches.
 
         A scroll's misc entry is `10 00 00 26 <spell id> 00 00 00`, the same
-        shape for all 26, and the id is 1-based into the spell table. The clue
-        book's F5 page does not print it, since it is on the spell's own F3 page,
-        so it is not part of `page()`.
+        shape for all 26. Using one raises USE ITEM? / LEARN SPELL? at image
+        0x1DB69 and takes either branch with this id (../docs/items.md).
         """
         props = self.properties(rec)
         if props is None or _u16(props, PROP_KIND) != MISC_SCROLL:
             return None
         spell = _u16(props, PROP_PARAM)
         records = self.d[S.SPELLS].records(self.world, S.SPELL_RECORD)
-        if not 0 < spell <= len(records):
+        return spell if 0 < spell <= len(records) else None
+
+    def scroll_spell(self, rec: bytes) -> str | None:
+        """The same spell by name. The clue book's F5 page does not print it,
+        since it is on the spell's own F3 page, so it is not part of `page()`."""
+        spell = self.scroll_spell_id(rec)
+        if spell is None:
             return None
+        records = self.d[S.SPELLS].records(self.world, S.SPELL_RECORD)
         return L.text(records[spell - 1][:SPELL_NAME_LEN]).strip()
 
     def is_container(self, rec: bytes) -> bool:

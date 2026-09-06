@@ -17,10 +17,27 @@ from pathlib import Path
 LABEL_REGION = (0x2A780, 0x2B300)
 
 # The game's character set substitutions: it has no apostrophe glyph and uses
-# '~' instead, and writes fractions like "1\2" with a backslash. Every stored
-# string goes through these, item names included: "MAGE~S CHAIN MAIL ARMOR"
-# is a raw read, not a name.
-CHARSET = str.maketrans({"~": "'", "\\": "/"})
+# '~' instead, opens a single quote with a backtick, and writes fractions like
+# "1\2" with a backslash. Every stored string goes through these, item names
+# included: "MAGE~S CHAIN MAIL ARMOR" is a raw read, not a name.
+CHARSET = str.maketrans({"~": "'", "`": "'", "\\": "/"})
+
+# Its quotation mark, which opens and closes in turn rather than having a mark
+# apiece. It is left out of CHARSET because which one it is depends on how
+# many came before it in the same run of text.
+QUOTE = "%"
+
+
+def quoted(text: str) -> str:
+    """`%` resolved into an opening or a closing quotation mark."""
+    out, opening = [], True
+    for ch in text:
+        if ch == QUOTE:
+            out.append('"')
+            opening = not opening
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def text(raw: bytes) -> str:

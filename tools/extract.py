@@ -186,14 +186,125 @@ ATTACK_COUNT = 49
 # the number it summed. A sum of zero is left alone rather than divided.
 # docs/party.md reads the whole routine.
 PARTY_SKILLS = {"mapping": 0x64, "navigation": 0x66, "survival": 0x58}
-# What each average buys, in the order the code tests it. Mapping sets a bit of
-# DS:0xCEFD per rung, survival gates how much of a monster is shown at image
-# 0x130CA, and navigation sets the travel window at image 0x19022.
-PARTY_RUNGS = {
-    "mapping": (45, 50, 60, 70, 80),
-    "survival": (60, 75, 80),
-    "navigation": (65, 80, 95),
+
+# Where each skill's rungs are tested, as `(what the test reads, the ladder's
+# own first and last image address)`.
+#
+# The seven skills the party reads split two ways, and a rung means a different
+# thing either way. Three are read against the **party's average** of them,
+# which image 0x05CB0 writes to DS:0xCF23, 0xCF25 and 0xCF27: mapping sets a
+# bit of DS:0xCEFD per rung, navigation sets the travel window, survival gates
+# how much of a monster is shown. The rest are read off the **one character the
+# party names** to hold each, at that character's own live column, the way
+# bartering, repair, thievery and linguistics all are (docs/party.md).
+#
+# Each ladder is one run of comparisons, so the numbers come off those rather
+# than being written here. Bounded per ladder because the same operand is
+# compared elsewhere: the averaging routine tests each average against zero,
+# which is its divide guard, and the mend roll at 0x1C456 reads the repair
+# column again for its own four bands, which repair.json carries.
+AVERAGE_RUNGS = {
+    "mapping": (0xCF23, 0x05D40, 0x05D80),
+    "navigation": (0xCF25, 0x19020, 0x19070),
+    "survival": (0xCF27, 0x130C0, 0x13190),
 }
+# Two of the four held skills have a ladder of bare thresholds. Repair gates
+# what the item panel says about an item (docs/items.md) and thievery how much
+# of a lock the character trying it can tell (docs/map.md).
+#
+# Bartering and linguistics are read here too, each in a shape of its own.
+# Bartering's bands carry a margin apiece rather than a bare threshold, so
+# tools/npcs.py reads them whole as HAGGLE (docs/shops.md). Linguistics has one
+# ladder per script, which SCRIPT_LADDER below reads.
+HELD_RUNGS = {
+    "repair": (0x6A, 0x11020, 0x11140),
+    "thievery": (0x6C, 0x02690, 0x02700),
+}
+# Which of them is the party's average, since the two are read differently.
+AVERAGED = tuple(AVERAGE_RUNGS)
+
+# Linguistics is read against four rungs that shift with the script the thing
+# is written in, so its ladder is three ladders. Image 0x0A48C picks one by the
+# script id a map object carries at its own +2, loads its four rungs into ax,
+# dx, di and si, and falls into the run of `cmp [bx + 0x6e], <register>` that
+# reads the linguist's column against them. Image 0x1B3F2 is the same routine
+# for an item, selecting on bits 0x08, 0x04 and 0x02 of the item's +2 instead.
+#
+# Registers rather than immediates is why the comparisons carry no numbers of
+# their own, and reading the run alone would find none. The numbers are in the
+# four loads before it, which is what this reads. docs/party.md.
+SCRIPT_LADDER = (0x0A48C, 0x0A4E8)
+# DS:0xFED holds the script the text is drawn in, 0 for the party's own.
+SCRIPT_WORD = 0xFED
+# What each rung buys, as words drawn legibly out of every five. The drawer at
+# image 0x18D12 branches on the bit the ladder set and zeroes DS:0xFED around
+# that many of the five calls it makes to the word-drawer at 0x18E30.
+WORDS_PER_FIVE = (1, 2, 4, 5)
+
+
+def script_rungs(exe) -> dict[int, list[int]]:
+    """Each script id to the four linguistics rungs that read it.
+
+    `exe` is a disasm.Exe. Image 0x0A48C runs the three scripts hardest-last,
+    each as a `mov [0xfed], <script>` and then the four loads, so walking it
+    forward from that address gives the ladders in the order the code tries.
+    """
+    from capstone import CS_ARCH_X86, CS_MODE_16, Cs
+
+    md = Cs(CS_ARCH_X86, CS_MODE_16)
+    first, last = SCRIPT_LADDER
+    at = exe.file_of(first)
+    out, script = {}, None
+    for ins in md.disasm(exe.data[at:at + (last - first)], first):
+        left, _, right = ins.op_str.partition(", ")
+        if ins.mnemonic != "mov" or not right:
+            continue
+        if left.strip().endswith(f"[{SCRIPT_WORD:#x}]"):
+            script = int(right, 0)
+            out[script] = []
+        elif script and left in ("ax", "dx", "di", "si"):
+            out[script].append(int(right, 0))
+    return {script: rungs for script, rungs in out.items() if len(rungs) == 4}
+
+
+def skill_rungs(exe) -> dict[str, list[int]]:
+    """Each skill's rungs, read off the comparisons its own ladder makes.
+
+    `exe` is a disasm.Exe. A 16-bit image cannot be walked linearly, so this
+    reads every offset in a ladder's range as if an instruction started there,
+    a superset disassembly, and keeps the `cmp` instructions whose left operand
+    is the one that ladder reads. tools/xref.py explains the technique.
+
+    A threshold tested in two branches of one routine is one rung, so what
+    comes back is the distinct thresholds in the order the code climbs them.
+    """
+    from capstone import CS_ARCH_X86, CS_MODE_16, Cs
+
+    md = Cs(CS_ARCH_X86, CS_MODE_16)
+    # An average sits at a fixed word; a held skill sits at a column offset of
+    # whichever register the routine happens to have the record in.
+    wanted = {name: ([f"[{word:#x}]"], first, last)
+              for name, (word, first, last) in AVERAGE_RUNGS.items()}
+    wanted |= {name: ([f"[{base} + {column:#x}]" for base in ("bx", "si", "di", "bp")],
+                      first, last)
+               for name, (column, first, last) in HELD_RUNGS.items()}
+
+    out = {}
+    for skill, (operands, first, last) in wanted.items():
+        rungs = []
+        for image in range(first, last):
+            at = exe.file_of(image)
+            if exe.data[at] not in (0x83, 0x81):   # cmp r/m16, imm8 / imm16
+                continue
+            for ins in md.disasm(exe.data[at:at + 6], image):
+                left, _, right = ins.op_str.partition(", ")
+                rung = int(right, 0) if right else 0
+                if (ins.mnemonic == "cmp" and any(left.strip().endswith(o) for o in operands)
+                        and rung not in rungs):
+                    rungs.append(rung)
+                break
+        out[skill] = rungs
+    return out
 
 # The nine conditions as the game words them, nine strings from DS:0x7DFC in
 # the order the condition bits are listed, which is the order the protection
@@ -1114,6 +1225,11 @@ def extract_items(d: S.Directory) -> list[dict]:
         name = items.names[item_id - 1]
         if not name:
             continue
+        # The page is the clue book's own, gating included: it prints ADDS
+        # only on the armor and weapon pages, so nothing an enhancer carries
+        # reaches it. What an item does is read off the record and the two
+        # entries instead, and `effects` below is the whole of it. What is
+        # still taken from here is the book's rows (docs/items.md).
         page = items.page(item_id)
         rows.append({
             "id": item_id,
@@ -1126,6 +1242,19 @@ def extract_items(d: S.Directory) -> list[dict]:
             "spell": items.scroll_spell(rec),
             # Which slot it occupies; the F5 page has no such row either.
             "slot": items.equip_slot(rec),
+            # The script it is written in, which decides the ladder the party's
+            # linguist is read against before any of it can be read
+            # (docs/party.md). Nine items carry one and the page never prints
+            # it, so it is a key of its own.
+            "script": items.script(rec),
+            # What is written on it, for the 22 that have anything written.
+            "reading": items.reading(rec),
+            # What holding or using it moves, out of the effects table rather
+            # than off the page: the page prints these only on the armor and
+            # weapon pages, so the enhancers' own amounts never reach it. Each
+            # pair is a character record offset and how much it moves, and
+            # leveling.json's `column` resolves the offset to a field name.
+            "effects": [[off, amount] for off, amount in items.effects(rec)],
             # The same slot as the character record's own word, and the item's
             # own 16 x 16 icon, a picture in run 8. Neither is on the page.
             "slot_word": items.slot_word(rec),
@@ -1158,7 +1287,12 @@ def extract_items(d: S.Directory) -> list[dict]:
                 variants.append({"plus": plus, "id": variant["id"],
                                  "value": variant["value"],
                                  "weight": variant["weight"],
-                                 "absorption": variant["absorption"]})
+                                 "absorption": variant["absorption"],
+                                 # An enchanted form carries its own effects
+                                 # entry, and several name one the base does
+                                 # not: CLOTHES adds nothing, CLOTHES +2 adds
+                                 # a protection.
+                                 "effects": variant["effects"]})
         out.append({**row, "variants": variants})
     return out
 
@@ -1198,6 +1332,40 @@ def extract_legend(d: S.Directory) -> list[str]:
             break
         labels.append(text(rec[:end]))
     return labels
+
+
+# --- the four alphabets ----------------------------------------------------
+
+# The panel draws text a character at a time at image 0x19D63, and every glyph
+# is a 6 x 6 bitmap: it takes the code, subtracts a space, multiplies by 6 and
+# reads six rows of six bits, high bit leftmost. Which alphabet it reads from
+# is DS:0xFED, a byte offset into the four pointers at DS:0x516, so 0 is the
+# party's own letters and 2, 4 and 6 are the three scripts a linguist reads
+# (docs/party.md).
+ALPHABET_POINTERS = 0x516
+ALPHABET_COUNT = 4
+GLYPH_ROWS = GLYPH_COLUMNS = 6
+# Codes from a space up, which is what subtracting 0x20 indexes. The stride
+# between one alphabet and the next is 0x240, so each holds 96 of them.
+FIRST_GLYPH, GLYPH_COUNT = 0x20, 96
+
+
+def alphabets(exe: bytes) -> list[list[list[int]]]:
+    """The four alphabets, each 96 glyphs of 6 rows, a row per bit pattern.
+
+    A row is the top `GLYPH_COLUMNS` bits of the byte the drawer shifts left
+    out of, so bit 5 of what comes back is the leftmost pixel and bit 0 the
+    rightmost of the six it paints.
+    """
+    heads = I._ds(exe, ALPHABET_POINTERS, 2 * ALPHABET_COUNT)
+    out = []
+    for n in range(ALPHABET_COUNT):
+        start = int.from_bytes(heads[2 * n:2 * n + 2], "little")
+        table = I._ds(exe, start, GLYPH_COUNT * GLYPH_ROWS)
+        out.append([[row >> (8 - GLYPH_COLUMNS)
+                     for row in table[g * GLYPH_ROWS:(g + 1) * GLYPH_ROWS]]
+                    for g in range(GLYPH_COUNT)])
+    return out
 
 
 # --- proper nouns ----------------------------------------------------------
@@ -1365,6 +1533,9 @@ def build(game_dir: str | Path = "game", out_dir: str | Path = "data") -> dict:
         # Where each of them stands, for the map tab's overlay.
         "spawn_points": SP.points(d, enemies),
         "items": extract_items(d),
+        # The four the panel draws text from: the party's own letters and the
+        # three scripts a linguist reads (docs/party.md).
+        "alphabets": alphabets(d.exe),
         "leveling": extract_leveling(d),
         "enhancers": I.Items(d).enhancers(),
         "transports": I.Items(d).transport_pages(),

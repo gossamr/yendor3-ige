@@ -13,6 +13,7 @@ import collections
 import struct
 
 import items as IT
+import labels as L
 import npcs as N
 
 
@@ -78,7 +79,7 @@ def test_both_blocks_are_0_based(people):
         if not lines:
             continue
         total += 1
-        paired += "".join(lines).count(N.QUOTE) % 2 == 0
+        paired += "".join(lines).count(L.QUOTE) % 2 == 0
     assert (paired, total) == (953, 955)
 
 

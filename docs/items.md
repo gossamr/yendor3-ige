@@ -18,6 +18,8 @@ Every row an F5 page prints, and what supplies it:
 | the ATTRIBUTE ENHANCERS rules | constants in `REGISTER.EXE` |
 | USES, TIME on the TRANSPORTATIONS page | a four-entry table in `REGISTER.EXE` |
 
+**A page is what the book prints, not what the code reads.** `Items.page` reproduces the clue book, so it carries the book's own gating: the ADDS and PROTECTIONS rows appear on the armor and weapon pages alone, and a misc item's effects entry is never printed however much it holds. That is why an enhancer's `+3` is on no page of its own. Any figure taken from a page inherits that gating, so a reading of what an item *does* comes off the record, the properties entry and the effects entry directly. `data/items.json` still sources `value`, `weight`, `absorption` and its whole `fields` map from the page, and `tools/combat_model.py` reads `fields` in turn; those are the book's rows and are marked **screens** rather than **code** for that reason.
+
 [tests/test_extract.py](../tests/test_extract.py) checks all 650 captured rows against the decode.
 
 Two more properties are in the files but on no page, and `data/items.json` carries them as keys of their own rather than as rows: the **spell a magic scroll teaches** and the **slot an item is equipped in**.
@@ -86,7 +88,7 @@ An empty hand reads a stale pointer. Image `0x0F44C` returns `DS:0x0FE3`, and an
 
 ## What using an item does
 
-Image `0x19978` is the dispatch. It takes the item's own properties entry, tests the word at 2 for the scroll and potion families first, and then tests the word at 0:
+Image `0x19978` is the dispatch. It takes the item's own properties entry and tests the word at 2 twice before it looks at anything else: `0x0600` is the scroll and potion families, and `0x7800` is a thing with writing on it, which goes to the reader below. Then it tests the word at 0:
 
 | Word 0 bit | Items | What it does |
 |---|---|---|
@@ -108,9 +110,119 @@ Neither destination is in the gate table, so neither use is gated. The guard the
 
 **Evidence is code** at the addresses above, corroborated by the game's own walkthrough, which says to return to Flagell in the Athaneum by using the key and puts the Room of Portals in the northwestern corner of Thaine Map 10. Neither item id appears in a comparison anywhere in the load image, which is why the reading had to come through the properties entry rather than through a handler named for the item.
 
+## Using a magic scroll
+
+**26 items name a spell**, in the misc entry's word 4, and word 2 marks them `0x2600`. `0x1997C` tests `0x0600` before anything else, so a magic scroll never reaches the reader below whatever its other bits say.
+
+Image `0x1DB48` loads the spell and raises panel 32, **USE ITEM? / LEARN SPELL?**. All 26 carry word 2 bit `0x200`, so all 26 ask.
+
+**Reading it casts the spell**, through the same dispatcher at `0x1C4E4` a caster's own cast goes through, with bit `0x80` of `DS:0x5370` set first. There is no menu: the scroll names the spell, and where it lands is what the spell's own aim says ([spells.md](spells.md)). Only a spell on one character or on one monster in front leaves anything to point at. Two places read that bit. `0x1CDB7` draws the panel at a fixed spot rather than over a caster's slot, and `0x1D949` takes the spell record's own damage at offset 46 flat rather than calling the resolver at `0x1D5F8`. So a scroll lands its listed damage and no casting skill is rolled. The monster's immunity and resistance words apply either way.
+
+**Learning it** raises panel 33, WHO WILL LEARN. `0x1DCA1` walks the four slots first and marks bit `0x8000` of each record's `+0x15E` on everyone who cannot take it, on three tests:
+
+| Test | At | Refuses |
+|---|---|---|
+| already knows it | `0x17ACC` | a spell the character's own book already carries |
+| class | `0x1DCE6` against the spell's `+68` | a class outside the spell's six-bit scroll mask ([spells.md](spells.md)) |
+| level | `[si+0x16]` against the spell's `+22` | a character below the level that class row names |
+
+The book is seven words at character record `+0xCA`, one bit per spell: word `+0xCA + 2 * ((n - 1) / 16)`, bit `0x8000 >> ((n - 1) % 16)` for the 1-based spell `n`. `0x17AB4` ORs the bit in.
+
+**The scroll is spent on whichever branch runs, and a canceled prompt keeps it.** `0x174F4` sits on each branch past its own question, and an answer of nothing jumps over it: `0x1DB6E` for USE ITEM? / LEARN SPELL? and `0x1DC1E` for WHO WILL LEARN. The same holds for an enhancer at `0x1AD67`. What the spend does is zero the slot, unless the item carries a charge count in word 2 bit `0x01`, which no magic scroll does.
+
+## Reading a parchment, a scroll or a book
+
+**22 items have writing on them**, and using one reads it. Image `0x1B066` is the reader. Four bits of the misc entry's word 2 say which kind it is, and it takes the first that holds:
+
+| Word 2 bit | Kind | Positions | Lengths | Line | Page | Items |
+|---|---|---|---|---|---|---|
+| `0x4000` | book | `DS:0xB5F5` | `DS:0xB615` | 16 | 26 | 8 |
+| `0x2000` | scroll | `DS:0xB659` | `DS:0xB6C1` | 22 | 11 | 6 |
+| `0x1000` | parchment | `DS:0xB625` | `DS:0xB649` | 23 | 16 | 8 |
+| `0x0800` | none | `DS:0xB6F5` | `DS:0xB6F9` | 23 | 16 | 0 |
+
+**Each of the four tables points at a section of its own**, and the section's size is the sum of the lengths the table holds: books are section 16, which [sections.py](../tools/sections.py) already names `lore/books`, at 6,864 bytes; parchments are section 17 at 2,944, which is 8 of 368; scrolls are section 18 at 2,178. The fourth points at section 19, which is 0 bytes long.
+
+The entry's word 4 is a 1-based id into the pair its bit names: a 32-bit WORLD.DAT position and a byte length. Text is fixed-width lines of **Line** characters with no terminator, which is how the loaders at `0x17BAB`, `0x17DDC`, `0x17D85` and `0x17E11` count them, dividing the length by exactly that. **Page** is how many lines the drawer shows before it waits for a key. The three kinds that carry text use every entry of their tables and nothing is left over; the fourth table holds one entry of zero length and no item names it.
+
+A magic scroll never reaches the reader: it carries `0x0600` beside its `0x2000`, and `0x1997C` tests that first.
+
+**Nine of the 22 are written in a script the party may not read**, all of them the elves' ([party.md](party.md)). The reader names the party's linguist before it draws, and how much comes through is that script's ladder.
+
+| Item | Kind | Written |
+|---|---|---|
+| GOLD PARCHMENT | parchment | what a gold coin weighs, which is the elves' scale riddle |
+| FIRST and SECOND SCROLL OF WEIGHTS | scroll | the rest of the same |
+| RECIPE BOOK | book | the witch's brew, by weight |
+| SCROLL | scroll | |
+| PASSWORD PARCHMENT 1 to 4 | parchment | one word apiece |
+
+The other thirteen are in the party's own language: JASPER'S STORY, PROPAGANDA, MESSAGE, ROYAL PARCHMENT, QUEEN'S ROYAL PARCHMENT, SOLDIER'S SCROLL, BARIAG'S JOURNAL, OBVERSIA'S JOURNAL, CHEMISTRY BOOK and the four HISTORY volumes.
+
 ## The fourteen keys, and which lock each opens
 
 Items 36 to 42 are the CHEST KEYs and items 43 to 49 the DOOR KEYs, in one order of seven metals: brass, bronze, copper, iron, steel, silver, gold. The key bits on a lock word name the metal and not the item, and which of the two items that metal is follows what the lock stands on: a container takes the chest key and a bare lock takes the door key ([map.md](map.md)). The KEY RING, item 50, is what the keyboard's `K` puts up, and the seven rows it draws are the lines at `DS:0x3FE4`, one per metal with a count beside it.
+
+## What the item panel tells you, and who reads it
+
+**An item is a name until somebody in the party can read one.** Image `0x10F9D` puts the panel up, and before it draws a figure it names a reader: it takes `DS:0xCF83`, the party's **repair** holder ([party.md](party.md)), and where that word is zero it raises prompt 7, **WHO WILL EVALUATE**, and stores the answer back into the same word.
+
+    10fbd  mov ax, [0xcf83]      ; the party's repairer
+    10fc0  cmp ax, 0
+    10fc3  jne 0x10fdf           ; somebody holds it -> they read
+    10fca  mov ax, 7             ; WHO WILL EVALUATE
+    10fcd  lcall 0x058f0
+    10fd2  cmp ax, 0
+    10fd5  jne 0x10fdf
+    10fdc  jmp 0x111c6           ; nobody answers -> nothing is read
+
+So EVALUATE and REPAIR name the same character, and taking the repair skill off somebody takes the reading with it. A repairer carrying `0x1C40` is dropped from the word at `0x10FF3` and the prompt comes back.
+
+**What that character's repair skill buys is three rungs**, each a jump past the block below it. `[0x537C]` is the reader's own record, set by `0x15AFA` from the handle, and `+0x6A` is the live repair column.
+
+    1102b  cmp word [bx+0x6a], 0x41   ; 65  -> WEIGHT:
+    1109c  cmp word [bx+0x6a], 0x50   ; 80  -> DAMAGE: or ABSORPTION:
+    11130  cmp word [bx+0x6a], 0x5f   ; 95  -> VALUE:
+
+| The party's repairer | The panel draws |
+|---|---|
+| under 65 | the item's name, and nothing else |
+| 65 | and its weight |
+| 80 | and what it does in a fight, damage or absorption |
+| 95 | and what it is worth |
+
+Which of DAMAGE and ABSORPTION is drawn is the item's own class word at `+0x0C`: bits `0xC000` make it a weapon and bits `0x0E00` armor, tested in that order at `0x110AF`, so a piece that is neither draws neither row.
+
+**The worth is the barterer's reading, not the reader's.** The 95 rung falls through to a test of `DS:0xCF81`, the bartering holder, and a party with nobody on bartering is told nothing about worth however well it reads:
+
+    11139  mov ax, [0xcf81]      ; the party's barterer
+    1113c  cmp ax, 0
+    1113f  je 0x111bc            ; nobody -> no worth
+
+Past that test it calls `0x0A692`, which resolves that handle to a record and reads `+0x68`, the live **bartering** column, against seven bands. So the assignment is only the first half of it: what the figure says depends on how good the barterer is.
+
+    0a6b4  mov ax, 0x37          ; 55
+    0a6b7  cmp word [bx+0x68], 0x36   ; 54 or under
+    0a6bb  jle 0xa6f8
+    0a6bd  mov ax, 0x2d          ; 45, to 64
+    ...
+    0a6eb  mov ax, 2             ; 2, to 999
+    0a6f5  mov ax, 0x37          ; over 999 -> back to 55
+
+| Bartering | Margin |
+|---|---|
+| 54 and under | 55 |
+| 55 to 64 | 45 |
+| 65 to 79 | 35 |
+| 80 to 100 | 25 |
+| 101 to 124 | 15 |
+| 125 to 149 | 8 |
+| 150 to 999 | 2 |
+| over 999 | 55 |
+
+**That is the shops' own table**, the one a buy and a sell are haggled with ([shops.md](shops.md)), read here off the same column. The routine scales the item's value twice, by `100 + margin` into `DS:0x0E2C` and by `100 - margin` into `DS:0x53D0`, and the panel prints whichever the mode picks at `0x11100`: the buy side inside a shop's purchase screen, and outside a shop the sell side, which is what the party would get for the thing rather than what the record says it is worth.
+
+**A shop skips every rung.** Each of the three is preceded by a test of `DS:0x536C` against `0x3C`, the four service-mode bits a buy, a sell, a repair and an enhancement set ([shops.md](shops.md)), and any of them jumps straight to the block. A shop draws the whole panel to a party that can read none of it, with COST in place of VALUE.
 
 ## What a repair does
 
@@ -244,9 +356,9 @@ The offset is what names the row, because it is a field of the character record.
 | `0x08499` | `0x20`–`0x30` | `PROTECTIONS:` | ds:`0x7e63`, 9 strings |
 | `0x08398` | `0x3c`–`0xae` | `ADDS:` | ds:`0x80f4`, 27 strings |
 
-Both name tables are indexed by `(offset − first) / 2`. ds:`0x80f4` therefore runs STRENGTH, DEXTERITY, STAMINA, INTELLIGENCE, WISDOM, CHARISMA, five blanks, HEALTH, MAGIC POINTS, a blank, and then the twelve skills. That is exactly the character record's own layout, and [tools/skills.py](../tools/skills.py) places the attributes at `0x3c` and the skills at `0x58`. ds:`0x7e63` runs DISEASE, POISON, SICKNESS, STONING, FROZEN, PARALYZE, CURSING, HEXING, JINXING, which matches the nine condition words at `0x20` to `0x30` in [combat.md](combat.md).
+Both name tables are indexed by `(offset − first) / 2`. ds:`0x80f4` therefore runs STRENGTH, DEXTERITY, STAMINA, INTELLIGENCE, WISDOM, CHARISMA, five blanks, HEALTH, MAGIC POINTS, a blank, and then the twelve skills. That is exactly the character record's own layout, and [tools/skills.py](../tools/skills.py) places the attributes at `0x3c` and the skills at `0x58`. ds:`0x7e63` runs DISEASE, POISON, SICKNESS, STONING, FROZEN, PARALYZE, CURSING, HEXING, JINXING, which matches the nine condition labels at `0x20` to `0x30` in [combat.md](combat.md).
 
-That also answers what writes a character's protection words: equipping an item whose effects entry names one. The four protection rings, DWARVEN FUR and the three weapons of Light are the whole set.
+That also answers what writes a character's protection labels: equipping an item whose effects entry names one. The four protection rings, DWARVEN FUR and the three weapons of Light are the whole set.
 
 The renderers print one row per pair, and a continuation row carries no caption. The screen reader keyed rows by their caption, so **the captures only ever kept the first row of each list**. PARALYSIS PROTECTION RING reads "50 PARALYZE" on the page, and decodes to 50 paralyze, 60 frozen and 40 stoning. Nine items carry an ADDS list and four carry a PROTECTIONS list, and 13 of those carry more than one row.
 
