@@ -7,8 +7,14 @@ load image, i.e. file offset minus the 16 KB header) makes those far calls
 followable: a far call to `seg:off` lands at image offset `seg * 16 + off`.
 
     python tools/disasm.py 0x1e5:6 --count 80     # follow a far call
-    python tools/disasm.py 0x5e56 --count 40      # or a raw file offset
+    python tools/disasm.py 0x1e56 --count 40      # an image address
+    python tools/disasm.py 0x5e56 --file          # a raw file offset
     python tools/disasm.py 0x1d737 --around       # decode *through* an address
+
+An address with no `seg:off` and no `--file` is an image address, which is what
+docs/, tools/xref.py and every far-call target quote. Both are printed on every
+line, image first and the file offset after an `f`, so a run that came out
+somewhere unexpected says so.
 
 `--around` is the one to reach for when the address came from a cross
 reference rather than from a call: see `Exe.aligned_start`.
@@ -42,34 +48,60 @@ class Exe(Image):
                 break
         return out
 
-    def aligned_start(self, anchor: int, window: int = 64) -> int | None:
-        """The earliest address that decodes *through* `anchor`.
+    def lands_on(self, start: int, anchor: int) -> bool:
+        """Whether a stream read from `start` hits `anchor` exactly."""
+        if start < 0:
+            return False
+        blob = self.data[self.file_of(start):self.file_of(anchor) + 16]
+        for ins in self.md.disasm(blob, start):
+            if ins.address == anchor:
+                return True
+            if ins.address > anchor:
+                break
+        return False
+
+    def converges(self, anchor: int, window: int = 48) -> int:
+        """How many of the `window` addresses before `anchor` land on it.
 
         Reading a 16-bit image from a guessed address is how a decode goes
         wrong: start one byte late and every instruction after it is a
-        different instruction, for as long as it takes the stream to
-        resynchronize. A `test word ptr [0x5df2], 0x8000` read from its second
-        byte becomes `push es / pop bp / add byte ptr [bx+si+0x874], al`, and
-        the guard it applies disappears without leaving a hole.
+        different instruction. A `test word ptr [0x5df2], 0x8000` read from
+        its second byte becomes `push es / pop bp / add [bx+si+0x874], al`,
+        and the guard it applies disappears without leaving a hole.
 
-        Given an address that *is* an instruction (one an xref found, say)
-        this walks back and keeps the furthest start whose stream lands on it
-        exactly. Everything printed from there is then on the same boundaries
-        the anchor is.
+        x86 resynchronizes, though, so a real instruction is an attractor:
+        a stream started at the wrong byte falls back onto the real boundaries
+        within a few instructions and reaches it anyway. An address inside a
+        longer instruction is stepped over instead. On this image a real
+        boundary scores in the forties out of 48 and an address inside an
+        instruction scores single digits.
+
+        A low score is evidence and not proof. A routine entered only by a far
+        call scores 0 where the bytes before it are another routine's `retf`
+        and a pad, because every prefix stream steps over its first byte:
+        image 0x18D12 is real and scores 0. What corroborates one of those is
+        the call that reaches it, not the stream before it.
         """
-        best = None
-        for back in range(1, window):
-            start = anchor - back
-            if start < 0:
-                break
-            blob = self.data[self.file_of(start):self.file_of(anchor) + 16]
-            for ins in self.md.disasm(blob, start):
-                if ins.address == anchor:
-                    best = start
-                    break
-                if ins.address > anchor:
-                    break
-        return best
+        return sum(self.lands_on(anchor - back, anchor)
+                   for back in range(1, window + 1))
+
+    def aligned_start(self, anchor: int, window: int = 64) -> int | None:
+        """The address to read from so a run lands on `anchor`.
+
+        Landing on the anchor is not enough on its own: a stream the game
+        never executes can hit it by luck, and then every instruction printed
+        *before* it is invented. So this takes the furthest start that both
+        reaches the anchor and is corroborated, meaning streams of its own
+        converge on it too. Where nothing clears that it falls back to the
+        best-corroborated start, which is still better than the furthest.
+        """
+        reaching = [anchor - back for back in range(1, window)
+                    if self.lands_on(anchor - back, anchor)]
+        if not reaching:
+            return None
+        sure = [start for start in reaching
+                if self.converges(start) >= window // 3]
+        return min(sure) if sure else max(reaching, key=self.converges)
 
     def around(self, anchor: int, before: int = 24, count: int = 40) -> None:
         """Disassemble through `anchor`, on the anchor's own boundaries."""
@@ -100,29 +132,36 @@ class Exe(Image):
                   f"{ins.mnemonic} {ins.op_str}{tag}{target}")
 
 
-def parse_where(arg: str) -> int:
-    """Accept `seg:off` (far pointer) or a bare file offset."""
+def parse_where(arg: str, file_offset: bool = False) -> int:
+    """The image address `arg` names.
+
+    `seg:off` is a far pointer, the form a far call carries. A bare number is
+    an image address, the form docs/ and tools/xref.py quote, unless
+    `file_offset` says it counts from the start of the file instead.
+    """
     if ":" in arg:
         seg, off = (int(p, 0) for p in arg.split(":"))
         return Exe.image_of(seg, off)
     value = int(arg, 0)
-    return value - HEADER if value >= HEADER else value
+    return value - HEADER if file_offset else value
 
 
 if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("where", help="seg:off, or a file offset")
+    ap.add_argument("where", help="seg:off, or an image address")
     ap.add_argument("--count", type=int, default=60)
     ap.add_argument("--around", action="store_true",
                     help="decode through `where` rather than from it")
     ap.add_argument("--before", type=int, default=24,
                     help="with --around, how far back to look for the start")
+    ap.add_argument("--file", action="store_true",
+                    help="read `where` as a file offset, not an image address")
     ap.add_argument("--exe", default="game/REGISTER.EXE")
     a = ap.parse_args()
     exe = Exe(a.exe)
     if a.around:
-        exe.around(parse_where(a.where), a.before, a.count)
+        exe.around(parse_where(a.where, a.file), a.before, a.count)
     else:
-        exe.show(parse_where(a.where), a.count)
+        exe.show(parse_where(a.where, a.file), a.count)

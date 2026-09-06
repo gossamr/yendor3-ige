@@ -1188,7 +1188,7 @@ def test_xref_finds_the_instruction_that_reads_a_known_field():
     keeps the signal."""
     import xref
 
-    hits = {addr for addr, _, _ in xref.find(_exe(), 0x4C, ("si",))}
+    hits = {addr for addr, _, _, _ in xref.find(_exe(), 0x4C, ("si",))}
     # image 0x80b0 sets the attack frame from it, 0x153c4 walks the cycle.
     assert {0x080B0, 0x153C4} <= hits
     assert len(hits) < 40, "the filter is letting noise through"

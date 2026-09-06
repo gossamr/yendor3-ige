@@ -33,6 +33,12 @@ BASES = ("bx", "si", "di", "bp")
 # origin 50 bytes earlier, so record offset N is struct offset N + 50.
 RECORD_TO_STRUCT = 50
 
+# How many bytes before a hit are tried as starts, and the share of them that
+# have to reach it before it reads as a real instruction rather than as bytes
+# inside a longer one.
+WINDOW = 48
+SURE = WINDOW // 3
+
 # Opcodes that read or write a field: the moves, the comparisons, the
 # arithmetic and the bit tests. A superset disassembly of a real-mode image is
 # mostly noise, and nearly all of it decodes from bytes that are not code at
@@ -47,16 +53,21 @@ OPCODES = {
 PREFIXES = {0x26, 0x2E, 0x36, 0x3E, 0xF2, 0xF3}
 
 
-def find(exe: Exe, disp: int, regs=BASES) -> list[tuple[int, str, str]]:
-    """(image address, mnemonic, operands) for every decode touching `+disp`.
+def find(exe: Exe, disp: int, regs=BASES) -> list[tuple[int, str, str, int]]:
+    """(image address, mnemonic, operands, score) for every decode touching
+    `+disp`, best-corroborated first.
 
     A field access names one base register, so the two-register forms
-    (`[bx+si+N]` and friends) are excluded: they are how a *table* is
-    indexed, not how a struct field is read, and they are where most of the
-    surviving noise decodes to. What survives that is then held to
-    `Exe.aligned_start`: a hit no surrounding stream decodes through is a hit
-    inside some longer instruction, and reading it is how a guard that is
-    plainly there gets missed.
+    (`[bx+si+N]` and friends) are excluded: they are how a *table* is indexed,
+    not how a struct field is read, and they are where most of the surviving
+    noise decodes to.
+
+    The score is `Exe.converges`, out of `WINDOW`: how much of the code around
+    a hit decodes *through* it. A hit inside some longer instruction reads as
+    something the game never executes, and scores near zero. Nothing is
+    dropped for a low score, because a routine entered only by a far call
+    scores low while being real, so `main` prints those apart rather than
+    hiding them.
     """
     md = Cs(CS_ARCH_X86, CS_MODE_16)
     data = exe.data[HEADER:]
@@ -76,10 +87,8 @@ def find(exe: Exe, disp: int, regs=BASES) -> list[tuple[int, str, str]]:
     at = {a for a, _, _ in out}
     out = [(a, m, o) for a, m, o in out
            if not (a - 1 in at and data[a - 1] in PREFIXES)]
-    # And a hit is only worth reading if the code around it decodes *through*
-    # it. Without that test a hit can sit inside a longer instruction, where
-    # the bytes read as something the game never executes.
-    return [(a, m, o) for a, m, o in out if exe.aligned_start(a) is not None]
+    scored = [(a, m, o, exe.converges(a, WINDOW)) for a, m, o in out]
+    return sorted(scored, key=lambda hit: (-hit[3], hit[0]))
 
 
 def main(argv: list[str]) -> int:
@@ -93,14 +102,26 @@ def main(argv: list[str]) -> int:
             context = int(argv[i + 1], 0)
     exe = Exe("game/REGISTER.EXE")
     hits = find(exe, disp, regs)
-    print(f"{len(hits)} instructions touch +{disp:#x} "
+    sure = [hit for hit in hits if hit[3] >= SURE]
+    weak = [hit for hit in hits if hit[3] < SURE]
+
+    def report(rows: list[tuple[int, str, str, int]]) -> None:
+        for addr, mnem, ops, score in rows:
+            print(f"  {addr:#07x}  {score:2d}/{WINDOW}  {mnem} {ops}")
+            if context:
+                # Through the hit, never merely from near it.
+                exe.around(addr, context * 3, context * 2)
+                print()
+
+    print(f"{len(sure)} instructions touch +{disp:#x} "
           f"(record offset {disp - RECORD_TO_STRUCT} if this is a monster)")
-    for addr, mnem, ops in hits:
-        print(f"  {addr:#07x}  {mnem} {ops}")
-        if context:
-            # Through the hit, never merely from near it.
-            exe.around(addr, context * 3, context * 2)
-            print()
+    report(sure)
+    if weak:
+        print(f"\n{len(weak)} more decode to +{disp:#x} but little around them "
+              f"decodes through, so they are most likely bytes inside another "
+              f"instruction. A routine only ever reached by a far call also "
+              f"lands here:")
+        report(weak)
     return 0
 
 
